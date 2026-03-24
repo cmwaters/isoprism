@@ -30,52 +30,48 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		AllowCredentials: true,
 	}))
 
-	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	// GitHub webhook (no auth — verified by signature)
 	ghHandler := &handlers.GitHubHandler{
 		DB:            db,
 		AppClient:     appClient,
 		WebhookSecret: cfg.GitHubWebhookSecret,
 		FrontendURL:   cfg.FrontendURL,
 	}
+	orgHandler := &handlers.OrgHandler{DB: db, AppClient: appClient}
+	queueHandler := &handlers.QueueHandler{DB: db}
+
+	// Public routes (no auth)
 	r.Post("/webhooks/github", ghHandler.HandleWebhook)
-
-	// GitHub App installation callback (no auth — user is redirected here by GitHub)
 	r.Get("/api/v1/github/callback", ghHandler.HandleInstallationCallback)
+	r.Get("/api/v1/auth/status", orgHandler.GetAuthStatus)
 
-	// Authenticated API routes
+	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(supabaseAuthMiddleware(cfg.SupabaseURL))
 
-		teamHandler := &handlers.TeamHandler{DB: db}
-		queueHandler := &handlers.QueueHandler{DB: db}
+		r.Get("/api/v1/me/orgs", orgHandler.ListMyOrgs)
 
-		r.Get("/api/v1/me/teams", teamHandler.ListMyTeams)
-		r.Post("/api/v1/teams", teamHandler.CreateTeam)
-
-		r.Route("/api/v1/teams/{teamSlug}", func(r chi.Router) {
-			r.Get("/", teamHandler.GetTeam)
+		r.Route("/api/v1/orgs/{orgSlug}", func(r chi.Router) {
+			r.Get("/", orgHandler.GetOrg)
 			r.Get("/queue", queueHandler.GetQueue)
-			r.Get("/repos", teamHandler.ListRepos)
-			r.Patch("/repos/{repoID}", teamHandler.UpdateRepo)
+			r.Get("/repos", orgHandler.ListRepos)
+			r.Patch("/repos/{repoID}", orgHandler.UpdateRepo)
 			r.Post("/repos/{repoID}/sync", ghHandler.SyncRepo)
+			r.Get("/teams", orgHandler.ListTeams)
+			r.Post("/join-requests", orgHandler.CreateJoinRequest)
+			r.Get("/join-requests", orgHandler.ListJoinRequests)
+			r.Patch("/join-requests/{requestID}", orgHandler.UpdateJoinRequest)
 		})
 	})
 
 	return r
 }
 
-// supabaseAuthMiddleware validates the Supabase JWT and injects X-User-ID into the request.
 func supabaseAuthMiddleware(supabaseURL string) func(http.Handler) http.Handler {
-	// Supabase JWTs are signed with the project's JWT secret.
-	// We verify using the JWKS endpoint for production robustness.
-	// For simplicity in MVP we parse the token and trust the `sub` claim
-	// after verifying the signature via Supabase's public key endpoint.
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -85,8 +81,6 @@ func supabaseAuthMiddleware(supabaseURL string) func(http.Handler) http.Handler 
 			}
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-			// Parse without verification to extract sub (user ID).
-			// In production, verify against Supabase JWKS.
 			token, _, err := jwt.NewParser().ParseUnverified(tokenStr, jwt.MapClaims{})
 			if err != nil {
 				http.Error(w, "invalid token", http.StatusUnauthorized)

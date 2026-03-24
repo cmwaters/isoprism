@@ -1,13 +1,26 @@
-export interface Team {
+export interface Organization {
   id: string;
   name: string;
   slug: string;
+  github_account_login: string;
+  github_account_type: "Organization" | "User";
+  github_account_id?: number;
+  avatar_url?: string;
+  created_at: string;
+}
+
+export interface Team {
+  id: string;
+  org_id: string;
+  name: string;
+  slug: string;
+  github_team_id?: number;
   created_at: string;
 }
 
 export interface Repository {
   id: string;
-  team_id: string;
+  org_id: string;
   installation_id: string;
   github_repo_id: number;
   full_name: string;
@@ -32,7 +45,7 @@ export interface PRAnalysis {
 
 export interface PullRequest {
   id: string;
-  team_id: string;
+  org_id: string;
   repo_id: string;
   github_pr_id: number;
   number: number;
@@ -65,4 +78,14 @@ export interface QueueItem extends PullRequest {
 export interface QueueResponse {
   items: QueueItem[];
   total: number;
+}
+
+export interface OrgJoinRequest {
+  id: string;
+  org_id: string;
+  user_id: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  github_username?: string;
+  avatar_url?: string;
 }

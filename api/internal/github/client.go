@@ -48,6 +48,29 @@ func (c *Client) do(ctx context.Context, method, path string, out interface{}) e
 
 // ---- Types ----
 
+type GHInstallation struct {
+	ID      int64 `json:"id"`
+	Account struct {
+		Login     string `json:"login"`
+		Type      string `json:"type"`
+		ID        int64  `json:"id"`
+		AvatarURL string `json:"avatar_url"`
+	} `json:"account"`
+}
+
+type GHOrgTeam struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+type GHUser struct {
+	ID        int64  `json:"id"`
+	Login     string `json:"login"`
+	AvatarURL string `json:"avatar_url"`
+	Email     string `json:"email"`
+}
+
 type InstallationRepo struct {
 	ID            int64  `json:"id"`
 	FullName      string `json:"full_name"`
@@ -133,4 +156,42 @@ func (c *Client) ListPRReviews(ctx context.Context, owner, repo string, number i
 		return nil, err
 	}
 	return reviews, nil
+}
+
+func (c *Client) ListOrgTeams(ctx context.Context, org string) ([]GHOrgTeam, error) {
+	var teams []GHOrgTeam
+	if err := c.do(ctx, "GET", fmt.Sprintf("/orgs/%s/teams?per_page=100", org), &teams); err != nil {
+		return nil, err
+	}
+	return teams, nil
+}
+
+func (c *Client) ListOrgTeamMembers(ctx context.Context, org, teamSlug string) ([]GHUser, error) {
+	var members []GHUser
+	if err := c.do(ctx, "GET", fmt.Sprintf("/orgs/%s/teams/%s/members?per_page=100", org, teamSlug), &members); err != nil {
+		return nil, err
+	}
+	return members, nil
+}
+
+func (c *Client) GetAuthenticatedUser(ctx context.Context) (*GHUser, error) {
+	var user GHUser
+	if err := c.do(ctx, "GET", "/user", &user); err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (c *Client) ListUserOrgs(ctx context.Context) ([]struct {
+	Login     string `json:"login"`
+	AvatarURL string `json:"avatar_url"`
+}, error) {
+	var orgs []struct {
+		Login     string `json:"login"`
+		AvatarURL string `json:"avatar_url"`
+	}
+	if err := c.do(ctx, "GET", "/user/orgs?per_page=100", &orgs); err != nil {
+		return nil, err
+	}
+	return orgs, nil
 }

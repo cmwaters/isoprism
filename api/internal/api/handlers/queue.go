@@ -16,22 +16,21 @@ type QueueHandler struct {
 	DB *pgxpool.Pool
 }
 
-// GET /api/v1/teams/{teamSlug}/queue
+// GET /api/v1/orgs/{orgSlug}/queue
 func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
-	teamSlug := chi.URLParam(r, "teamSlug")
+	orgSlug := chi.URLParam(r, "orgSlug")
 	ctx := r.Context()
 
-	// Resolve team ID from slug
-	var teamID string
-	err := h.DB.QueryRow(ctx, `select id from teams where slug = $1`, teamSlug).Scan(&teamID)
+	var orgID string
+	err := h.DB.QueryRow(ctx, `select id from organizations where slug = $1`, orgSlug).Scan(&orgID)
 	if err != nil {
-		http.Error(w, "team not found", http.StatusNotFound)
+		http.Error(w, "org not found", http.StatusNotFound)
 		return
 	}
 
 	rows, err := h.DB.Query(ctx, `
 		select
-			pr.id, pr.team_id, pr.repo_id, pr.github_pr_id, pr.number, pr.title,
+			pr.id, pr.org_id, pr.repo_id, pr.github_pr_id, pr.number, pr.title,
 			pr.body, pr.author_github_login, pr.author_avatar_url,
 			pr.base_branch, pr.head_branch, pr.state, pr.draft,
 			pr.additions, pr.deletions, pr.changed_files, pr.html_url,
@@ -43,10 +42,11 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
 		left join pr_analyses pa on pa.pull_request_id = pr.id
-		where pr.team_id = $1
+		where pr.org_id = $1
 		  and pr.state = 'open'
+		  and r.is_active = true
 		order by pr.last_activity_at desc nulls last
-	`, teamID)
+	`, orgID)
 	if err != nil {
 		http.Error(w, "failed to fetch queue", http.StatusInternalServerError)
 		return
@@ -60,7 +60,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 		var repoFullName string
 
 		err := rows.Scan(
-			&pr.ID, &pr.TeamID, &pr.RepoID, &pr.GitHubPRID, &pr.Number, &pr.Title,
+			&pr.ID, &pr.OrgID, &pr.RepoID, &pr.GitHubPRID, &pr.Number, &pr.Title,
 			&pr.Body, &pr.AuthorGitHubLogin, &pr.AuthorAvatarURL,
 			&pr.BaseBranch, &pr.HeadBranch, &pr.State, &pr.Draft,
 			&pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.HTMLURL,
@@ -74,7 +74,6 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		pr.RepoFullName = repoFullName
-
 		if analysis.Summary != nil {
 			pr.Analysis = &analysis
 		}
@@ -88,7 +87,6 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
-	// Sort by urgency descending
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].UrgencyScore > items[j].UrgencyScore
 	})
@@ -112,23 +110,15 @@ func computeReviewState(pr models.PullRequest) string {
 	if pr.Draft {
 		return "draft"
 	}
-	// Without review data joined here, default to needs_review.
-	// This will be enriched once we join pr_reviews.
 	return "needs_review"
 }
 
 func computeUrgency(pr models.PullRequest, analysis models.PRAnalysis) float64 {
-	// wait_time_score: normalise hours waiting (cap at 72h → 1.0)
 	waitScore := math.Min(waitingHours(pr)/72.0, 1.0)
-
-	// risk_score: 1–10 normalised to 0–1 (default 0.3 if unknown)
 	riskScore := 0.3
 	if analysis.RiskScore != nil {
 		riskScore = float64(*analysis.RiskScore) / 10.0
 	}
-
-	// system_impact_score: number of impacted areas, cap at 5
 	impactScore := math.Min(float64(len(analysis.ImpactedAreas))/5.0, 1.0)
-
 	return (waitScore * 0.4) + (riskScore * 0.35) + (impactScore * 0.25)
 }

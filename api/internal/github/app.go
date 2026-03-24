@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+
 // AppClient handles GitHub App authentication: generating JWTs and
 // fetching/caching per-installation access tokens.
 type AppClient struct {
@@ -117,4 +118,32 @@ func (a *AppClient) ClientForInstallation(ctx context.Context, installationID in
 		return nil, err
 	}
 	return NewClient(token), nil
+}
+
+// GetInstallation fetches installation details using the App JWT (not an installation token).
+func (a *AppClient) GetInstallation(ctx context.Context, installationID int64) (*GHInstallation, error) {
+	appJWT, err := a.generateJWT()
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("https://api.github.com/app/installations/%d", installationID)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+appJWT)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d fetching installation", resp.StatusCode)
+	}
+	var inst GHInstallation
+	if err := json.NewDecoder(resp.Body).Decode(&inst); err != nil {
+		return nil, err
+	}
+	return &inst, nil
 }

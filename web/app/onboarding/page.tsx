@@ -3,47 +3,34 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { apiFetch } from "@/lib/api";
-import { Team } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const supabase = createClient();
-  const [teamName, setTeamName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleCreateTeam(e: React.FormEvent) {
-    e.preventDefault();
-    if (!teamName.trim()) return;
-
+  async function handleConnectGitHub() {
     setLoading(true);
     setError("");
 
     const { data: session } = await supabase.auth.getSession();
-    const token = session.session?.access_token;
-    if (!token) {
+    const userID = session.session?.user.id;
+    if (!userID) {
       router.push("/login");
       return;
     }
 
-    try {
-      const team = await apiFetch<Team>("/api/v1/teams", token, {
-        method: "POST",
-        body: JSON.stringify({ name: teamName.trim() }),
-      });
-
-      // Redirect to GitHub App installation
-      const appName = process.env.NEXT_PUBLIC_GITHUB_APP_NAME;
-      const installUrl = `https://github.com/apps/${appName}/installations/new?state=${team.id}`;
-      window.location.href = installUrl;
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to create team. Please try again."
-      );
+    const appName = process.env.NEXT_PUBLIC_GITHUB_APP_NAME;
+    if (!appName) {
+      setError("GitHub App not configured.");
       setLoading(false);
+      return;
     }
+
+    const installUrl = `https://github.com/apps/${appName}/installations/new?state=${userID}`;
+    window.location.href = installUrl;
   }
 
   return (
@@ -55,46 +42,39 @@ export default function OnboardingPage() {
         </div>
 
         <div className="mb-8">
-          <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-2">
-            Step 1 of 2
-          </p>
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-2">
-            Name your team
+            Connect GitHub
           </h1>
           <p className="text-sm text-neutral-500">
-            This is usually your company or org name.
+            Install the Aperture GitHub App on your org or personal account to get started.
           </p>
         </div>
 
-        <form onSubmit={handleCreateTeam} className="space-y-4">
-          <input
-            type="text"
-            value={teamName}
-            onChange={(e) => setTeamName(e.target.value)}
-            placeholder="e.g. Acme Engineering"
-            autoFocus
-            className="w-full h-11 px-4 rounded-lg border border-neutral-200 bg-white text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition"
-          />
+        {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
 
-          {error && (
-            <p className="text-sm text-red-500">{error}</p>
+        <Button
+          onClick={handleConnectGitHub}
+          disabled={loading}
+          className="w-full h-11 bg-neutral-900 hover:bg-neutral-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
+        >
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Redirecting…
+            </span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+              </svg>
+              Connect GitHub
+            </span>
           )}
+        </Button>
 
-          <Button
-            type="submit"
-            disabled={loading || !teamName.trim()}
-            className="w-full h-11 bg-neutral-900 hover:bg-neutral-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
-          >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Creating…
-              </span>
-            ) : (
-              "Continue"
-            )}
-          </Button>
-        </form>
+        <p className="mt-4 text-xs text-neutral-400 text-center">
+          You&apos;ll be asked to choose which org or account to connect.
+        </p>
       </div>
     </div>
   );
