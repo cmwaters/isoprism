@@ -32,7 +32,7 @@ func main() {
 	defer pool.Close()
 	log.Println("connected to database")
 
-	appClient, err := github.NewAppClient(cfg.GitHubClientID, cfg.GitHubAppPrivateKey)
+	appClient, err := github.NewAppClient(cfg.GitHubAppClientID, cfg.GitHubAppPrivateKey)
 	if err != nil {
 		log.Fatalf("failed to initialise GitHub App client: %v", err)
 	}
