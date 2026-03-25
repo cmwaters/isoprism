@@ -5,6 +5,8 @@ import { QueueResponse } from "@/lib/types";
 import { QueueList } from "@/components/queue/queue-list";
 import { AppHeader } from "@/components/layout/app-header";
 
+export const dynamic = "force-dynamic";
+
 interface Props {
   params: Promise<{ orgSlug: string }>;
 }

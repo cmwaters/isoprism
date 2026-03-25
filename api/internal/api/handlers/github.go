@@ -28,6 +28,7 @@ func (h *GitHubHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event := r.Header.Get("X-GitHub-Event")
+	log.Printf("webhook received: event=%q", event)
 	switch event {
 	case "pull_request":
 		h.handlePREvent(r.Context(), body)
@@ -47,6 +48,8 @@ func (h *GitHubHandler) handlePREvent(ctx context.Context, body []byte) {
 		return
 	}
 
+	log.Printf("PR event: action=%q repo=%q pr=#%d", payload.Action, payload.Repository.FullName, payload.PullRequest.Number)
+
 	switch payload.Action {
 	case "opened", "synchronize", "reopened", "ready_for_review", "closed":
 	default:
@@ -64,6 +67,7 @@ func (h *GitHubHandler) handlePREvent(ctx context.Context, body []byte) {
 		  and r.is_active = true
 	`, payload.Installation.ID, payload.Repository.ID).Scan(&orgID, &repoID)
 	if err != nil {
+		log.Printf("PR event: no matching active repo found for installation=%d repo_id=%d: %v", payload.Installation.ID, payload.Repository.ID, err)
 		return
 	}
 
