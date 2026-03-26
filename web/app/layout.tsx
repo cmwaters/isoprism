@@ -5,7 +5,7 @@ import "./globals.css";
 const geist = Geist({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Aperture",
+  title: "Aperture64",
   description: "See what your code changes actually mean.",
 };
 

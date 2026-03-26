@@ -13,7 +13,7 @@ export function AppHeader({ orgSlug, activeTab = "queue" }: Props) {
         <div className="flex items-center gap-6">
           <Link href={`/orgs/${orgSlug}`} className="flex items-center gap-2">
             <div className="h-5 w-5 rounded-full bg-neutral-900" />
-            <span className="text-sm font-semibold tracking-tight">Aperture</span>
+            <span className="text-sm font-semibold tracking-tight">Aperture64</span>
           </Link>
           <nav className="flex items-center gap-1">
             <Link

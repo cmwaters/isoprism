@@ -45,7 +45,7 @@ function JoinContent() {
       <div className="w-full max-w-sm px-6">
         <div className="mb-12 flex items-center gap-2">
           <div className="h-6 w-6 rounded-full bg-neutral-900" />
-          <span className="text-lg font-semibold tracking-tight">Aperture</span>
+          <span className="text-lg font-semibold tracking-tight">Aperture64</span>
         </div>
 
         {status === "sent" ? (

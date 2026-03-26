@@ -59,7 +59,7 @@ export default function OnboardingPage() {
       <div className="w-full max-w-sm px-6">
         <div className="mb-12 flex items-center gap-2">
           <div className="h-6 w-6 rounded-full bg-neutral-900" />
-          <span className="text-lg font-semibold tracking-tight">Aperture</span>
+          <span className="text-lg font-semibold tracking-tight">Aperture64</span>
         </div>
 
         <div className="mb-8">
@@ -67,7 +67,7 @@ export default function OnboardingPage() {
             Welcome!
           </h1>
           <p className="text-sm text-neutral-500">
-            Install the Aperture GitHub App on your org or personal account to get started.
+            Install the Aperture64 GitHub App on your org or personal account to get started.
           </p>
         </div>
 

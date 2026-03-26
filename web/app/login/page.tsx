@@ -31,7 +31,7 @@ export default function LoginPage() {
         {/* Logo mark */}
         <div className="mb-12 flex items-center gap-2">
           <div className="h-6 w-6 rounded-full bg-neutral-900" />
-          <span className="text-lg font-semibold tracking-tight">Aperture</span>
+          <span className="text-lg font-semibold tracking-tight">Aperture64</span>
         </div>
 
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-2">

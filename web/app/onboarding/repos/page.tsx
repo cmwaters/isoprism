@@ -102,7 +102,7 @@ function ReposContent() {
       <div className="w-full max-w-md px-6">
         <div className="mb-12 flex items-center gap-2">
           <div className="h-6 w-6 rounded-full bg-neutral-900" />
-          <span className="text-lg font-semibold tracking-tight">Aperture</span>
+          <span className="text-lg font-semibold tracking-tight">Aperture64</span>
         </div>
 
         <div className="mb-8">
@@ -110,7 +110,7 @@ function ReposContent() {
             Select repositories
           </h1>
           <p className="text-sm text-neutral-500">
-            Choose which repos Aperture should track for <span className="font-medium">{orgSlug}</span>. All are selected by default.
+            Choose which repos Aperture64 should track for <span className="font-medium">{orgSlug}</span>. All are selected by default.
           </p>
         </div>
 
@@ -158,7 +158,7 @@ function ReposContent() {
                 Setting up…
               </span>
             ) : (
-              "Open Aperture"
+              "Open Aperture64"
             )}
           </Button>
         </div>

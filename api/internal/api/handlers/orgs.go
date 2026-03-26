@@ -152,6 +152,7 @@ func (h *OrgHandler) GetPR(w http.ResponseWriter, r *http.Request) {
 	var pr models.PullRequest
 	var analysis models.PRAnalysis
 	var repoFullName string
+	var analysisID, analysisPRID, analysisCommitSHA *string
 
 	err := h.DB.QueryRow(ctx, `
 		select
@@ -177,7 +178,7 @@ func (h *OrgHandler) GetPR(w http.ResponseWriter, r *http.Request) {
 		&pr.OpenedAt, &pr.ClosedAt, &pr.MergedAt, &pr.LastActivityAt,
 		&pr.LastSyncedAt, &pr.CreatedAt, &pr.UpdatedAt,
 		&repoFullName,
-		&analysis.ID, &analysis.PullRequestID, &analysis.CommitSHA,
+		&analysisID, &analysisPRID, &analysisCommitSHA,
 		&analysis.Summary, &analysis.Why, &analysis.ImpactedAreas, &analysis.KeyFiles,
 		&analysis.SizeLabel, &analysis.RiskScore, &analysis.RiskLabel, &analysis.RiskReasons,
 	)
@@ -186,7 +187,10 @@ func (h *OrgHandler) GetPR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pr.RepoFullName = repoFullName
-	if analysis.Summary != nil {
+	if analysisID != nil {
+		analysis.ID = *analysisID
+		analysis.PullRequestID = *analysisPRID
+		analysis.CommitSHA = *analysisCommitSHA
 		pr.Analysis = &analysis
 	}
 
