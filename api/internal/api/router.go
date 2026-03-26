@@ -106,6 +106,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		r.Route("/api/v1/orgs/{orgSlug}", func(r chi.Router) {
 			r.Get("/", orgHandler.GetOrg)
 			r.Get("/queue", queueHandler.GetQueue)
+			r.Get("/queue/{prID}", queueHandler.GetPR)
 			r.Get("/repos", orgHandler.ListRepos)
 			r.Patch("/repos/{repoID}", orgHandler.UpdateRepo)
 			r.Post("/repos/{repoID}/sync", ghHandler.SyncRepo)
