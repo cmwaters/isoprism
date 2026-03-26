@@ -22,6 +22,7 @@ export default async function RootPage() {
     redirect("/login");
   }
 
+  let firstOrgSlug: string | null = null;
   try {
     const { orgs } = await apiFetch<{ orgs: Organization[] }>(
       "/api/v1/me/orgs",
@@ -29,10 +30,14 @@ export default async function RootPage() {
     );
 
     if (orgs && orgs.length > 0) {
-      redirect(`/orgs/${orgs[0].slug}`);
+      firstOrgSlug = orgs[0].slug;
     }
   } catch {
     // Fall through to onboarding
+  }
+
+  if (firstOrgSlug) {
+    redirect(`/orgs/${firstOrgSlug}`);
   }
 
   redirect("/onboarding");
