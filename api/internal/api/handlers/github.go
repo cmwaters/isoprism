@@ -177,6 +177,7 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 		if err == nil {
 			// Found — ensure the user is a member and redirect to queue
 			if userID != "" {
+				ensureUserExists(ctx, h.DB, userID)
 				_, _ = h.DB.Exec(ctx, `
 					insert into org_members (org_id, user_id, role)
 					values ($1, $2, 'org_admin')
@@ -208,6 +209,7 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 
 	// Add installing user as org admin (if userID provided)
 	if userID != "" {
+		ensureUserExists(ctx, h.DB, userID)
 		_, _ = h.DB.Exec(ctx, `
 			insert into org_members (org_id, user_id, role)
 			values ($1, $2, 'org_admin')
@@ -414,6 +416,26 @@ func (h *GitHubHandler) SyncRepo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"synced": len(prs)})
+}
+
+// ensureUserExists syncs the user from auth.users into public.users if they don't exist yet.
+// The auth trigger normally handles this, but it only fires on INSERT/UPDATE to auth.users —
+// not when a user operates with an existing session — so the public.users row may be missing
+// (e.g. after a DB reset) when the GitHub App callback runs.
+func ensureUserExists(ctx context.Context, db *pgxpool.Pool, userID string) {
+	_, _ = db.Exec(ctx, `
+		insert into public.users (id, email, display_name, avatar_url, github_user_id, github_username)
+		select
+			au.id,
+			au.email,
+			coalesce(au.raw_user_meta_data->>'full_name', au.raw_user_meta_data->>'name'),
+			au.raw_user_meta_data->>'avatar_url',
+			(au.raw_user_meta_data->>'provider_id')::bigint,
+			au.raw_user_meta_data->>'user_name'
+		from auth.users au
+		where au.id = $1
+		on conflict (id) do nothing
+	`, userID)
 }
 
 func splitRepoName(fullName string) []string {
