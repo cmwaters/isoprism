@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -33,6 +34,53 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	r.Get("/api/v1/debug/stats", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		stats := map[string]interface{}{}
+
+		var orgs, repos, activerepos, prs, openprs, installs int
+		db.QueryRow(ctx, `select count(*) from organizations`).Scan(&orgs)
+		db.QueryRow(ctx, `select count(*) from repositories`).Scan(&repos)
+		db.QueryRow(ctx, `select count(*) from repositories where is_active`).Scan(&activerepos)
+		db.QueryRow(ctx, `select count(*) from pull_requests`).Scan(&prs)
+		db.QueryRow(ctx, `select count(*) from pull_requests where state = 'open'`).Scan(&openprs)
+		db.QueryRow(ctx, `select count(*) from github_installations`).Scan(&installs)
+
+		stats["organizations"] = orgs
+		stats["installations"] = installs
+		stats["repositories"] = map[string]int{"total": repos, "active": activerepos}
+		stats["pull_requests"] = map[string]int{"total": prs, "open": openprs}
+
+		// Most recent PRs
+		rows, _ := db.Query(ctx, `
+			select r.full_name, pr.number, pr.title, pr.state, pr.created_at
+			from pull_requests pr join repositories r on r.id = pr.repo_id
+			order by pr.created_at desc limit 5
+		`)
+		if rows != nil {
+			defer rows.Close()
+			type recentPR struct {
+				Repo   string `json:"repo"`
+				Number int    `json:"number"`
+				Title  string `json:"title"`
+				State  string `json:"state"`
+				At     string `json:"created_at"`
+			}
+			var recent []recentPR
+			for rows.Next() {
+				var p recentPR
+				var at interface{}
+				rows.Scan(&p.Repo, &p.Number, &p.Title, &p.State, &at)
+				p.At = fmt.Sprintf("%v", at)
+				recent = append(recent, p)
+			}
+			stats["recent_prs"] = recent
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
 	})
 
 	ghHandler := &handlers.GitHubHandler{
