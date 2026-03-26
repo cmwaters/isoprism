@@ -131,6 +131,92 @@ func (h *OrgHandler) UpdateRepo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// DELETE /api/v1/orgs/{orgSlug}/repos/{repoID}
+func (h *OrgHandler) DeleteRepo(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	repoID := chi.URLParam(r, "repoID")
+
+	_, err := h.DB.Exec(ctx, `delete from repositories where id = $1`, repoID)
+	if err != nil {
+		http.Error(w, "failed to delete repo", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GET /api/v1/orgs/{orgSlug}/prs/{prID}
+func (h *OrgHandler) GetPR(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	prID := chi.URLParam(r, "prID")
+
+	var pr models.PullRequest
+	var analysis models.PRAnalysis
+	var repoFullName string
+
+	err := h.DB.QueryRow(ctx, `
+		select
+			pr.id, pr.org_id, pr.repo_id, pr.github_pr_id, pr.number, pr.title,
+			pr.body, pr.author_github_login, pr.author_avatar_url,
+			pr.base_branch, pr.head_branch, pr.state, pr.draft,
+			pr.additions, pr.deletions, pr.changed_files, pr.html_url,
+			pr.opened_at, pr.closed_at, pr.merged_at, pr.last_activity_at,
+			pr.last_synced_at, pr.created_at, pr.updated_at,
+			r.full_name as repo_full_name,
+			pa.id, pa.pull_request_id, pa.commit_sha,
+			pa.summary, pa.why, pa.impacted_areas, pa.key_files,
+			pa.size_label, pa.risk_score, pa.risk_label, pa.risk_reasons
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		left join pr_analyses pa on pa.pull_request_id = pr.id
+		where pr.id = $1
+	`, prID).Scan(
+		&pr.ID, &pr.OrgID, &pr.RepoID, &pr.GitHubPRID, &pr.Number, &pr.Title,
+		&pr.Body, &pr.AuthorGitHubLogin, &pr.AuthorAvatarURL,
+		&pr.BaseBranch, &pr.HeadBranch, &pr.State, &pr.Draft,
+		&pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.HTMLURL,
+		&pr.OpenedAt, &pr.ClosedAt, &pr.MergedAt, &pr.LastActivityAt,
+		&pr.LastSyncedAt, &pr.CreatedAt, &pr.UpdatedAt,
+		&repoFullName,
+		&analysis.ID, &analysis.PullRequestID, &analysis.CommitSHA,
+		&analysis.Summary, &analysis.Why, &analysis.ImpactedAreas, &analysis.KeyFiles,
+		&analysis.SizeLabel, &analysis.RiskScore, &analysis.RiskLabel, &analysis.RiskReasons,
+	)
+	if err != nil {
+		http.Error(w, "pr not found", http.StatusNotFound)
+		return
+	}
+	pr.RepoFullName = repoFullName
+	if analysis.Summary != nil {
+		pr.Analysis = &analysis
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pr)
+}
+
+// DELETE /api/v1/me
+func (h *OrgHandler) DeleteMe(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := r.Header.Get("X-User-ID")
+
+	// Delete orgs where this user is the sole admin (personal orgs)
+	_, _ = h.DB.Exec(ctx, `
+		delete from organizations
+		where id in (
+			select org_id from org_members where user_id = $1 and role = 'org_admin'
+		)
+		and (select count(*) from org_members om2 where om2.org_id = organizations.id and om2.role = 'org_admin') = 1
+	`, userID)
+
+	// Delete the user (cascades to org_members, team_members)
+	_, err := h.DB.Exec(ctx, `delete from users where id = $1`, userID)
+	if err != nil {
+		http.Error(w, "failed to delete account", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // GET /api/v1/orgs/{orgSlug}/teams
 func (h *OrgHandler) ListTeams(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

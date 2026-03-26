@@ -102,13 +102,16 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		r.Use(supabaseAuthMiddleware(cfg.SupabaseURL))
 
 		r.Get("/api/v1/me/orgs", orgHandler.ListMyOrgs)
+		r.Delete("/api/v1/me", orgHandler.DeleteMe)
 
 		r.Route("/api/v1/orgs/{orgSlug}", func(r chi.Router) {
 			r.Get("/", orgHandler.GetOrg)
 			r.Get("/queue", queueHandler.GetQueue)
 			r.Get("/repos", orgHandler.ListRepos)
 			r.Patch("/repos/{repoID}", orgHandler.UpdateRepo)
+			r.Delete("/repos/{repoID}", orgHandler.DeleteRepo)
 			r.Post("/repos/{repoID}/sync", ghHandler.SyncRepo)
+			r.Get("/prs/{prID}", orgHandler.GetPR)
 			r.Get("/teams", orgHandler.ListTeams)
 			r.Post("/join-requests", orgHandler.CreateJoinRequest)
 			r.Get("/join-requests", orgHandler.ListJoinRequests)
