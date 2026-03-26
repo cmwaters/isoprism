@@ -98,6 +98,61 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GET /api/v1/orgs/{orgSlug}/queue/{prID}
+func (h *QueueHandler) GetPR(w http.ResponseWriter, r *http.Request) {
+	prID := chi.URLParam(r, "prID")
+	ctx := r.Context()
+
+	var pr models.PullRequest
+	var analysis models.PRAnalysis
+	var repoFullName string
+
+	err := h.DB.QueryRow(ctx, `
+		select
+			pr.id, pr.org_id, pr.repo_id, pr.github_pr_id, pr.number, pr.title,
+			pr.body, pr.author_github_login, pr.author_avatar_url,
+			pr.base_branch, pr.head_branch, pr.state, pr.draft,
+			pr.additions, pr.deletions, pr.changed_files, pr.html_url,
+			pr.opened_at, pr.closed_at, pr.merged_at, pr.last_activity_at,
+			pr.last_synced_at, pr.created_at, pr.updated_at,
+			r.full_name as repo_full_name,
+			pa.summary, pa.size_label, pa.risk_score, pa.risk_label,
+			pa.impacted_areas, pa.risk_reasons
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		left join pr_analyses pa on pa.pull_request_id = pr.id
+		where pr.id = $1
+	`, prID).Scan(
+		&pr.ID, &pr.OrgID, &pr.RepoID, &pr.GitHubPRID, &pr.Number, &pr.Title,
+		&pr.Body, &pr.AuthorGitHubLogin, &pr.AuthorAvatarURL,
+		&pr.BaseBranch, &pr.HeadBranch, &pr.State, &pr.Draft,
+		&pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.HTMLURL,
+		&pr.OpenedAt, &pr.ClosedAt, &pr.MergedAt, &pr.LastActivityAt,
+		&pr.LastSyncedAt, &pr.CreatedAt, &pr.UpdatedAt,
+		&repoFullName,
+		&analysis.Summary, &analysis.SizeLabel, &analysis.RiskScore, &analysis.RiskLabel,
+		&analysis.ImpactedAreas, &analysis.RiskReasons,
+	)
+	if err != nil {
+		http.Error(w, "pull request not found", http.StatusNotFound)
+		return
+	}
+	pr.RepoFullName = repoFullName
+	if analysis.Summary != nil {
+		pr.Analysis = &analysis
+	}
+
+	item := models.QueueItem{
+		PullRequest:  pr,
+		ReviewState:  computeReviewState(pr),
+		WaitingHours: waitingHours(pr),
+		UrgencyScore: computeUrgency(pr, analysis),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(item)
+}
+
 func waitingHours(pr models.PullRequest) float64 {
 	ref := pr.OpenedAt
 	if pr.LastActivityAt != nil {
