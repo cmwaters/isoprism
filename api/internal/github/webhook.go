@@ -73,6 +73,22 @@ type WebhookInstallationPayload struct {
 	} `json:"repositories"`
 }
 
+type WebhookInstallationReposPayload struct {
+	Action       string `json:"action"`
+	Installation struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
+	RepositoriesAdded []struct {
+		ID       int64  `json:"id"`
+		FullName string `json:"full_name"`
+		Name     string `json:"name"`
+	} `json:"repositories_added"`
+	RepositoriesRemoved []struct {
+		ID       int64  `json:"id"`
+		FullName string `json:"full_name"`
+	} `json:"repositories_removed"`
+}
+
 func ParsePRPayload(body []byte) (*WebhookPRPayload, error) {
 	var p WebhookPRPayload
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -83,6 +99,14 @@ func ParsePRPayload(body []byte) (*WebhookPRPayload, error) {
 
 func ParseInstallationPayload(body []byte) (*WebhookInstallationPayload, error) {
 	var p WebhookInstallationPayload
+	if err := json.Unmarshal(body, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func ParseInstallationReposPayload(body []byte) (*WebhookInstallationReposPayload, error) {
+	var p WebhookInstallationReposPayload
 	if err := json.Unmarshal(body, &p); err != nil {
 		return nil, err
 	}

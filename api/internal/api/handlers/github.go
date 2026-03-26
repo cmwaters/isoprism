@@ -34,6 +34,8 @@ func (h *GitHubHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		h.handlePREvent(r.Context(), body)
 	case "installation":
 		h.handleInstallationEvent(r.Context(), body)
+	case "installation_repositories":
+		h.handleInstallationReposEvent(r.Context(), body)
 	case "ping":
 		// acknowledge
 	}
@@ -124,6 +126,74 @@ func (h *GitHubHandler) handleInstallationEvent(ctx context.Context, body []byte
 	}
 }
 
+func (h *GitHubHandler) handleInstallationReposEvent(ctx context.Context, body []byte) {
+	payload, err := github.ParseInstallationReposPayload(body)
+	if err != nil {
+		log.Printf("error parsing installation_repositories payload: %v", err)
+		return
+	}
+
+	// Look up org and db installation ID from the GitHub installation ID
+	var orgID, dbInstallationID string
+	err = h.DB.QueryRow(ctx, `
+		select org_id, id from github_installations where installation_id = $1
+	`, payload.Installation.ID).Scan(&orgID, &dbInstallationID)
+	if err != nil {
+		log.Printf("installation_repositories: no installation found for id=%d: %v", payload.Installation.ID, err)
+		return
+	}
+
+	// Track DB repo IDs for added repos so we can sync their PRs
+	type addedRepo struct {
+		dbID     string
+		fullName string
+	}
+	var added []addedRepo
+
+	for _, repo := range payload.RepositoriesAdded {
+		var dbRepoID string
+		err := h.DB.QueryRow(ctx, `
+			insert into repositories (org_id, installation_id, github_repo_id, full_name, is_active)
+			values ($1, $2, $3, $4, true)
+			on conflict (org_id, github_repo_id) do update set
+				full_name = excluded.full_name,
+				is_active = true
+			returning id
+		`, orgID, dbInstallationID, repo.ID, repo.FullName).Scan(&dbRepoID)
+		if err != nil {
+			log.Printf("installation_repositories: error upserting repo %s: %v", repo.FullName, err)
+			continue
+		}
+		added = append(added, addedRepo{dbID: dbRepoID, fullName: repo.FullName})
+	}
+
+	for _, repo := range payload.RepositoriesRemoved {
+		_, _ = h.DB.Exec(ctx, `
+			update repositories set is_active = false
+			where org_id = $1 and github_repo_id = $2
+		`, orgID, repo.ID)
+	}
+
+	log.Printf("installation_repositories: added=%d removed=%d for installation_id=%d",
+		len(payload.RepositoriesAdded), len(payload.RepositoriesRemoved), payload.Installation.ID)
+
+	// Sync open PRs for newly added repos in the background
+	if len(added) > 0 {
+		go func() {
+			bgCtx := context.Background()
+			ghClient, err := h.AppClient.ClientForInstallation(bgCtx, payload.Installation.ID)
+			if err != nil {
+				log.Printf("installation_repositories: failed to get GitHub client: %v", err)
+				return
+			}
+			for _, r := range added {
+				n := h.syncOpenPRs(bgCtx, ghClient, orgID, r.dbID, r.fullName)
+				log.Printf("installation_repositories: synced %d open PRs for %s", n, r.fullName)
+			}
+		}()
+	}
+}
+
 // GET /api/v1/github/callback
 // Called after GitHub App installation. Creates or updates the org and redirects to repo selection.
 func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +201,13 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 	installationIDStr := r.URL.Query().Get("installation_id")
 	userID := r.URL.Query().Get("state")
 	setupAction := r.URL.Query().Get("setup_action") // "install" or "update"
+
+	if setupAction == "request" {
+		// User requested access but doesn't have permission to install the app.
+		// Redirect back to the frontend with a notification.
+		http.Redirect(w, r, h.FrontendURL+"/request-sent", http.StatusFound)
+		return
+	}
 
 	if installationIDStr == "" {
 		http.Error(w, "missing installation_id", http.StatusBadRequest)
@@ -343,41 +420,18 @@ func (h *GitHubHandler) syncOrgTeams(ctx context.Context, ghClient *github.Clien
 	}
 }
 
-// POST /api/v1/orgs/{orgSlug}/repos/{repoID}/sync
-func (h *GitHubHandler) SyncRepo(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	repoID := r.PathValue("repoID")
-
-	var installationID int64
-	var fullName string
-	var orgID string
-	err := h.DB.QueryRow(ctx, `
-		select gi.installation_id, r.full_name, r.org_id
-		from repositories r
-		join github_installations gi on gi.id = r.installation_id
-		where r.id = $1 and r.is_active = true
-	`, repoID).Scan(&installationID, &fullName, &orgID)
-	if err != nil {
-		http.Error(w, "repo not found", http.StatusNotFound)
-		return
-	}
-
-	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
-	if err != nil {
-		http.Error(w, "failed to authenticate with GitHub", http.StatusInternalServerError)
-		return
-	}
-
+// syncOpenPRs fetches open PRs for a repo from GitHub and upserts them into the DB.
+func (h *GitHubHandler) syncOpenPRs(ctx context.Context, ghClient *github.Client, orgID, repoID, fullName string) int {
 	parts := splitRepoName(fullName)
 	if parts == nil {
-		http.Error(w, "invalid repo name", http.StatusInternalServerError)
-		return
+		log.Printf("syncOpenPRs: invalid repo name %q", fullName)
+		return 0
 	}
 
 	prs, err := ghClient.ListOpenPullRequests(ctx, parts[0], parts[1])
 	if err != nil {
-		http.Error(w, "failed to fetch PRs from GitHub", http.StatusInternalServerError)
-		return
+		log.Printf("syncOpenPRs: failed to fetch PRs for %s: %v", fullName, err)
+		return 0
 	}
 
 	now := time.Now()
@@ -410,12 +464,97 @@ func (h *GitHubHandler) SyncRepo(w http.ResponseWriter, r *http.Request) {
 			pr.CreatedAt, pr.ClosedAt, pr.MergedAt, pr.UpdatedAt, now, now,
 		)
 		if err != nil {
-			log.Printf("error upserting PR #%d: %v", pr.Number, err)
+			log.Printf("syncOpenPRs: error upserting PR #%d: %v", pr.Number, err)
+		}
+	}
+	return len(prs)
+}
+
+// POST /api/v1/orgs/{orgSlug}/sync
+// Syncs open PRs for all active repos in the org from GitHub.
+func (h *GitHubHandler) SyncOrg(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	orgSlug := r.PathValue("orgSlug")
+
+	var orgID string
+	var installationID int64
+	err := h.DB.QueryRow(ctx, `
+		select o.id, gi.installation_id
+		from organizations o
+		join github_installations gi on gi.org_id = o.id
+		where o.slug = $1
+	`, orgSlug).Scan(&orgID, &installationID)
+	if err != nil {
+		http.Error(w, "org not found", http.StatusNotFound)
+		return
+	}
+
+	rows, err := h.DB.Query(ctx, `
+		select id, full_name from repositories
+		where org_id = $1 and is_active = true
+	`, orgID)
+	if err != nil {
+		http.Error(w, "failed to fetch repos", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type repoInfo struct {
+		id       string
+		fullName string
+	}
+	var repos []repoInfo
+	for rows.Next() {
+		var r repoInfo
+		if err := rows.Scan(&r.id, &r.fullName); err == nil {
+			repos = append(repos, r)
 		}
 	}
 
+	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		http.Error(w, "failed to authenticate with GitHub", http.StatusInternalServerError)
+		return
+	}
+
+	total := 0
+	for _, repo := range repos {
+		total += h.syncOpenPRs(ctx, ghClient, orgID, repo.id, repo.fullName)
+	}
+
+	log.Printf("SyncOrg: synced %d open PRs across %d repos for org=%s", total, len(repos), orgSlug)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"synced": len(prs)})
+	json.NewEncoder(w).Encode(map[string]interface{}{"synced": total, "repos": len(repos)})
+}
+
+// POST /api/v1/orgs/{orgSlug}/repos/{repoID}/sync
+func (h *GitHubHandler) SyncRepo(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	repoID := r.PathValue("repoID")
+
+	var installationID int64
+	var fullName string
+	var orgID string
+	err := h.DB.QueryRow(ctx, `
+		select gi.installation_id, r.full_name, r.org_id
+		from repositories r
+		join github_installations gi on gi.id = r.installation_id
+		where r.id = $1 and r.is_active = true
+	`, repoID).Scan(&installationID, &fullName, &orgID)
+	if err != nil {
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+
+	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		http.Error(w, "failed to authenticate with GitHub", http.StatusInternalServerError)
+		return
+	}
+
+	synced := h.syncOpenPRs(ctx, ghClient, orgID, repoID, fullName)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"synced": synced})
 }
 
 // ensureUserExists syncs the user from auth.users into public.users if they don't exist yet.

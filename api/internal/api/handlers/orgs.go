@@ -85,7 +85,7 @@ func (h *OrgHandler) ListRepos(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.Query(ctx, `
 		select id, org_id, installation_id, github_repo_id, full_name, default_branch, is_active, created_at
 		from repositories
-		where org_id = $1
+		where org_id = $1 and is_active = true
 		order by full_name asc
 	`, orgID)
 	if err != nil {

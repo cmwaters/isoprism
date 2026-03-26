@@ -7,7 +7,6 @@ import { AppHeader } from "@/components/layout/app-header";
 import { Organization, Repository } from "@/lib/types";
 
 const GITHUB_APP_NAME_ENV = process.env.NEXT_PUBLIC_GITHUB_APP_NAME;
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 const GITHUB_APP_NAME = process.env.NEXT_PUBLIC_GITHUB_APP_NAME;
 
@@ -20,7 +19,7 @@ export default function SettingsPage() {
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [repos, setRepos] = useState<Repository[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(true);
-  const [toggling, setToggling] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null); // repoID or "all"
   const [removing, setRemoving] = useState<string | null>(null);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -61,6 +60,30 @@ export default function SettingsPage() {
       .finally(() => setLoadingRepos(false));
   }, [orgSlug, token]);
 
+  const syncRepo = useCallback(async (repoID: string) => {
+    if (!token || syncing) return;
+    setSyncing(repoID);
+    try {
+      await fetch(`${API_URL}/api/v1/orgs/${orgSlug}/repos/${repoID}/sync`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {}
+    setSyncing(null);
+  }, [token, syncing, orgSlug]);
+
+  const syncAll = useCallback(async () => {
+    if (!token || syncing) return;
+    setSyncing("all");
+    try {
+      await fetch(`${API_URL}/api/v1/orgs/${orgSlug}/sync`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {}
+    setSyncing(null);
+  }, [token, syncing, orgSlug]);
+
   const removeRepo = useCallback(async (repo: Repository) => {
     if (!token || removing) return;
     setRemoving(repo.id);
@@ -89,24 +112,6 @@ export default function SettingsPage() {
       setDeletingAccount(false);
     }
   }, [token, router]);
-
-  const toggleRepo = useCallback(async (repo: Repository) => {
-    if (!token || toggling) return;
-    setToggling(repo.id);
-    const newActive = !repo.is_active;
-    setRepos((prev) => prev.map((r) => (r.id === repo.id ? { ...r, is_active: newActive } : r)));
-    try {
-      const res = await fetch(`${API_URL}/api/v1/orgs/${orgSlug}/repos/${repo.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ is_active: newActive }),
-      });
-      if (!res.ok) throw new Error();
-    } catch {
-      setRepos((prev) => prev.map((r) => (r.id === repo.id ? { ...r, is_active: repo.is_active } : r)));
-    }
-    setToggling(null);
-  }, [token, toggling, orgSlug]);
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -171,17 +176,30 @@ export default function SettingsPage() {
             <section>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Repositories</h2>
-                {GITHUB_APP_NAME_ENV && (
-                  <a
-                    href={`https://github.com/apps/${GITHUB_APP_NAME_ENV}/installations/new`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 transition-colors"
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={syncAll}
+                    disabled={syncing !== null}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 transition-colors disabled:opacity-50"
                   >
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z" />
+                    <svg className={`h-3.5 w-3.5 ${syncing === "all" ? "animate-spin" : ""}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M13.5 8a5.5 5.5 0 1 1-1.3-3.5" strokeLinecap="round" />
+                      <path d="M13.5 2v3.5H10" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    Add repositories
-                  </a>
-                )}
+                    {syncing === "all" ? "Syncing…" : "Sync all"}
+                  </button>
+                  {GITHUB_APP_NAME_ENV && (
+                    <a
+                      href={`https://github.com/apps/${GITHUB_APP_NAME_ENV}/installations/new`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 transition-colors"
+                    >
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z" />
+                      </svg>
+                      Add repositories
+                    </a>
+                  )}
+                </div>
               </div>
               <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
                 {loadingRepos ? (
@@ -198,7 +216,6 @@ export default function SettingsPage() {
                       <tr className="border-b border-neutral-100">
                         <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400">Repository</th>
                         <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400">Default branch</th>
-                        <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400">Tracking</th>
                         <th className="px-5 py-3" />
                       </tr>
                     </thead>
@@ -207,27 +224,23 @@ export default function SettingsPage() {
                         <tr key={repo.id}>
                           <td className="px-5 py-3 font-medium text-neutral-900">{repo.full_name}</td>
                           <td className="px-5 py-3 font-mono text-neutral-500 text-xs">{repo.default_branch}</td>
-                          <td className="px-5 py-3">
-                            <button
-                              onClick={() => toggleRepo(repo)}
-                              disabled={toggling === repo.id}
-                              role="switch"
-                              aria-checked={repo.is_active}
-                              className={`relative shrink-0 h-5 w-9 rounded-full transition-colors focus:outline-none ${
-                                repo.is_active ? "bg-neutral-900" : "bg-neutral-200"
-                              } ${toggling === repo.id ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                            >
-                              <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${repo.is_active ? "translate-x-4" : "translate-x-0"}`} />
-                            </button>
-                          </td>
                           <td className="px-5 py-3 text-right">
-                            <button
-                              onClick={() => removeRepo(repo)}
-                              disabled={removing === repo.id}
-                              className="text-xs text-neutral-400 hover:text-red-500 transition-colors disabled:opacity-50"
-                            >
-                              Remove
-                            </button>
+                            <div className="flex items-center justify-end gap-3">
+                              <button
+                                onClick={() => syncRepo(repo.id)}
+                                disabled={syncing !== null}
+                                className="text-xs text-neutral-400 hover:text-neutral-700 transition-colors disabled:opacity-50"
+                              >
+                                {syncing === repo.id ? "Syncing…" : "Sync"}
+                              </button>
+                              <button
+                                onClick={() => removeRepo(repo)}
+                                disabled={removing === repo.id}
+                                className="text-xs text-neutral-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -278,9 +291,20 @@ export default function SettingsPage() {
         ) : (
           /* Org settings — repositories */
           <section>
-            <h2 className="text-sm font-semibold text-neutral-500 mb-3 uppercase tracking-wide">
-              Repositories
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Repositories</h2>
+              <button
+                onClick={syncAll}
+                disabled={syncing !== null}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 transition-colors disabled:opacity-50"
+              >
+                <svg className={`h-3.5 w-3.5 ${syncing === "all" ? "animate-spin" : ""}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M13.5 8a5.5 5.5 0 1 1-1.3-3.5" strokeLinecap="round" />
+                  <path d="M13.5 2v3.5H10" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {syncing === "all" ? "Syncing…" : "Sync all"}
+              </button>
+            </div>
             <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
               {loadingRepos ? (
                 <div className="px-5 py-8 text-center">
@@ -300,29 +324,27 @@ export default function SettingsPage() {
                           Default branch: <span className="font-mono">{repo.default_branch}</span>
                         </p>
                       </div>
-                      <button
-                        onClick={() => toggleRepo(repo)}
-                        disabled={toggling === repo.id}
-                        role="switch"
-                        aria-checked={repo.is_active}
-                        className={`relative ml-4 shrink-0 h-6 w-11 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-400 focus:ring-offset-2 ${
-                          repo.is_active ? "bg-neutral-900" : "bg-neutral-200"
-                        } ${toggling === repo.id ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                      >
-                        <span
-                          className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                            repo.is_active ? "translate-x-5" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
+                      <div className="flex items-center gap-3 ml-4 shrink-0">
+                        <button
+                          onClick={() => syncRepo(repo.id)}
+                          disabled={syncing !== null}
+                          className="text-xs text-neutral-400 hover:text-neutral-700 transition-colors disabled:opacity-50"
+                        >
+                          {syncing === repo.id ? "Syncing…" : "Sync"}
+                        </button>
+                        <button
+                          onClick={() => removeRepo(repo)}
+                          disabled={removing === repo.id}
+                          className="text-xs text-neutral-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-            <p className="text-xs text-neutral-400 mt-2">
-              Disabled repositories are excluded from the queue and won&apos;t receive analysis.
-            </p>
           </section>
         )}
       </main>
