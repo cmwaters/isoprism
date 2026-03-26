@@ -165,22 +165,29 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 	var orgSlug string
 
 	if setupAction == "update" {
-		// On update: just look up the existing org by installation_id and re-sync repos
+		// On update: look up the existing org by installation_id and re-sync repos.
+		// If not found (e.g. DB was reset but app is still installed on GitHub), fall through
+		// to the install path below to recreate everything from scratch.
 		err = h.DB.QueryRow(ctx, `
 			select o.id, o.slug
 			from organizations o
 			join github_installations gi on gi.org_id = o.id
 			where gi.installation_id = $1
 		`, installationID).Scan(&orgID, &orgSlug)
-		if err != nil {
-			http.Error(w, "org not found for installation", http.StatusNotFound)
+		if err == nil {
+			// Found — ensure the user is a member and redirect to queue
+			if userID != "" {
+				_, _ = h.DB.Exec(ctx, `
+					insert into org_members (org_id, user_id, role)
+					values ($1, $2, 'org_admin')
+					on conflict (org_id, user_id) do nothing
+				`, orgID, userID)
+			}
+			h.syncRepos(ctx, ghClient, orgID, installationIDStr)
+			http.Redirect(w, r, h.FrontendURL+"/orgs/"+orgSlug, http.StatusFound)
 			return
 		}
-
-		// Re-sync repos
-		h.syncRepos(ctx, ghClient, orgID, installationIDStr)
-		http.Redirect(w, r, h.FrontendURL+"/onboarding/repos?org="+orgSlug, http.StatusFound)
-		return
+		// Not found — fall through to create org/installation from scratch
 	}
 
 	// New installation: create org

@@ -1,15 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api";
+import { Organization } from "@/lib/types";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // If the user already has an org (e.g. they completed installation but landed here anyway),
+  // skip straight to the queue.
+  useEffect(() => {
+    async function checkExistingOrg() {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      if (!token) return;
+      try {
+        const { orgs } = await apiFetch<{ orgs: Organization[] }>("/api/v1/me/orgs", token);
+        if (orgs && orgs.length > 0) {
+          router.replace(`/orgs/${orgs[0].slug}`);
+        }
+      } catch {
+        // No orgs found or API error — stay on this page
+      }
+    }
+    checkExistingOrg();
+  }, []);
 
   async function handleConnectGitHub() {
     setLoading(true);
@@ -43,7 +64,7 @@ export default function OnboardingPage() {
 
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-2">
-            Connect GitHub
+            Welcome!
           </h1>
           <p className="text-sm text-neutral-500">
             Install the Aperture GitHub App on your org or personal account to get started.
