@@ -69,10 +69,30 @@ export interface PullRequest {
   analysis?: PRAnalysis;
 }
 
+/**
+ * Author-bucket state reasons  → the PR author needs to act.
+ * Reviewer-bucket state reasons → a reviewer needs to act.
+ */
+export type StateReason =
+  // Author bucket
+  | "ci_failing"         // CI is broken — fix the build
+  | "merge_conflict"     // Merge conflicts — resolve them
+  | "changes_requested"  // Reviewer requested changes
+  | "unresolved_threads" // Reviewer asked a question; no reply yet
+  | "ready_to_merge"     // Approved — merge it
+  // Reviewer bucket
+  | "re_review"          // Author pushed new commits after changes_requested
+  | "review_requested"   // Explicitly asked to review
+  | "needs_review";      // General review needed (assumed codeowner)
+
+export type ActionBucket = "author" | "reviewer";
+export type PriorityTier = "critical" | "high" | "medium";
+
 export interface QueueItem extends PullRequest {
-  urgency_score: number;
-  review_state: "needs_review" | "needs_author" | "stalled" | "draft";
   waiting_hours: number;
+  state_reason: StateReason;
+  action_bucket: ActionBucket;
+  priority_tier: PriorityTier;
 }
 
 export interface QueueResponse {

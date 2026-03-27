@@ -40,7 +40,7 @@ export default async function PRPage({ params }: Props) {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <AppHeader orgSlug={orgSlug} activeTab="queue" />
+      <AppHeader orgSlug={orgSlug} activeTab="flow" />
       <main className="max-w-3xl mx-auto px-6 py-10">
 
         {/* Back */}

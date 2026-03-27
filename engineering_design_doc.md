@@ -1,46 +1,53 @@
 # Aperture — Engineering Design Document
 
-> Status: Draft v0.2 | Author: Callum | Updated: 2026-03-22
+> Status: v0.5 | Author: Callum | Updated: 2026-03-26
 
-## Iteration Log
+---
 
-| Version | Date | What was built |
-|---|---|---|
-| v0.1 | 2026-03-22 | Initial design document |
-| v0.2 | 2026-03-22 | Iteration 1: Auth, onboarding, repo connection, Activity View (queue) |
+## Contents
+
+1. [Overview](#1-overview)
+2. [Architecture](#2-architecture)
+3. [Data Model](#3-data-model)
+4. [GitHub App Integration](#4-github-app-integration)
+5. [Backend API](#5-backend-api)
+6. [Frontend](#6-frontend)
+7. [Auth & Security](#7-auth--security)
+8. [Deployment](#8-deployment)
+9. [Roadmap](#9-roadmap)
+10. [Technical Decisions](#10-technical-decisions)
+11. [Open Questions](#11-open-questions)
+12. [Iteration Log](#12-iteration-log)
 
 ---
 
 ## 1. Overview
 
-Aperture is a SaaS web application that provides a visual intelligence layer over GitHub pull requests. It ingests GitHub events via webhook, enriches them with AI-generated analysis, and presents a real-time interface for engineers and team leads to understand flow, risk, and change meaning.
+Aperture is a SaaS web application that provides a visual intelligence layer over GitHub pull requests. It ingests GitHub events via webhook, enriches them with AI-generated analysis, and presents an interface for engineers and team leads to understand flow, risk, and change meaning.
 
-This document covers the technical architecture, data model, API design, infrastructure, and MVP delivery plan.
+**Target scale:** a couple dozen engineering teams. Architecture is deliberately simple — no message queues, no search indices, no caching layer beyond what Postgres provides.
 
 ---
 
-## 2. Tech Stack
+## 2. Architecture
+
+### Tech Stack
 
 | Layer | Technology | Hosting |
 |---|---|---|
-| Frontend | Next.js 14+ (App Router) + TypeScript + Tailwind CSS + shadcn/ui | Vercel |
+| Frontend | Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui | Vercel |
 | Backend API | Go (chi router) | Fly.io |
-| Database | Supabase (Postgres 15) | Supabase (managed) |
+| Database | Supabase (Postgres 15) | Supabase |
 | Auth | Supabase Auth (GitHub OAuth) | Supabase |
-| Realtime | Supabase Realtime (Postgres changes) | Supabase |
-| AI | Abstracted provider — Anthropic Claude + OpenAI GPT | External APIs |
-| GitHub Integration | GitHub App (webhooks + API) | — |
-| File Storage | Supabase Storage (if needed for attachments) | Supabase |
+| AI | Anthropic Claude (primary) / OpenAI GPT (swap-in) | External APIs |
+| GitHub Integration | GitHub App (webhooks + REST API v3) | — |
 
----
-
-## 3. High-Level Architecture
+### System Diagram
 
 ```
                         ┌─────────────────────────────────────────┐
                         │               User's Browser             │
-                        │        Next.js (Vercel) + Supabase       │
-                        │        Realtime (WebSocket)              │
+                        │        Next.js (Vercel)                  │
                         └──────────────┬──────────────────────────┘
                                        │ REST / fetch
                         ┌──────────────▼──────────────────────────┐
@@ -52,537 +59,521 @@ This document covers the technical architecture, data model, API design, infrast
                         │  └──────┬──────┘  └────────┬─────────┘  │
                         │         │                  │             │
                         │  ┌──────▼──────────────────▼──────────┐ │
-                        │  │         Core Services               │ │
-                        │  │  PR Analyzer | Risk Scorer |        │ │
-                        │  │  Queue Ranker | Insights Builder    │ │
+                        │  │    Queue Ranker | PR Analyzer       │ │
+                        │  │    AI Provider Layer                │ │
                         │  └──────────────────┬─────────────────┘ │
-                        │                     │                    │
-                        │  ┌──────────────────▼─────────────────┐ │
-                        │  │         AI Provider Layer           │ │
-                        │  │   Anthropic Claude | OpenAI GPT     │ │
-                        │  └────────────────────────────────────┘ │
-                        └──────────────┬──────────────────────────┘
-                                       │ Postgres client
-                        ┌──────────────▼──────────────────────────┐
-                        │           Supabase (Postgres)            │
-                        │   teams | repos | pull_requests |        │
-                        │   pr_analyses | comments | insights      │
-                        └─────────────────────────────────────────┘
-                                       ▲
-                        ┌──────────────┴──────────────────────────┐
+                        └──────────────────────┼──────────────────┘
+                                               │ pgx
+                        ┌──────────────────────▼──────────────────┐
+                        │           Supabase (Postgres 15)         │
+                        │   organizations | repositories |         │
+                        │   pull_requests | pr_analyses            │
+                        └──────────────────────▲──────────────────┘
+                                               │ webhooks
+                        ┌──────────────────────┴──────────────────┐
                         │              GitHub                      │
                         │   GitHub App webhooks + REST API v3      │
                         └─────────────────────────────────────────┘
 ```
 
+### Monorepo Layout
+
+```
+/api          Go backend (chi router, handlers, GitHub client, AI)
+/web          Next.js frontend (App Router)
+/db
+  /migrations Plain SQL migration files
+```
+
+---
+
+## 3. Data Model
+
+Multi-tenancy is scoped at the **organization** level. Every resource table carries `org_id`. RLS policies in Supabase enforce org isolation as a secondary layer; the Go backend always includes `org_id` in queries as the primary guard.
+
+### Tables
+
+```sql
+-- Users (mirrors auth.users; populated by trigger on sign-in)
+users
+  id               uuid PK          -- matches auth.users.id
+  email            text
+  display_name     text
+  avatar_url       text
+  github_user_id   bigint UNIQUE
+  github_username  text
+  created_at       timestamptz
+
+-- Organizations (top-level tenant; one per GitHub org or personal account)
+organizations
+  id                    uuid PK
+  name                  text
+  slug                  text UNIQUE          -- used in URLs: /orgs/{slug}
+  github_account_login  text UNIQUE
+  github_account_type   text                 -- 'Organization' | 'User'
+  github_account_id     bigint
+  avatar_url            text
+  created_at            timestamptz
+
+-- Org membership
+org_members
+  id          uuid PK
+  org_id      uuid FK → organizations
+  user_id     uuid FK → users
+  role        text                           -- 'org_admin' | 'member'
+  created_at  timestamptz
+  UNIQUE (org_id, user_id)
+
+-- Org join requests (for users whose GitHub org is already connected)
+org_join_requests
+  id           uuid PK
+  org_id       uuid FK → organizations
+  user_id      uuid FK → users
+  status       text DEFAULT 'pending'        -- 'pending' | 'approved' | 'rejected'
+  created_at   timestamptz
+  resolved_at  timestamptz
+  resolved_by  uuid FK → users
+  UNIQUE (org_id, user_id)
+
+-- GitHub teams (synced from GitHub on install, for org-type accounts)
+teams
+  id              uuid PK
+  org_id          uuid FK → organizations
+  name            text
+  slug            text
+  github_team_id  bigint
+  created_at      timestamptz
+  UNIQUE (org_id, slug)
+
+-- GitHub team membership
+team_members
+  id          uuid PK
+  team_id     uuid FK → teams
+  user_id     uuid FK → users
+  role        text                           -- 'team_admin' | 'member'
+  created_at  timestamptz
+  UNIQUE (team_id, user_id)
+
+-- GitHub App installations (one per org)
+github_installations
+  id                  uuid PK
+  org_id              uuid FK → organizations
+  installation_id     bigint UNIQUE          -- GitHub's numeric installation ID
+  account_login       text
+  account_type        text                   -- 'Organization' | 'User'
+  account_avatar_url  text
+  created_at          timestamptz
+
+-- Repositories
+repositories
+  id               uuid PK
+  org_id           uuid FK → organizations
+  installation_id  uuid FK → github_installations
+  github_repo_id   bigint
+  full_name        text                      -- e.g. "acme/backend"
+  default_branch   text DEFAULT 'main'
+  is_active        boolean DEFAULT true      -- user-controlled; inactive repos are hidden
+  created_at       timestamptz
+  UNIQUE (org_id, github_repo_id)
+
+-- Team → repo mapping (which repos a GitHub team watches)
+team_repos
+  team_id  uuid FK → teams
+  repo_id  uuid FK → repositories
+  PRIMARY KEY (team_id, repo_id)
+
+-- Pull requests (upserted on webhook events and manual syncs)
+pull_requests
+  id                    uuid PK
+  org_id                uuid FK → organizations
+  repo_id               uuid FK → repositories
+  github_pr_id          bigint
+  number                int
+  title                 text
+  body                  text
+  author_github_login   text
+  author_avatar_url     text
+  base_branch           text
+  head_branch           text
+  state                 text                 -- 'open' | 'closed' | 'merged'
+  draft                 boolean DEFAULT false
+  additions             int
+  deletions             int
+  changed_files         int
+  html_url              text
+  opened_at             timestamptz
+  closed_at             timestamptz
+  merged_at             timestamptz
+  last_activity_at      timestamptz
+  last_synced_at        timestamptz
+  created_at            timestamptz
+  updated_at            timestamptz
+  UNIQUE (repo_id, github_pr_id)
+
+-- AI-generated analysis per PR (one row per HEAD commit analysed)
+pr_analyses
+  id                uuid PK
+  pull_request_id   uuid FK → pull_requests
+  commit_sha        text
+  summary           text
+  why               text
+  impacted_areas    text[]
+  key_files         text[]
+  size_label        text                     -- 'small' | 'medium' | 'large'
+  risk_score        int                      -- 1–10
+  risk_label        text                     -- 'low' | 'medium' | 'high'
+  risk_reasons      text[]
+  semantic_groups   jsonb                    -- [{label, files[], description}]
+  ai_provider       text
+  ai_model          text
+  generated_at      timestamptz
+  created_at        timestamptz
+
+-- PR reviews (synced from GitHub)
+pr_reviews
+  id                   uuid PK
+  pull_request_id      uuid FK → pull_requests
+  github_review_id     bigint UNIQUE
+  reviewer_login       text
+  reviewer_avatar_url  text
+  state                text                  -- 'approved' | 'changes_requested' | 'commented' | 'dismissed'
+  submitted_at         timestamptz
+
+-- Org-level preferences
+org_preferences
+  id                  uuid PK
+  org_id              uuid FK → organizations UNIQUE
+  pr_size_small_max   int DEFAULT 100        -- lines changed threshold
+  pr_size_medium_max  int DEFAULT 400
+  stale_after_hours   int DEFAULT 48
+  risk_sensitivity    text DEFAULT 'medium'  -- 'low' | 'medium' | 'high'
+  ai_provider         text DEFAULT 'anthropic'
+  created_at          timestamptz
+  updated_at          timestamptz
+```
+
+### RLS Summary
+
+Two helper functions gate all policies:
+- `is_org_member(org_id)` — true if `auth.uid()` is in `org_members` for that org
+- `is_org_admin(org_id)` — true if role is `org_admin`
+
+All reads are gated by `is_org_member`; mutations (toggle repo, update preferences, resolve join requests) are gated by `is_org_admin`. The Go backend bypasses RLS using the service role key, which is never exposed to the client.
+
 ---
 
 ## 4. GitHub App Integration
 
-### Why GitHub App over OAuth App
+### Why GitHub App
 
-- Installable at the org or repo level without a personal token
-- Webhook delivery is tied to the App, not to a user
-- Fine-grained permissions (read PRs, read code, post comments, post reviews)
-- Installation tokens are short-lived and auto-refreshed — more secure
+- Installable at org or personal-account level without a personal token
+- Webhook delivery tied to the App, not to a user
+- Fine-grained permissions; installation tokens are short-lived and auto-refreshed
 
 ### Permissions Required
 
 | Permission | Access | Reason |
 |---|---|---|
 | Pull requests | Read & Write | Read diffs, post comments, submit reviews |
-| Contents | Read | Read file tree and diffs |
+| Contents | Read | File tree and diffs |
 | Metadata | Read | Repo info |
-| Issues | Read | Linked issue context |
 | Members | Read | Reviewer identity |
 
-### Webhook Events Consumed
+### Webhook Events
 
-| Event | Trigger |
-|---|---|
-| `pull_request` | opened, synchronize, closed, reopened, ready_for_review |
-| `pull_request_review` | submitted |
-| `pull_request_review_comment` | created, edited, deleted |
-| `issue_comment` | created (on PRs) |
+| Event | Actions handled | Status |
+|---|---|---|
+| `pull_request` | opened, synchronize, reopened, ready_for_review, closed | ✅ |
+| `installation` | deleted | ✅ |
+| `installation_repositories` | added, removed | ✅ |
+| `pull_request_review` | submitted | Planned |
+| `pull_request_review_comment` | created, edited, deleted | Planned |
+| `issue_comment` | created | Planned |
+
+All webhooks are verified with `X-Hub-Signature-256` HMAC before processing.
 
 ### Installation Flow
 
-1. User clicks "Connect GitHub" in Settings
-2. Redirected to GitHub App installation page
-3. On callback, Aperture receives `installation_id`
-4. Go backend exchanges `installation_id` for an installation access token
-5. Team is linked to installation; selected repos are fetched and stored
+The callback URL is `GET /api/v1/github/callback`. GitHub passes `installation_id`, `setup_action`, and `state` (which carries the user's Supabase UUID, set when constructing the install URL).
+
+| `setup_action` | Behaviour |
+|---|---|
+| `install` | Creates org + installation record, syncs repos + open PRs, redirects to `/onboarding/repos` |
+| `update` | Looks up existing org by `installation_id`, re-syncs repos, redirects to queue |
+| `request` | User lacks permission to install; redirects to `/request-sent` with an explanatory message |
+
+When repos are added or removed via GitHub's own settings UI, the `installation_repositories` webhook fires. Added repos are upserted with `is_active = true` and their open PRs are backfilled asynchronously. Removed repos are marked `is_active = false`.
 
 ### Token Management
 
-- GitHub App authenticates with a JWT signed with the App's private key (RS256, 10-min expiry)
-- Per-installation tokens are fetched from `POST /app/installations/{id}/access_tokens` (1-hour expiry)
-- Go backend caches tokens in memory with expiry; refreshes on demand
+- **App JWT**: RS256-signed, 9-min expiry — used to fetch installation tokens
+- **Installation tokens**: 1-hour expiry, fetched from `POST /app/installations/{id}/access_tokens`, cached in memory per installation ID and refreshed on demand
 
 ---
 
-## 5. Data Model
+## 5. Backend API
 
-All tables include `created_at` and `updated_at` timestamps. Multi-tenancy is enforced by `team_id` on every resource. Row Level Security (RLS) is enabled on all tables via Supabase.
-
-```sql
--- Teams (the top-level tenant)
-teams
-  id            uuid PK
-  name          text
-  slug          text UNIQUE
-  created_at    timestamptz
-
--- Users (managed by Supabase Auth, extended here)
-users
-  id            uuid PK (matches auth.users.id)
-  email         text
-  display_name  text
-  avatar_url    text
-  created_at    timestamptz
-
--- Team membership
-team_members
-  id            uuid PK
-  team_id       uuid FK → teams
-  user_id       uuid FK → users
-  role          text  -- 'owner' | 'member'
-  created_at    timestamptz
-
--- GitHub App installations
-github_installations
-  id                  uuid PK
-  team_id             uuid FK → teams
-  installation_id     bigint UNIQUE   -- GitHub's installation ID
-  account_login       text            -- org or user login
-  account_type        text            -- 'Organization' | 'User'
-  created_at          timestamptz
-
--- Repositories
-repositories
-  id                  uuid PK
-  team_id             uuid FK → teams
-  installation_id     uuid FK → github_installations
-  github_repo_id      bigint UNIQUE
-  full_name           text            -- e.g. "acme/backend"
-  default_branch      text
-  is_active           boolean DEFAULT true
-  created_at          timestamptz
-
--- Pull Requests
-pull_requests
-  id                  uuid PK
-  team_id             uuid FK → teams
-  repo_id             uuid FK → repositories
-  github_pr_id        bigint
-  number              int
-  title               text
-  body                text
-  author_github_login text
-  base_branch         text
-  head_branch         text
-  state               text    -- 'open' | 'closed' | 'merged'
-  draft               boolean
-  additions           int
-  deletions           int
-  changed_files       int
-  opened_at           timestamptz
-  closed_at           timestamptz
-  merged_at           timestamptz
-  last_synced_at      timestamptz
-  created_at          timestamptz
-  updated_at          timestamptz
-
--- AI-generated analysis for a PR (versioned per push)
-pr_analyses
-  id                  uuid PK
-  pull_request_id     uuid FK → pull_requests
-  commit_sha          text            -- the HEAD sha this analysis covers
-  summary             text            -- plain-language summary
-  why                 text            -- inferred intent / linked issue context
-  impacted_areas      text[]          -- e.g. ["auth-service", "billing"]
-  key_files           text[]
-  size_label          text            -- 'small' | 'medium' | 'large'
-  risk_score          int             -- 1–10
-  risk_label          text            -- 'low' | 'medium' | 'high'
-  risk_reasons        text[]          -- bullet points explaining risk
-  semantic_groups     jsonb           -- [{label, files[], description}]
-  ai_provider         text            -- 'anthropic' | 'openai'
-  ai_model            text            -- e.g. 'claude-opus-4-5', 'gpt-4o'
-  generated_at        timestamptz
-  created_at          timestamptz
-
--- PR review state (synced from GitHub)
-pr_reviews
-  id                  uuid PK
-  pull_request_id     uuid FK → pull_requests
-  github_review_id    bigint
-  reviewer_login      text
-  state               text    -- 'approved' | 'changes_requested' | 'commented'
-  submitted_at        timestamptz
-
--- Comments (synced from GitHub)
-pr_comments
-  id                  uuid PK
-  pull_request_id     uuid FK → pull_requests
-  github_comment_id   bigint UNIQUE
-  author_login        text
-  body                text
-  in_reply_to_id      bigint
-  path                text            -- file path if inline
-  line               int             -- line number if inline
-  posted_at           timestamptz
-  updated_at          timestamptz
-
--- Pre-computed team insights (weekly snapshots)
-team_insights
-  id                  uuid PK
-  team_id             uuid FK → teams
-  period_start        date
-  period_end          date
-  median_review_time_hours  numeric
-  p95_review_time_hours     numeric
-  avg_pr_size               numeric
-  large_pr_count            int
-  total_prs_opened          int
-  total_prs_merged          int
-  top_reviewers             jsonb   -- [{login, review_count}]
-  computed_at               timestamptz
-
--- Team preferences
-team_preferences
-  id                        uuid PK
-  team_id                   uuid FK → teams UNIQUE
-  pr_size_small_max         int DEFAULT 100     -- lines changed
-  pr_size_medium_max        int DEFAULT 400
-  stale_after_hours         int DEFAULT 48
-  risk_sensitivity          text DEFAULT 'medium'
-  ai_provider               text DEFAULT 'anthropic'
-  created_at                timestamptz
-  updated_at                timestamptz
-```
-
-### Multi-Tenancy & Security
-
-- Every query from the Go backend includes `team_id` — no cross-tenant data leakage
-- Supabase RLS policies are a secondary enforcement layer
-- The frontend uses Supabase Auth session tokens; the Go API validates these via Supabase JWT verification
-
----
-
-## 6. Backend — Go API Server
-
-### Structure
+### File Structure (actual)
 
 ```
-/cmd
-  /api
-    main.go           -- entry point, wires up server
-/internal
-  /api
-    router.go         -- chi router, middleware
-    /handlers         -- one file per resource group
-      prs.go
-      teams.go
-      repos.go
-      webhooks.go
-      insights.go
-  /db
-    client.go         -- Supabase Postgres connection (pgx)
-    /queries          -- raw SQL or sqlc-generated
-  /github
-    app.go            -- JWT + installation token management
-    client.go         -- GitHub API wrapper
-    webhook.go        -- webhook signature verification + dispatch
-  /ai
-    provider.go       -- Provider interface
-    anthropic.go      -- Anthropic implementation
-    openai.go         -- OpenAI implementation
-    prompts.go        -- prompt templates
-  /analyzer
-    pr_analyzer.go    -- orchestrates AI analysis for a PR
-    risk_scorer.go    -- post-processes AI output into risk score
-    queue_ranker.go   -- computes urgency score for Activity View
-  /insights
-    builder.go        -- computes weekly team_insights rows
-  /models
-    types.go          -- shared Go structs
-/config
-  config.go           -- env-based config
+api/
+  cmd/api/main.go                  entry point
+  internal/
+    api/
+      router.go                    chi router + CORS + auth middleware
+      handlers/
+        github.go                  installation callback, webhooks, repo sync
+        orgs.go                    orgs, repos, PRs, join requests, auth status
+        queue.go                   queue endpoint + urgency scoring
+        teams.go                   teams list
+    github/
+      app.go                       JWT generation, installation token cache
+      client.go                    GitHub REST API wrapper
+      webhook.go                   signature verification, payload types
+    models/
+      types.go                     shared Go structs
+    config/
+      config.go                    env-based config loader
 ```
 
-### Key Middleware
+### API Routes
 
-- **Auth**: Validates Supabase JWT on all `/api/v1/*` routes; extracts `user_id` and `team_id`
-- **Webhook verification**: `X-Hub-Signature-256` HMAC check before any GitHub event is processed
-- **Rate limiting**: Simple per-IP limiter on webhook endpoint to guard against replay
-
-### Webhook → Analysis Pipeline
-
+**Public (no auth)**
 ```
-GitHub Event
-    │
-    ▼
 POST /webhooks/github
-    │  verify signature
-    │  parse event type
-    ▼
-pull_request (opened | synchronize)
-    │
-    ▼
-Upsert pull_request row in DB
-    │
-    ▼
-Enqueue analysis job
-    │  (goroutine + buffered channel, simple at this scale)
-    ▼
-Fetch diff from GitHub API
-    │
-    ▼
-Fetch linked issue/PR context (Linear/Jira if connected)
-    │
-    ▼
-Call AI Provider (summary + risk + semantic grouping)
-    │
-    ▼
-Persist pr_analyses row
-    │
-    ▼
-Supabase Realtime broadcasts change → frontend updates live
+GET  /api/v1/github/callback
+GET  /api/v1/auth/status
 ```
 
-### AI Provider Interface
+**Authenticated (Supabase JWT required)**
+```
+GET    /api/v1/me/orgs
+DELETE /api/v1/me
+
+GET    /api/v1/orgs/{orgSlug}
+GET    /api/v1/orgs/{orgSlug}/queue
+GET    /api/v1/orgs/{orgSlug}/repos
+PATCH  /api/v1/orgs/{orgSlug}/repos/{repoID}
+DELETE /api/v1/orgs/{orgSlug}/repos/{repoID}
+POST   /api/v1/orgs/{orgSlug}/repos/{repoID}/sync
+GET    /api/v1/orgs/{orgSlug}/prs/{prID}
+GET    /api/v1/orgs/{orgSlug}/teams
+POST   /api/v1/orgs/{orgSlug}/join-requests
+GET    /api/v1/orgs/{orgSlug}/join-requests
+PATCH  /api/v1/orgs/{orgSlug}/join-requests/{requestID}
+```
+
+Auth middleware parses the Supabase JWT without verifying the signature (tokens come from Supabase directly) and injects `X-User-ID` into the request for handlers to use.
+
+### Queue Scoring
+
+Each open, non-draft PR is scored for urgency at query time:
+
+```
+urgency = (wait_time_score × 0.4) + (risk_score × 0.35) + (impact_score × 0.25)
+```
+
+| Component | Source | Default (no analysis yet) |
+|---|---|---|
+| `wait_time_score` | Hours since `last_activity_at`, normalised, cap 48h | — |
+| `risk_score` | `pr_analyses.risk_score` (1–10 → 0–1) | 0.3 |
+| `impact_score` | `len(pr_analyses.impacted_areas)`, normalised, cap 5 | 0.2 |
+
+The queue is sorted descending by urgency score. Scores are recomputed on every request; there is no background tick yet.
+
+### AI Provider Interface (planned)
 
 ```go
 type Provider interface {
     AnalysePR(ctx context.Context, req AnalysisRequest) (*AnalysisResult, error)
 }
-
-type AnalysisRequest struct {
-    Title       string
-    Body        string
-    Diff        string   // truncated to token budget
-    IssueContext string  // from linked Linear/Jira/GitHub issue
-}
-
-type AnalysisResult struct {
-    Summary       string
-    Why           string
-    ImpactedAreas []string
-    KeyFiles      []string
-    SizeLabel     string
-    RiskScore     int
-    RiskLabel     string
-    RiskReasons   []string
-    SemanticGroups []SemanticGroup
-}
 ```
 
-Both `AnthropicProvider` and `OpenAIProvider` implement this interface. The active provider is selected from `team_preferences.ai_provider` (or a global env default). Switching providers requires no code change — only a config/preference update.
-
-### Queue Ranker — Activity View Scoring
-
-Each open PR is scored for urgency using a weighted formula:
-
-```
-urgency = (wait_time_score × 0.4) + (risk_score × 0.35) + (system_impact_score × 0.25)
-```
-
-- **wait_time_score**: normalised hours since last action (caps at `stale_after_hours`)
-- **risk_score**: from `pr_analyses.risk_score` (1–10 normalised to 0–1)
-- **system_impact_score**: number of impacted areas, normalised
-
-This is recomputed on each webhook event and on a 15-minute background tick.
+Both `AnthropicProvider` and `OpenAIProvider` will implement this. The active provider is selected from `org_preferences.ai_provider`. Switching requires no code change.
 
 ---
 
-## 7. Frontend — Next.js
+## 6. Frontend
 
 ### Route Structure
 
 ```
-/app
-  /(auth)
-    /login              -- GitHub OAuth sign-in
-    /callback           -- Supabase auth callback
-  /(app)
-    /[team]
-      /page.tsx         -- Activity View (default)
-      /pr/[id]
-        /page.tsx       -- PR Intelligence Panel
-      /insights
-        /page.tsx       -- Insights View
-      /settings
-        /page.tsx       -- Settings & Integrations
-        /repos
-        /integrations
-        /preferences
-        /members
-  /onboarding           -- first-time setup flow
+/login                           GitHub OAuth sign-in via Supabase
+/auth/callback                   Supabase auth callback → redirects to org or onboarding
+/onboarding                      GitHub App install (first-time users)
+/onboarding/repos                Repo selection after install
+/onboarding/join                 Request to join an existing org
+/request-sent                    Shown after setup_action=request; auto-redirects after 5s
+/                                Root: redirects to first org or /onboarding
+/orgs/[orgSlug]                  Queue (Activity View)
+/orgs/[orgSlug]/pr/[prId]        PR detail page
+/orgs/[orgSlug]/settings         Settings: org switcher, repos, add org, delete account
 ```
 
-### State & Data Fetching
+### Data Fetching Strategy
 
-- **Server Components** for initial data loads (SSR via Supabase server client)
-- **Client Components** only where interactivity or realtime is needed
-- **Supabase Realtime** subscription in the Activity View client component — listens for changes to `pull_requests` and `pr_analyses` for the team's repos, updates the queue without a page refresh
-- No Redux or heavy state library — React state + Supabase client is sufficient at this scale
+- **Server Components** (`force-dynamic`) for the queue and PR detail — data fetched server-side on every request using the Supabase session token
+- **Client Components** for settings (interactive: repo toggles, delete flows) and onboarding
+- Queue has a manual **Refresh** button (`router.refresh()`) to re-run the server fetch
+- No Supabase Realtime yet — planned for Phase 3
 
-### Key UI Components
+### Key Components
 
-| Component | Description |
-|---|---|
-| `PRQueueItem` | Single row in Activity View — title, age, state badge, size/risk chips, impacted areas |
-| `PRIntelligencePanel` | Full PR view — tabbed: Context / Changes / Discussion / Actions |
-| `SemanticDiffView` | Grouped diff viewer — semantic groups → file list → line diff (progressive drill-down) |
-| `InsightCard` | Single insight tile for Insights View |
-| `RiskBadge` | Colour-coded risk indicator (low/medium/high) |
-| `ProviderSelector` | Dropdown in settings to toggle Anthropic ↔ OpenAI |
+| Component | Location | Notes |
+|---|---|---|
+| `AppHeader` | `components/layout/app-header.tsx` | Nav + org switcher |
+| `QueueList` | `components/queue/queue-list.tsx` | Renders ranked PR rows |
+| `QueueItemRow` | `components/queue/queue-item-row.tsx` | Single PR row with badges |
+| `RefreshButton` | `components/queue/refresh-button.tsx` | Client component, calls `router.refresh()` |
 
 ### Design System
 
-- **Tailwind CSS** for utility styling
-- **shadcn/ui** as the component base (accessible, unstyled-first, composable)
-- Custom design tokens for Aperture's Typeform-inspired palette: high whitespace, muted backgrounds, sharp typographic hierarchy
-- Smooth page transitions via `next/navigation` + CSS animations — no heavy animation library needed
+- **Tailwind CSS** for utility styling; **shadcn/ui** for accessible base components
+- Neutral palette: high whitespace, muted backgrounds, sharp typographic hierarchy
+- No animation library — CSS transitions via Tailwind
 
 ---
 
-## 8. Authentication & Multi-Tenancy
+## 7. Auth & Security
 
-### Auth Flow
+### Sign-in Flow
 
 1. User hits `/login` → Supabase Auth GitHub OAuth
-2. On first sign-in, a `users` row is created (via Supabase Auth hook or trigger)
-3. User either creates a team or is invited to one
-4. All subsequent API calls carry the Supabase JWT; the Go backend extracts `user_id` and resolves `team_id` via `team_members`
+2. GitHub redirects to `/auth/callback` → Supabase exchanges code for session
+3. Callback calls `GET /api/v1/auth/status?github_token=…&user_id=…`
+4. API checks whether the user's GitHub account (or any of their org memberships) matches a connected Aperture org:
+   - **Match + member**: redirect to `/orgs/{slug}`
+   - **Match + pre-seeded** (added via team sync before sign-up): link records, redirect to queue
+   - **Match + not member**: redirect to `/onboarding/join?org={slug}`
+   - **No match**: redirect to `/onboarding`
 
-### Team Isolation
+### Org Isolation
 
-- Every DB query in the Go backend is scoped with `WHERE team_id = $1`
-- Supabase RLS provides defence-in-depth: a policy on each table ensures a user can only read/write rows belonging to their team
-- The frontend never has direct write access to sensitive tables — all mutations go through the Go API
-
----
-
-## 9. Integrations
-
-### GitHub (MVP — required)
-Covered in Section 4.
-
-### Linear (MVP — read-only)
-- OAuth2 flow to obtain Linear access token per team
-- When enriching a PR, the Go backend searches Linear for issues matching the PR branch name or body links
-- Fetches issue title, description, and status to include in `AnalysisRequest.IssueContext`
-
-### Jira (post-MVP)
-- Same pattern as Linear — OAuth2, search by branch/link
-- Deferred because Linear covers the target early-adopter profile
-
-### Notion (post-MVP)
-- Read-only: link Notion docs for additional context in PR analysis
+- Go backend always scopes queries with `WHERE org_id = $1`
+- Supabase RLS is a defence-in-depth layer (see [Data Model](#3-data-model))
+- Frontend never writes directly to the DB — all mutations go through the Go API
+- Service role key (bypasses RLS) is only used server-side in Go; never sent to the client
 
 ---
 
-## 10. Deployment
+## 8. Deployment
 
 ### Infrastructure
 
-| Service | Platform | Notes |
+| Service | Platform | Config |
 |---|---|---|
-| Next.js frontend | Vercel | Auto-deploy from `main`; preview deploys on PRs |
-| Go API server | Fly.io | Single `fly.toml`; 1 VM (shared-cpu-1x, 256MB) to start; scale up as needed |
-| Postgres + Auth + Realtime | Supabase | Free tier sufficient for couple dozen teams |
-| GitHub App | GitHub | Register once; point webhook URL to Fly.io |
+| Next.js frontend | Vercel | Auto-deploys from `main`; root set to `/web` |
+| Go API | Fly.io | `fly.toml` in `/api`; single shared-cpu-1x VM to start |
+| Postgres + Auth | Supabase | Managed; free tier sufficient at current scale |
+| GitHub App | GitHub | Webhook URL → Fly.io; single registered app |
+
+### Branches & Deploy Model
+
+- `main` — production; commit directly (solo project, no PRs)
+- `preview` — fast-forward mirror of `main`; push both when syncing
 
 ### Environment Variables
 
 **Go API (Fly.io secrets)**
 ```
 SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY    -- server-side only, never exposed to client
-GITHUB_APP_ID
-GITHUB_APP_PRIVATE_KEY       -- PEM, base64-encoded
+GITHUB_APP_CLIENT_ID
+GITHUB_APP_PRIVATE_KEY      PEM (literal \n sequences are normalised on load)
 GITHUB_WEBHOOK_SECRET
-ANTHROPIC_API_KEY
-OPENAI_API_KEY
-LINEAR_CLIENT_ID
-LINEAR_CLIENT_SECRET
+FRONTEND_URL                e.g. https://app.aperture64.dev
+ANTHROPIC_API_KEY           (planned)
+OPENAI_API_KEY              (planned)
 ```
 
-**Next.js (Vercel env vars)**
+**Next.js (Vercel)**
 ```
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
-NEXT_PUBLIC_API_URL           -- Fly.io Go API base URL
-GITHUB_APP_NAME               -- for constructing install links
+NEXT_PUBLIC_API_URL         Fly.io Go API base URL
+NEXT_PUBLIC_GITHUB_APP_NAME Used to construct GitHub install links
 ```
 
-### CI/CD
+### Migrations
 
-- Single GitHub repo, monorepo: `/web` (Next.js) + `/api` (Go)
-- Vercel auto-detects `/web` for frontend deploys
-- GitHub Action on push to `main`: `go build ./...` + `go test ./...` → Fly.io deploy via `flyctl deploy`
-- Database migrations managed with plain SQL files in `/db/migrations`, applied manually or via a small migration runner in Go on startup
+Plain SQL files in `/db/migrations/`, applied manually via Supabase dashboard or CLI.
 
 ---
 
-## 11. MVP Delivery Phases
-
-Given a solo build targeting a couple dozen teams, the recommended sequence ships a usable product early and avoids over-engineering.
+## 9. Roadmap
 
 ### Phase 1 — Foundation ✅ Complete
-- [x] Scaffold monorepo (`/web`, `/api`, `/db`)
-- [x] DB schema + RLS policies (`db/migrations/001_initial.sql`)
-- [x] Go API server skeleton: chi router, auth middleware, Supabase client
-- [x] Next.js app: login page (GitHub OAuth via Supabase), auth callback
-- [x] Onboarding flow: team creation → GitHub App install → repo selection
-- [x] GitHub App client: JWT generation, installation token caching
-- [x] Webhook handler: signature verification, PR event upsert
-- [x] Activity View (queue): urgency-ranked PR list with state/size/risk badges
-- [x] Initial sync: fetch open PRs from GitHub on repo activation
 
-### Phase 2 — AI Pipeline (next)
+- [x] Monorepo scaffold (`/web`, `/api`, `/db`)
+- [x] DB schema + RLS policies
+- [x] Go API: chi router, Supabase JWT middleware
+- [x] GitHub App client: JWT, installation token cache
+- [x] Webhook handler: `pull_request`, `installation`, `installation_repositories`
+- [x] Installation callback: install / update / request flows
+- [x] Repo sync: open PRs backfilled on install and on `installation_repositories` add
+- [x] Queue (Activity View): urgency-scored, manual refresh
+- [x] PR detail page
+- [x] Settings: org switcher, repo toggle/delete, add org/repos, delete account
+- [x] Org join request flow
+
+### Phase 2 — AI Pipeline
+
 - [ ] AI provider interface + Anthropic implementation
 - [ ] PR analysis pipeline: fetch diff → call AI → store `pr_analyses`
-- [ ] OpenAI implementation (swap-in, same interface)
-- [ ] Queue ranker: incorporate AI risk score into urgency (currently defaults to 0.3)
+- [ ] OpenAI implementation (same interface, swap via preference)
+- [ ] Queue: use real `risk_score` and `impacted_areas` instead of defaults
 
 ### Phase 3 — PR Intelligence Panel
-- [ ] Context tab: AI summary, why, impacted areas, linked issue context
-- [ ] Changes tab: semantic group view → file list → line diff
-- [ ] Discussion tab: synced comments from GitHub
-- [ ] Actions tab: approve / comment / request changes (proxied through Go → GitHub API)
-- [ ] Supabase Realtime subscription: live queue updates on webhook events
 
-### Phase 4 — Insights View
-- [ ] Weekly `team_insights` computation job
-- [ ] Insights View UI: insight cards with trend deltas
+- [ ] PR detail: AI summary, why, impacted areas, key files
+- [ ] Semantic diff view: grouped → file list → line diff
+- [ ] Synced GitHub reviews and comments
+- [ ] Actions: approve / comment / request changes via Go → GitHub API
+- [ ] Supabase Realtime: live queue updates on webhook events
 
-### Phase 5 — Settings & Polish
-- [ ] Settings UI: team, repos, preferences, integrations
-- [ ] Linear integration (read-only context enrichment)
-- [ ] Performance pass, error states, empty states
+### Phase 4 — Insights
+
+- [ ] Weekly org insights computation (median review time, PR size distribution, top reviewers)
+- [ ] Insights View UI
+
+### Phase 5 — Polish & Integrations
+
+- [ ] Linear integration (read-only, PR enrichment context)
+- [ ] Org preferences UI (size thresholds, stale hours, AI provider)
+- [ ] Error states, empty states, performance pass
 
 ---
 
-## 12. Key Technical Decisions & Trade-offs
+## 10. Technical Decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Go backend separate from Vercel | Fly.io | Vercel doesn't support persistent Go servers; Fly.io is simple and cheap for a solo project |
-| In-process job queue (goroutines) | Yes, for MVP | No need for Redis/BullMQ at this scale; a buffered channel with worker goroutines is sufficient and eliminates infra complexity |
-| Insights computed on a schedule | Weekly batch job | Real-time insight computation is expensive; weekly snapshots are sufficient for trend cards |
-| Diff truncation for AI | Yes (first 8k tokens of diff) | Large PRs can have massive diffs; truncation with a note in the prompt keeps costs controlled |
-| No separate search index | Correct for MVP | Postgres full-text search is sufficient for PR/comment search at dozens-of-teams scale |
-| Monorepo | Yes | Easier for a solo developer to manage, share types, and deploy atomically |
+| Go on Fly.io, not Vercel | Fly.io | Vercel doesn't support persistent Go servers |
+| In-process concurrency (goroutines) | Yes | No Redis/queue needed at this scale; buffered channels are sufficient |
+| Scoring at query time | Yes (for now) | Avoids background workers; acceptable latency at small scale |
+| Diff truncation for AI | First ~8k tokens | Keeps AI costs controlled for large PRs |
+| No search index | Postgres FTS | Sufficient for dozens of orgs |
+| Monorepo | Yes | Easier for a solo developer to manage and deploy atomically |
+| Supabase JWT parsed but not verified | Yes | Tokens originate from Supabase; full JWKS verification is the next hardening step |
 
 ---
 
-## 13. Open Questions
+## 11. Open Questions
 
-- **Billing**: No billing in MVP. When monetising, Stripe + Supabase is the natural path.
-- **PR diff storage**: Diffs are fetched live from GitHub on demand. If GitHub rate limits become an issue, diffs can be cached in Supabase Storage.
-- **Self-serve onboarding vs invite-only**: Start invite-only for the first dozen teams to control quality. Open sign-up later.
-- **Jira OAuth**: Jira's OAuth 2.0 (3LO) requires a public callback URL and app review for production — defer until there is clear demand.
-- **AI cost management**: At couple-dozen teams, AI costs will be minimal. Add per-team usage tracking before scaling to manage costs proactively.
+- **Billing**: No billing in MVP. Stripe + Supabase when monetising.
+- **Realtime**: Currently polling via manual refresh. Supabase Realtime subscriptions planned for Phase 3.
+- **Diff storage**: Fetched live from GitHub. Cache in Supabase Storage if rate limits become an issue.
+- **JWT verification**: Currently parsed without signature check. Should add JWKS verification before opening to untrusted users.
+- **AI cost management**: Negligible at current scale. Add per-org usage tracking before broader rollout.
+- **Jira**: Deferred — requires public callback URL and app review. Add when there is clear demand.
+
+---
+
+## 12. Iteration Log
+
+| Version | Date | Changes |
+|---|---|---|
+| v0.1 | 2026-03-22 | Initial design document |
+| v0.2 | 2026-03-22 | Auth, onboarding, repo connection, queue (Activity View) |
+| v0.3 | 2026-03-24 | PR detail page; settings page with org switcher, repo table, delete account |
+| v0.4 | 2026-03-25 | GitHub App reinstall flow fix; onboarding redirect fix; org_members insert fix |
+| v0.5 | 2026-03-26 | Queue refresh button; `setup_action=request` handling; `installation_repositories` webhook (add/remove repos + open PR backfill) |

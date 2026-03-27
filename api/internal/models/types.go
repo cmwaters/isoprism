@@ -114,6 +114,8 @@ type PullRequest struct {
 	LastSyncedAt      *time.Time `json:"last_synced_at" db:"last_synced_at"`
 	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at" db:"updated_at"`
+	HeadSHA           *string    `json:"head_sha,omitempty" db:"head_sha"`
+	Mergeable         *bool      `json:"mergeable,omitempty" db:"mergeable"`
 
 	// Joined fields
 	RepoFullName string      `json:"repo_full_name,omitempty" db:"repo_full_name"`
@@ -147,13 +149,26 @@ type PRReview struct {
 	ReviewerLogin     string    `json:"reviewer_login" db:"reviewer_login"`
 	ReviewerAvatarURL *string   `json:"reviewer_avatar_url" db:"reviewer_avatar_url"`
 	State             string    `json:"state" db:"state"`
+	CommitSHA         *string   `json:"commit_sha,omitempty" db:"commit_sha"` // SHA when review was submitted
 	SubmittedAt       time.Time `json:"submitted_at" db:"submitted_at"`
 }
 
-// QueueItem is a PR enriched with urgency scoring for the Activity View
+// QueueItem is a PR enriched with personalised ranking signals.
+//
+// ActionBucket: "author" = you need to act | "reviewer" = you need to review.
+//
+// StateReason values:
+//
+//	Author bucket:   "ci_failing" | "merge_conflict" | "changes_requested" | "unresolved_threads" | "ready_to_merge"
+//	Reviewer bucket: "re_review" | "review_requested" | "needs_review"
+//
+// PriorityTier: "critical" | "high" | "medium"
 type QueueItem struct {
 	PullRequest
-	UrgencyScore float64 `json:"urgency_score"`
-	ReviewState  string  `json:"review_state"` // "needs_review" | "needs_author" | "stalled" | "draft"
-	WaitingHours float64 `json:"waiting_hours"`
+	WaitingHours float64 `json:"waiting_hours"` // hours since last review or PR open
+	StateReason  string  `json:"state_reason"`  // why this PR is in the queue
+	ActionBucket string  `json:"action_bucket"` // "author" | "reviewer"
+	PriorityTier string  `json:"priority_tier"` // "critical" | "high" | "medium"
+	// TierScore is an internal sort key — not exposed to the client.
+	TierScore int `json:"-"`
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { QueueItem } from "@/lib/types";
+import { QueueItem, StateReason } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -49,7 +49,7 @@ export function QueueItemRow({ item, teamSlug }: Props) {
 
         {/* Badges row */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <ReviewStateBadge state={item.review_state} />
+          <ReviewStateBadge reason={item.state_reason} />
           <SizeBadge size={sizeLabel} />
           {riskLabel && <RiskBadge risk={riskLabel} />}
           {item.analysis?.impacted_areas?.slice(0, 3).map((area) => (
@@ -67,26 +67,18 @@ export function QueueItemRow({ item, teamSlug }: Props) {
   );
 }
 
-function ReviewStateBadge({ state }: { state: QueueItem["review_state"] }) {
-  const map: Record<QueueItem["review_state"], { label: string; className: string }> = {
-    needs_review: {
-      label: "Needs review",
-      className: "bg-blue-50 text-blue-700 border-blue-100",
-    },
-    needs_author: {
-      label: "Needs author",
-      className: "bg-amber-50 text-amber-700 border-amber-100",
-    },
-    stalled: {
-      label: "Stalled",
-      className: "bg-red-50 text-red-700 border-red-100",
-    },
-    draft: {
-      label: "Draft",
-      className: "bg-neutral-50 text-neutral-500 border-neutral-200",
-    },
+function ReviewStateBadge({ reason }: { reason: StateReason }) {
+  const map: Record<StateReason, { label: string; className: string }> = {
+    ci_failing:         { label: "CI failing",    className: "bg-red-50 text-red-700 border-red-100" },
+    merge_conflict:     { label: "Conflict",       className: "bg-red-50 text-red-700 border-red-100" },
+    changes_requested:  { label: "Address review", className: "bg-amber-50 text-amber-700 border-amber-100" },
+    unresolved_threads: { label: "Reply needed",   className: "bg-amber-50 text-amber-700 border-amber-100" },
+    ready_to_merge:     { label: "Merge ready",    className: "bg-green-50 text-green-700 border-green-100" },
+    re_review:          { label: "Re-review",      className: "bg-violet-50 text-violet-700 border-violet-100" },
+    review_requested:   { label: "Requested",      className: "bg-blue-50 text-blue-700 border-blue-100" },
+    needs_review:       { label: "Needs review",   className: "bg-blue-50 text-blue-700 border-blue-100" },
   };
-  const { label, className } = map[state] ?? map.needs_review;
+  const { label, className } = map[reason] ?? map.needs_review;
   return (
     <Badge variant="outline" className={`text-xs font-medium py-0 px-2 ${className}`}>
       {label}

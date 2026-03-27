@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { QueueItem } from "@/lib/types";
+import { QueueItem, StateReason } from "@/lib/types";
 import { RefreshButton } from "./refresh-button";
 
 interface Props {
@@ -44,24 +44,40 @@ export function ReviewQueuePanel({ items, total, orgSlug }: Props) {
   );
 }
 
-const STATE_CONFIG: Record<string, { label: string; className: string }> = {
-  needs_review: { label: "Review", className: "text-blue-600 bg-blue-50" },
-  needs_author: { label: "Author", className: "text-amber-600 bg-amber-50" },
-  stalled:      { label: "Stalled", className: "text-red-600 bg-red-50" },
-  draft:        { label: "Draft",   className: "text-neutral-500 bg-neutral-100" },
+// ── State badge configuration ─────────────────────────────────────────────────
+
+type BadgeConfig = { label: string; className: string };
+
+const STATE_CONFIG: Record<StateReason, BadgeConfig> = {
+  // Author bucket — warmer colours, action required by you
+  ci_failing:         { label: "CI failing",    className: "text-red-700 bg-red-50" },
+  merge_conflict:     { label: "Conflict",       className: "text-red-700 bg-red-50" },
+  changes_requested:  { label: "Address review", className: "text-amber-700 bg-amber-50" },
+  unresolved_threads: { label: "Reply needed",   className: "text-amber-700 bg-amber-50" },
+  ready_to_merge:     { label: "Merge ready",    className: "text-green-700 bg-green-50" },
+  // Reviewer bucket — cooler colours, someone else needs you
+  re_review:          { label: "Re-review",      className: "text-violet-700 bg-violet-50" },
+  review_requested:   { label: "Requested",      className: "text-blue-700 bg-blue-50" },
+  needs_review:       { label: "Review",         className: "text-blue-600 bg-blue-50" },
 };
 
 function PanelItem({ item, orgSlug }: { item: QueueItem; orgSlug: string }) {
-  const state = STATE_CONFIG[item.review_state] ?? STATE_CONFIG.needs_review;
-  const wait = formatWait(item.waiting_hours);
+  const badge = STATE_CONFIG[item.state_reason] ?? STATE_CONFIG.needs_review;
+  const wait  = formatWait(item.waiting_hours);
+  const isCritical = item.priority_tier === "critical";
 
   return (
     <Link
       href={`/orgs/${orgSlug}/pr/${item.id}`}
       className="flex items-start gap-3 px-4 py-3 hover:bg-neutral-50 transition-colors"
     >
+      {/* Priority stripe */}
+      {isCritical && (
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-400 rounded-r" />
+      )}
+
       <img
-        src={item.author_avatar_url}
+        src={item.author_avatar_url ?? ""}
         alt={item.author_github_login}
         className="h-5 w-5 rounded-full mt-0.5 shrink-0 bg-neutral-100"
       />
@@ -72,8 +88,8 @@ function PanelItem({ item, orgSlug }: { item: QueueItem; orgSlug: string }) {
         </p>
       </div>
       <div className="shrink-0 flex flex-col items-end gap-1 mt-0.5">
-        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${state.className}`}>
-          {state.label}
+        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${badge.className}`}>
+          {badge.label}
         </span>
         <span className="text-[10px] text-neutral-400">{wait}</span>
       </div>

@@ -84,14 +84,16 @@ type ListInstallationReposResponse struct {
 }
 
 type GHPullRequest struct {
-	ID     int64  `json:"id"`
-	Number int    `json:"number"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
-	State  string `json:"state"`
-	Draft  bool   `json:"draft"`
+	ID      int64  `json:"id"`
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	State   string `json:"state"`
+	Draft   bool   `json:"draft"`
 	HTMLURL string `json:"html_url"`
-	User   struct {
+	// Mergeable is null until GitHub computes it (async after push).
+	Mergeable *bool `json:"mergeable"`
+	User      struct {
 		Login     string `json:"login"`
 		AvatarURL string `json:"avatar_url"`
 	} `json:"user"`
@@ -102,6 +104,9 @@ type GHPullRequest struct {
 	Base struct {
 		Ref string `json:"ref"`
 	} `json:"base"`
+	RequestedReviewers []struct {
+		Login string `json:"login"`
+	} `json:"requested_reviewers"`
 	Additions    int        `json:"additions"`
 	Deletions    int        `json:"deletions"`
 	ChangedFiles int        `json:"changed_files"`
@@ -117,6 +122,7 @@ type GHPullRequest struct {
 type GHReview struct {
 	ID          int64     `json:"id"`
 	State       string    `json:"state"`
+	CommitID    string    `json:"commit_id"` // SHA at which the review was submitted
 	SubmittedAt time.Time `json:"submitted_at"`
 	User        struct {
 		Login     string `json:"login"`
