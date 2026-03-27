@@ -109,3 +109,44 @@ export interface OrgJoinRequest {
   github_username?: string;
   avatar_url?: string;
 }
+
+// ── Flow ──────────────────────────────────────────────────────────────────────
+
+export interface FlowSegment {
+  start: string;
+  end: string;
+  kind: "reviewer" | "author";
+}
+
+export interface FlowPR {
+  id: string;
+  number: number;
+  title: string;
+  author_github_login: string;
+  author_avatar_url?: string;
+  repo_full_name: string;
+  state: "open" | "closed" | "merged";
+  opened_at: string;
+  closed_at?: string;
+  merged_at?: string;
+  html_url: string;
+  segments: FlowSegment[];
+  total_hours: number;
+  reviewer_hours: number;
+  author_hours: number;
+}
+
+export interface FlowReviewer {
+  login: string;
+  avatar_url?: string;
+  reviews: number;
+  approvals: number;
+  changes_requested: number;
+  authored_prs: number;
+}
+
+export interface FlowResponse {
+  prs: FlowPR[];
+  reviewers: FlowReviewer[];
+  period_days: number;
+}

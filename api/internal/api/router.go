@@ -91,6 +91,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	}
 	orgHandler := &handlers.OrgHandler{DB: db, AppClient: appClient}
 	queueHandler := &handlers.QueueHandler{DB: db}
+	flowHandler := &handlers.FlowHandler{DB: db}
 
 	// Public routes (no auth)
 	r.Post("/webhooks/github", ghHandler.HandleWebhook)
@@ -107,6 +108,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		r.Route("/api/v1/orgs/{orgSlug}", func(r chi.Router) {
 			r.Get("/", orgHandler.GetOrg)
 			r.Get("/queue", queueHandler.GetQueue)
+			r.Get("/flow", flowHandler.GetFlow)
 			r.Post("/sync", ghHandler.SyncOrg)
 			r.Get("/repos", orgHandler.ListRepos)
 			r.Patch("/repos/{repoID}", orgHandler.UpdateRepo)
