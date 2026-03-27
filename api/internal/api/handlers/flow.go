@@ -79,6 +79,8 @@ func (h *FlowHandler) GetFlow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ── Fetch PRs ──────────────────────────────────────────────────────────────
+	// Only include PRs that have been closed/merged within the period.
+	// Open PRs are excluded — their cycle time is not yet known.
 	rows, err := h.DB.Query(ctx, `
 		SELECT
 			pr.id, pr.number, pr.title,
@@ -89,8 +91,9 @@ func (h *FlowHandler) GetFlow(w http.ResponseWriter, r *http.Request) {
 		JOIN repositories r ON r.id = pr.repo_id
 		WHERE pr.org_id = $1
 		  AND pr.draft = false
-		  AND (pr.opened_at >= $2 OR (pr.closed_at IS NOT NULL AND pr.closed_at >= $2))
-		ORDER BY pr.opened_at DESC
+		  AND pr.closed_at IS NOT NULL
+		  AND pr.closed_at >= $2
+		ORDER BY pr.closed_at DESC
 	`, orgID, since)
 	if err != nil {
 		log.Printf("GetFlow: PR query error: %v", err)
