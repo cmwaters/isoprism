@@ -150,7 +150,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 	`, orgID, githubUsername)
 	if err != nil {
 		log.Printf("GetQueue: DB error: %v", err)
-		http.Error(w, "failed to fetch queue", http.StatusInternalServerError)
+		http.Error(w, "failed to fetch queue: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -179,7 +179,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			&s.ThreadsAwaitingAuthor,
 			&s.RequestedYou,
 		); err != nil {
-			log.Printf("GetQueue: scan error: %v", err)
+			log.Printf("GetQueue: scan error (skipping row): %v", err)
 			continue
 		}
 
