@@ -446,6 +446,8 @@ func (h *GitHubHandler) handleInstallationReposEvent(ctx context.Context, body [
 			for _, r := range added {
 				n := h.syncOpenPRs(bgCtx, ghClient, orgID, r.dbID, r.fullName)
 				log.Printf("installation_repositories: synced %d open PRs for %s", n, r.fullName)
+				m := h.backfillClosedPRs(bgCtx, ghClient, orgID, r.dbID, r.fullName, 30)
+				log.Printf("installation_repositories: backfilled %d closed PRs (last 30d) for %s", m, r.fullName)
 			}
 		}()
 	}
@@ -732,6 +734,84 @@ func (h *GitHubHandler) syncOpenPRs(ctx context.Context, ghClient *github.Client
 	return len(prs)
 }
 
+// backfillClosedPRs fetches closed PRs from the last `days` days via the
+// GitHub API and upserts them along with their reviews. Called once when a
+// repo is first added so that Flow has historical data immediately.
+func (h *GitHubHandler) backfillClosedPRs(ctx context.Context, ghClient *github.Client, orgID, repoID, fullName string, days int) int {
+	parts := splitRepoName(fullName)
+	if parts == nil {
+		return 0
+	}
+
+	since := time.Now().UTC().AddDate(0, 0, -days)
+	prs, err := ghClient.ListClosedPullRequestsSince(ctx, parts[0], parts[1], since)
+	if err != nil {
+		log.Printf("backfillClosedPRs: failed to fetch closed PRs for %s: %v", fullName, err)
+		return 0
+	}
+
+	count := 0
+	now := time.Now()
+	for _, pr := range prs {
+		// Skip PRs closed before our window (updated_at may be newer, but closed_at is not).
+		if pr.ClosedAt == nil || pr.ClosedAt.Before(since) {
+			continue
+		}
+
+		state := pr.State
+		if pr.MergedAt != nil {
+			state = "merged"
+		}
+		headSHA := pr.Head.SHA
+
+		var prDBID string
+		err := h.DB.QueryRow(ctx, `
+			insert into pull_requests (
+				org_id, repo_id, github_pr_id, number, title, body,
+				author_github_login, author_avatar_url, base_branch, head_branch,
+				state, draft, additions, deletions, changed_files, html_url,
+				opened_at, closed_at, merged_at, last_activity_at, last_synced_at,
+				updated_at, head_sha
+			) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+			on conflict (repo_id, github_pr_id) do update set
+				title          = excluded.title,
+				state          = excluded.state,
+				closed_at      = excluded.closed_at,
+				merged_at      = excluded.merged_at,
+				last_synced_at = excluded.last_synced_at,
+				updated_at     = excluded.updated_at
+			returning id
+		`,
+			orgID, repoID, pr.ID, pr.Number, pr.Title, pr.Body,
+			pr.User.Login, pr.User.AvatarURL, pr.Base.Ref, pr.Head.Ref,
+			state, pr.Draft, pr.Additions, pr.Deletions, pr.ChangedFiles, pr.HTMLURL,
+			pr.CreatedAt, pr.ClosedAt, pr.MergedAt, pr.UpdatedAt, now, now,
+			headSHA,
+		).Scan(&prDBID)
+		if err != nil {
+			log.Printf("backfillClosedPRs: error upserting PR #%d: %v", pr.Number, err)
+			continue
+		}
+
+		// Backfill reviews for this PR.
+		reviews, err := ghClient.ListPRReviews(ctx, parts[0], parts[1], pr.Number)
+		if err == nil {
+			for _, rv := range reviews {
+				_, _ = h.DB.Exec(ctx, `
+					insert into pr_reviews (pull_request_id, github_review_id, reviewer_login, reviewer_avatar_url, state, submitted_at, commit_sha)
+					values ($1, $2, $3, $4, $5, $6, $7)
+					on conflict (github_review_id) do update set
+						state        = excluded.state,
+						submitted_at = excluded.submitted_at,
+						commit_sha   = excluded.commit_sha
+				`, prDBID, rv.ID, rv.User.Login, rv.User.AvatarURL, rv.State, rv.SubmittedAt, rv.CommitID)
+			}
+		}
+		count++
+	}
+	return count
+}
+
 // ---- HTTP handlers for manual sync ----
 
 // POST /api/v1/orgs/{orgSlug}/sync
@@ -814,8 +894,10 @@ func (h *GitHubHandler) SyncRepo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	synced := h.syncOpenPRs(ctx, ghClient, orgID, repoID, fullName)
+	backfilled := h.backfillClosedPRs(ctx, ghClient, orgID, repoID, fullName, 30)
+	log.Printf("SyncRepo: synced %d open + backfilled %d closed PRs for %s", synced, backfilled, fullName)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"synced": synced})
+	json.NewEncoder(w).Encode(map[string]interface{}{"synced": synced, "backfilled": backfilled})
 }
 
 // ---- helpers ----

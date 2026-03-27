@@ -148,6 +148,32 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string) (
 	return prs, nil
 }
 
+// ListClosedPullRequestsSince fetches closed PRs updated after `since`, paginating
+// until results are older than the cutoff. Callers should filter by closed_at.
+func (c *Client) ListClosedPullRequestsSince(ctx context.Context, owner, repo string, since time.Time) ([]GHPullRequest, error) {
+	var all []GHPullRequest
+	for page := 1; page <= 10; page++ { // cap at 1000 PRs (10 pages × 100)
+		var batch []GHPullRequest
+		url := fmt.Sprintf("/repos/%s/%s/pulls?state=closed&per_page=100&page=%d&sort=updated&direction=desc", owner, repo, page)
+		if err := c.do(ctx, "GET", url, &batch); err != nil {
+			return nil, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		for _, pr := range batch {
+			// UpdatedAt is the sort key; once the whole page is older than since we can stop.
+			all = append(all, pr)
+		}
+		// Stop paginating when the oldest PR on this page predates our window.
+		oldest := batch[len(batch)-1]
+		if oldest.UpdatedAt.Before(since) {
+			break
+		}
+	}
+	return all, nil
+}
+
 func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (*GHPullRequest, error) {
 	var pr GHPullRequest
 	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/pulls/%d", owner, repo, number), &pr); err != nil {
