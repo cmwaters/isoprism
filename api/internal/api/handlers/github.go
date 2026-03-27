@@ -859,14 +859,15 @@ func (h *GitHubHandler) SyncOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	total := 0
+	open, backfilled := 0, 0
 	for _, repo := range repos {
-		total += h.syncOpenPRs(ctx, ghClient, orgID, repo.id, repo.fullName)
+		open += h.syncOpenPRs(ctx, ghClient, orgID, repo.id, repo.fullName)
+		backfilled += h.backfillClosedPRs(ctx, ghClient, orgID, repo.id, repo.fullName, 30)
 	}
 
-	log.Printf("SyncOrg: synced %d open PRs across %d repos for org=%s", total, len(repos), orgSlug)
+	log.Printf("SyncOrg: synced %d open + backfilled %d closed PRs across %d repos for org=%s", open, backfilled, len(repos), orgSlug)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"synced": total, "repos": len(repos)})
+	json.NewEncoder(w).Encode(map[string]interface{}{"synced": open, "backfilled": backfilled, "repos": len(repos)})
 }
 
 // POST /api/v1/orgs/{orgSlug}/repos/{repoID}/sync
