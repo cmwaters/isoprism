@@ -155,7 +155,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var items []models.QueueItem
+	items := make([]models.QueueItem, 0)
 	for rows.Next() {
 		var pr models.PullRequest
 		var s prSignals

@@ -22,7 +22,7 @@ export function ReviewQueuePanel({ items, total, orgSlug }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {items.length === 0 ? (
+        {(items ?? []).length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-16 text-center px-4">
             <div className="h-8 w-8 rounded-full bg-neutral-100 flex items-center justify-center mb-3">
               <svg className="h-4 w-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -34,7 +34,7 @@ export function ReviewQueuePanel({ items, total, orgSlug }: Props) {
           </div>
         ) : (
           <div className="divide-y divide-neutral-50">
-            {items.map((item) => (
+            {(items ?? []).map((item) => (
               <PanelItem key={item.id} item={item} orgSlug={orgSlug} />
             ))}
           </div>
