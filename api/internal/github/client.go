@@ -206,6 +206,14 @@ func (c *Client) ListOrgTeamMembers(ctx context.Context, org, teamSlug string) (
 	return members, nil
 }
 
+func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]GHUser, error) {
+	var members []GHUser
+	if err := c.do(ctx, "GET", fmt.Sprintf("/orgs/%s/members?per_page=100", org), &members); err != nil {
+		return nil, err
+	}
+	return members, nil
+}
+
 func (c *Client) GetAuthenticatedUser(ctx context.Context) (*GHUser, error) {
 	var user GHUser
 	if err := c.do(ctx, "GET", "/user", &user); err != nil {

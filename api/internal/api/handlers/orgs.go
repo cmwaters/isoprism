@@ -389,6 +389,183 @@ func (h *OrgHandler) ListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"members": members})
 }
 
+// GET /api/v1/orgs/{orgSlug}/github/teams?q=
+// Returns GitHub teams for the org, optionally filtered by name query.
+func (h *OrgHandler) SearchGitHubTeams(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	orgSlug := chi.URLParam(r, "orgSlug")
+	query := strings.ToLower(r.URL.Query().Get("q"))
+
+	// Look up installation for this org.
+	var ghLogin string
+	var installationID int64
+	err := h.DB.QueryRow(ctx, `
+		select o.github_account_login, gi.installation_id
+		from organizations o
+		join github_installations gi on gi.org_id = o.id
+		where o.slug = $1
+		limit 1
+	`, orgSlug).Scan(&ghLogin, &installationID)
+	if err != nil {
+		http.Error(w, "org not found", http.StatusNotFound)
+		return
+	}
+
+	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		http.Error(w, "github client error", http.StatusInternalServerError)
+		return
+	}
+
+	ghTeams, err := ghClient.ListOrgTeams(ctx, ghLogin)
+	if err != nil {
+		http.Error(w, "github error", http.StatusBadGateway)
+		return
+	}
+
+	type Result struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	var results []Result
+	for _, t := range ghTeams {
+		if query == "" || strings.Contains(strings.ToLower(t.Name), query) || strings.Contains(strings.ToLower(t.Slug), query) {
+			results = append(results, Result{ID: t.ID, Name: t.Name, Slug: t.Slug})
+		}
+	}
+	if results == nil {
+		results = []Result{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"teams": results})
+}
+
+// GET /api/v1/orgs/{orgSlug}/github/members?q=
+// Returns GitHub org members, annotated with whether they have an Aperture account.
+func (h *OrgHandler) SearchGitHubMembers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	orgSlug := chi.URLParam(r, "orgSlug")
+	query := strings.ToLower(r.URL.Query().Get("q"))
+
+	var ghLogin string
+	var installationID int64
+	err := h.DB.QueryRow(ctx, `
+		select o.github_account_login, gi.installation_id
+		from organizations o
+		join github_installations gi on gi.org_id = o.id
+		where o.slug = $1
+		limit 1
+	`, orgSlug).Scan(&ghLogin, &installationID)
+	if err != nil {
+		http.Error(w, "org not found", http.StatusNotFound)
+		return
+	}
+
+	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		http.Error(w, "github client error", http.StatusInternalServerError)
+		return
+	}
+
+	ghMembers, err := ghClient.ListOrgMembers(ctx, ghLogin)
+	if err != nil {
+		http.Error(w, "github error", http.StatusBadGateway)
+		return
+	}
+
+	// Resolve which GitHub logins have Aperture accounts and are already org members.
+	type Result struct {
+		Login      string  `json:"login"`
+		AvatarURL  string  `json:"avatar_url"`
+		OnAperture bool    `json:"on_aperture"`
+		AlreadyIn  bool    `json:"already_in"`
+	}
+
+	var results []Result
+	for _, m := range ghMembers {
+		if query != "" && !strings.Contains(strings.ToLower(m.Login), query) {
+			continue
+		}
+		var onAperture, alreadyIn bool
+		h.DB.QueryRow(ctx, `
+			select
+				exists(select 1 from users where lower(github_username) = lower($1)) as on_aperture,
+				exists(
+					select 1 from org_members om
+					join users u on u.id = om.user_id
+					join organizations o on o.id = om.org_id
+					where o.slug = $2 and lower(u.github_username) = lower($1)
+				) as already_in
+		`, m.Login, orgSlug).Scan(&onAperture, &alreadyIn)
+		results = append(results, Result{
+			Login:      m.Login,
+			AvatarURL:  m.AvatarURL,
+			OnAperture: onAperture,
+			AlreadyIn:  alreadyIn,
+		})
+	}
+	if results == nil {
+		results = []Result{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"members": results})
+}
+
+// POST /api/v1/orgs/{orgSlug}/members
+// Adds a GitHub user (by login) to the org if they have an Aperture account.
+func (h *OrgHandler) AddOrgMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	orgSlug := chi.URLParam(r, "orgSlug")
+	requesterID := r.Header.Get("X-User-ID")
+
+	var body struct {
+		GitHubLogin string `json:"github_login"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.GitHubLogin) == "" {
+		http.Error(w, "github_login required", http.StatusBadRequest)
+		return
+	}
+
+	var orgID string
+	if err := h.DB.QueryRow(ctx, `select id from organizations where slug = $1`, orgSlug).Scan(&orgID); err != nil {
+		http.Error(w, "org not found", http.StatusNotFound)
+		return
+	}
+
+	// Only admins may add members.
+	var isAdmin bool
+	h.DB.QueryRow(ctx, `select exists(select 1 from org_members where org_id=$1 and user_id=$2 and role='org_admin')`, orgID, requesterID).Scan(&isAdmin)
+	if !isAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Find the Aperture user by github_username.
+	var userID string
+	err := h.DB.QueryRow(ctx, `select id from users where lower(github_username) = lower($1)`, body.GitHubLogin).Scan(&userID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "user_not_on_aperture"})
+		return
+	}
+
+	_, err = h.DB.Exec(ctx, `
+		insert into org_members (org_id, user_id, role)
+		values ($1, $2, 'member')
+		on conflict (org_id, user_id) do nothing
+	`, orgID, userID)
+	if err != nil {
+		http.Error(w, "failed to add member", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // GET /api/v1/auth/status?github_token=...
 // Checks if the user's GitHub account matches any connected org.
 // Returns a redirect destination.
