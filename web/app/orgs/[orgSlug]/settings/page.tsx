@@ -16,6 +16,7 @@ export default function SettingsPage() {
 
   const [token, setToken] = useState<string | null>(null);
   const [org, setOrg] = useState<Organization | null>(null);
+  const [allOrgs, setAllOrgs] = useState<Organization[]>([]);
   const [repos, setRepos] = useState<Repository[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [members, setMembers] = useState<OrgMember[]>([]);
@@ -48,6 +49,11 @@ export default function SettingsPage() {
     fetch(`${API_URL}/api/v1/orgs/${orgSlug}/`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d) setOrg(d); })
+      .catch(() => {});
+
+    fetch(`${API_URL}/api/v1/me/orgs`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.ok ? r.json() : { orgs: [] })
+      .then((d) => setAllOrgs(d.orgs ?? []))
       .catch(() => {});
 
     setLoadingRepos(true);
@@ -150,6 +156,47 @@ export default function SettingsPage() {
       <AppSidebar orgSlug={orgSlug} activeTab="settings" />
 
       <main className="flex-1 overflow-y-auto">
+        {/* Org switcher bar */}
+        <div className="border-b border-neutral-100 bg-white px-6 py-3">
+          <div className="max-w-2xl mx-auto flex items-center gap-1 flex-wrap">
+            {allOrgs.map((o) => {
+              const isActive = o.slug === orgSlug;
+              const letter = o.name[0]?.toUpperCase() ?? "?";
+              return (
+                <button
+                  key={o.id}
+                  onClick={() => router.push(`/orgs/${o.slug}/settings`)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-neutral-100 text-neutral-900"
+                      : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
+                  }`}
+                >
+                  {o.avatar_url ? (
+                    <img src={o.avatar_url} alt={o.name} className="h-5 w-5 rounded-full object-cover" />
+                  ) : (
+                    <div className="h-5 w-5 rounded-full bg-neutral-200 flex items-center justify-center">
+                      <span className="text-[10px] font-semibold text-neutral-600">{letter}</span>
+                    </div>
+                  )}
+                  {o.name}
+                </button>
+              );
+            })}
+            {GITHUB_APP_NAME && (
+              <a
+                href={`https://github.com/apps/${GITHUB_APP_NAME}/installations/new`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50 transition-colors"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z" />
+                </svg>
+                Add org
+              </a>
+            )}
+          </div>
+        </div>
+
         <div className="max-w-2xl mx-auto px-6 py-10 space-y-10">
 
           {/* ── Repositories ── */}
