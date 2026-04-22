@@ -3,19 +3,19 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/aperture/api/internal/api/handlers"
-	"github.com/aperture/api/internal/config"
-	"github.com/aperture/api/internal/github"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/isoprism/api/internal/ai"
+	"github.com/isoprism/api/internal/api/handlers"
+	"github.com/isoprism/api/internal/config"
+	"github.com/isoprism/api/internal/events"
+	"github.com/isoprism/api/internal/github"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient) http.Handler {
@@ -31,107 +31,76 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		AllowCredentials: true,
 	}))
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
-
-	r.Get("/api/v1/debug/stats", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		stats := map[string]interface{}{}
-
-		var orgs, repos, activerepos, prs, openprs, installs int
-		db.QueryRow(ctx, `select count(*) from organizations`).Scan(&orgs)
-		db.QueryRow(ctx, `select count(*) from repositories`).Scan(&repos)
-		db.QueryRow(ctx, `select count(*) from repositories where is_active`).Scan(&activerepos)
-		db.QueryRow(ctx, `select count(*) from pull_requests`).Scan(&prs)
-		db.QueryRow(ctx, `select count(*) from pull_requests where state = 'open'`).Scan(&openprs)
-		db.QueryRow(ctx, `select count(*) from github_installations`).Scan(&installs)
-
-		stats["organizations"] = orgs
-		stats["installations"] = installs
-		stats["repositories"] = map[string]int{"total": repos, "active": activerepos}
-		stats["pull_requests"] = map[string]int{"total": prs, "open": openprs}
-
-		// Most recent PRs
-		rows, _ := db.Query(ctx, `
-			select r.full_name, pr.number, pr.title, pr.state, pr.created_at
-			from pull_requests pr join repositories r on r.id = pr.repo_id
-			order by pr.created_at desc limit 5
-		`)
-		if rows != nil {
-			defer rows.Close()
-			type recentPR struct {
-				Repo   string `json:"repo"`
-				Number int    `json:"number"`
-				Title  string `json:"title"`
-				State  string `json:"state"`
-				At     string `json:"created_at"`
-			}
-			var recent []recentPR
-			for rows.Next() {
-				var p recentPR
-				var at interface{}
-				rows.Scan(&p.Repo, &p.Number, &p.Title, &p.State, &at)
-				p.At = fmt.Sprintf("%v", at)
-				recent = append(recent, p)
-			}
-			stats["recent_prs"] = recent
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stats)
-	})
+	enricher := ai.NewEnricher(cfg.AnthropicAPIKey)
 
 	ghHandler := &handlers.GitHubHandler{
 		DB:            db,
 		AppClient:     appClient,
 		WebhookSecret: cfg.GitHubWebhookSecret,
 		FrontendURL:   cfg.FrontendURL,
+		Enricher:      enricher,
 	}
-	orgHandler := &handlers.OrgHandler{DB: db, AppClient: appClient}
+	repoHandler := &handlers.RepoHandler{DB: db}
 	queueHandler := &handlers.QueueHandler{DB: db}
-	flowHandler := &handlers.FlowHandler{DB: db}
+	graphHandler := &handlers.GraphHandler{DB: db}
 
-	// Public routes (no auth)
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	// Public routes
 	r.Post("/webhooks/github", ghHandler.HandleWebhook)
 	r.Get("/api/v1/github/callback", ghHandler.HandleInstallationCallback)
-	r.Get("/api/v1/auth/status", orgHandler.GetAuthStatus)
+	r.Get("/api/v1/auth/status", repoHandler.GetAuthStatus)
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(supabaseAuthMiddleware(cfg.SupabaseURL))
 
-		r.Get("/api/v1/me/orgs", orgHandler.ListMyOrgs)
-		r.Delete("/api/v1/me", orgHandler.DeleteMe)
+		r.Get("/api/v1/me/repos", repoHandler.ListMyRepos)
+		r.Delete("/api/v1/me", repoHandler.DeleteMe)
 
-		r.Route("/api/v1/orgs/{orgSlug}", func(r chi.Router) {
-			r.Get("/", orgHandler.GetOrg)
+		r.Route("/api/v1/repos/{repoID}", func(r chi.Router) {
+			r.Get("/", repoHandler.GetRepo)
+			r.Post("/index", indexRepoHandler(db, appClient, enricher))
+			r.Get("/status", repoHandler.GetRepoStatus)
 			r.Get("/queue", queueHandler.GetQueue)
-			r.Get("/flow", flowHandler.GetFlow)
-			r.Post("/sync", ghHandler.SyncOrg)
-			r.Get("/repos", orgHandler.ListRepos)
-			r.Patch("/repos/{repoID}", orgHandler.UpdateRepo)
-			r.Delete("/repos/{repoID}", orgHandler.DeleteRepo)
-			r.Post("/repos/{repoID}/sync", ghHandler.SyncRepo)
-			r.Get("/prs/{prID}", orgHandler.GetPR)
-			r.Get("/teams", orgHandler.ListTeams)
-			r.Post("/teams", orgHandler.CreateTeam)
-			r.Delete("/teams/{teamID}", orgHandler.DeleteTeam)
-			r.Get("/members", orgHandler.ListOrgMembers)
-			r.Post("/members", orgHandler.AddOrgMember)
-			r.Get("/github/teams", orgHandler.SearchGitHubTeams)
-			r.Get("/github/members", orgHandler.SearchGitHubMembers)
-			r.Post("/join-requests", orgHandler.CreateJoinRequest)
-			r.Get("/join-requests", orgHandler.ListJoinRequests)
-			r.Patch("/join-requests/{requestID}", orgHandler.UpdateJoinRequest)
+			r.Get("/prs/{prID}/graph", graphHandler.GetGraph)
 		})
 	})
 
 	return r
 }
 
-func supabaseAuthMiddleware(supabaseURL string) func(http.Handler) http.Handler {
+// indexRepoHandler returns a handler that triggers RepoInit for a repo.
+func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *ai.Enricher) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		repoID := chi.URLParam(r, "repoID")
+		userID := r.Header.Get("X-User-ID")
+		ctx := r.Context()
+
+		var exists bool
+		db.QueryRow(ctx, `select exists(select 1 from repositories where id=$1 and user_id=$2)`, repoID, userID).Scan(&exists)
+		if !exists {
+			http.Error(w, "repo not found", http.StatusNotFound)
+			return
+		}
+
+		db.Exec(ctx, `update repositories set index_status='pending' where id=$1`, repoID)
+
+		go func() {
+			bgCtx := context.Background()
+			events.RepoInit(bgCtx, db, appClient, enricher, repoID)
+		}()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"status": "indexing_started"})
+	}
+}
+
+func supabaseAuthMiddleware(_ string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")

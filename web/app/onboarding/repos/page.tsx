@@ -1,169 +1,207 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/api";
 import { Repository } from "@/lib/types";
-import { Button } from "@/components/ui/button";
+import IndexingProgress from "@/components/onboarding/indexing-progress";
 
 function ReposContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [repos, setRepos] = useState<Repository[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [syncing, setSyncing] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [indexing, setIndexing] = useState(false);
+  const [indexingRepoID, setIndexingRepoID] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
-
-  const orgSlug = searchParams.get("org");
 
   useEffect(() => {
     async function load() {
-      if (!orgSlug) {
-        router.push("/onboarding");
-        return;
-      }
-
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
-      if (!token) {
-        router.push("/login");
-        return;
-      }
+      if (!token) { router.push("/login"); return; }
 
       try {
-        const { repos: repoList } = await apiFetch<{ repos: Repository[] }>(
-          `/api/v1/orgs/${orgSlug}/repos`,
-          token
-        );
-        setRepos(repoList);
-        // Pre-select all repos by default
-        setSelected(new Set(repoList.map((r) => r.id)));
+        const { repos: repoList } = await apiFetch<{ repos: Repository[] }>("/api/v1/me/repos", token);
+        setRepos(repoList ?? []);
       } catch {
-        setError("Failed to load repositories. Please try again.");
+        setError("Failed to load repositories.");
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [orgSlug]);
+  }, []);
 
-  function toggleRepo(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function handleConfirm() {
-    if (!orgSlug) return;
+  async function handleIndex() {
+    if (!selected) return;
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
     if (!token) return;
 
-    setSyncing(true);
+    setIndexing(true);
+    setIndexingRepoID(selected);
 
-    // Toggle repos on/off
-    for (const repo of repos) {
-      const isActive = selected.has(repo.id);
-      if (isActive !== repo.is_active) {
-        await apiFetch(`/api/v1/orgs/${orgSlug}/repos/${repo.id}`, token, {
-          method: "PATCH",
-          body: JSON.stringify({ is_active: isActive }),
-        }).catch(() => null);
-      }
+    try {
+      await apiFetch(`/api/v1/repos/${selected}/index`, token, { method: "POST" });
+    } catch {
+      // index call may already have started
     }
-
-    // Sync open PRs for selected repos
-    for (const repoId of selected) {
-      await apiFetch(`/api/v1/orgs/${orgSlug}/repos/${repoId}/sync`, token, {
-        method: "POST",
-      }).catch(() => null);
-    }
-
-    router.push(`/orgs/${orgSlug}`);
   }
+
+  if (indexing && indexingRepoID) {
+    return <IndexingProgress repoID={indexingRepoID} repoName={repos.find(r => r.id === indexingRepoID)?.full_name ?? ""} />;
+  }
+
+  const filtered = repos.filter((r) =>
+    r.full_name.toLowerCase().includes(search.toLowerCase())
+  );
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-        <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900" />
+      <div style={{ background: "#0A0A0A", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 24, height: 24, border: "2px solid #333", borderTopColor: "#6366F1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-      <div className="w-full max-w-md px-6">
-        <div className="mb-12 flex items-center gap-2">
-          <div className="h-6 w-6 rounded-full bg-neutral-900" />
-          <span className="text-lg font-semibold tracking-tight">Aperture64</span>
+    <div style={{ background: "#0A0A0A", minHeight: "100vh", display: "flex" }}>
+      {/* Sidebar */}
+      <div style={{ width: 240, background: "#111111", borderRight: "1px solid #242424", padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <GraphLogo />
+          <span style={{ color: "#F0F0F0", fontSize: 15, fontWeight: 600 }}>Isoprism</span>
         </div>
+      </div>
 
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-2">
-            Select repositories
-          </h1>
-          <p className="text-sm text-neutral-500">
-            Choose which repos Aperture64 should track for <span className="font-medium">{orgSlug}</span>. All are selected by default.
+      {/* Main content */}
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 48 }}>
+        <div style={{ maxWidth: 560, width: "100%" }}>
+          <h1 style={{ color: "#F0F0F0", fontSize: 24, fontWeight: 600, margin: 0 }}>Select a repository</h1>
+          <p style={{ color: "#888888", fontSize: 15, marginTop: 8, marginBottom: 24 }}>
+            Isoprism will index this repository&apos;s pull requests.
           </p>
-        </div>
 
-        {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
+          {error && <p style={{ color: "#EF4444", fontSize: 14, marginBottom: 16 }}>{error}</p>}
 
-        {repos.length === 0 ? (
-          <p className="text-sm text-neutral-500 py-8 text-center">
-            No repositories found. Make sure you granted access to at least one repo during installation.
-          </p>
-        ) : (
-          <div className="space-y-2 mb-6">
-            {repos.map((repo) => (
-              <button
-                key={repo.id}
-                onClick={() => toggleRepo(repo.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors ${
-                  selected.has(repo.id)
-                    ? "border-neutral-900 bg-neutral-900 text-white"
-                    : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
-                }`}
-              >
-                <span className="text-sm font-medium">{repo.full_name}</span>
-                {selected.has(repo.id) && (
-                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                )}
-              </button>
-            ))}
+          {/* Search */}
+          <div style={{ position: "relative", marginBottom: 16 }}>
+            <SearchIcon />
+            <input
+              type="text"
+              placeholder="Search repositories…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: "100%",
+                height: 44,
+                background: "#111111",
+                border: "1px solid #242424",
+                borderRadius: 6,
+                color: "#F0F0F0",
+                fontSize: 14,
+                paddingLeft: 36,
+                paddingRight: 12,
+                boxSizing: "border-box",
+                outline: "none",
+              }}
+            />
           </div>
-        )}
 
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-neutral-400">
-            {selected.size} of {repos.length} selected
-          </span>
-          <Button
-            onClick={handleConfirm}
-            disabled={selected.size === 0 || syncing}
-            className="h-10 bg-neutral-900 hover:bg-neutral-700 text-white rounded-lg text-sm font-medium px-5 transition-colors disabled:opacity-40"
-          >
-            {syncing ? (
-              <span className="flex items-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Setting up…
-              </span>
+          {/* Repo list */}
+          <div style={{ maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
+            {filtered.length === 0 ? (
+              <p style={{ color: "#555555", fontSize: 14, textAlign: "center", padding: "32px 0" }}>
+                {repos.length === 0 ? "No repositories found. Make sure the GitHub App is installed on your account." : "No results match your search."}
+              </p>
             ) : (
-              "Open Aperture64"
+              filtered.map((repo) => {
+                const isSelected = selected === repo.id;
+                const [owner, name] = repo.full_name.split("/");
+                return (
+                  <button
+                    key={repo.id}
+                    onClick={() => setSelected(repo.id)}
+                    style={{
+                      height: 56,
+                      background: isSelected ? "#1A1A1A" : "#111111",
+                      border: "1px solid #242424",
+                      borderLeft: isSelected ? "3px solid #6366F1" : "1px solid #242424",
+                      borderRadius: 6,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0 16px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#141414"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#111111"; }}
+                  >
+                    <div>
+                      <span style={{ color: "#555555", fontSize: 13 }}>{owner}/</span>
+                      <span style={{ color: isSelected ? "#6366F1" : "#F0F0F0", fontSize: 14, fontWeight: 600 }}>{name}</span>
+                    </div>
+                    <span style={{ background: "#1A1A1A", border: "1px solid #555555", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#555555" }}>
+                      {repo.default_branch}
+                    </span>
+                  </button>
+                );
+              })
             )}
-          </Button>
+          </div>
+
+          {/* Continue button */}
+          <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={handleIndex}
+              disabled={!selected}
+              style={{
+                width: 180,
+                height: 44,
+                background: "#6366F1",
+                color: "white",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: selected ? "pointer" : "not-allowed",
+                opacity: selected ? 1 : 0.4,
+                transition: "opacity 150ms",
+              }}
+            >
+              Index repository →
+            </button>
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555555" strokeWidth="2" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+function GraphLogo() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+      <circle cx="8" cy="16" r="4" fill="white" />
+      <circle cx="24" cy="8" r="4" fill="white" />
+      <circle cx="24" cy="24" r="4" fill="white" />
+      <line x1="12" y1="14" x2="20" y2="10" stroke="white" strokeWidth="1.5" />
+      <line x1="12" y1="18" x2="20" y2="22" stroke="white" strokeWidth="1.5" />
+    </svg>
   );
 }
 

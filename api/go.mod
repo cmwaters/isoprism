@@ -1,4 +1,4 @@
-module github.com/aperture/api
+module github.com/isoprism/api
 
 go 1.25.5
 

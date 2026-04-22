@@ -2,9 +2,11 @@ package github
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -17,8 +19,8 @@ type Client struct {
 
 func NewClient(token string) *Client {
 	return &Client{
-		token: token,
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		token:      token,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -46,7 +48,7 @@ func (c *Client) do(ctx context.Context, method, path string, out interface{}) e
 	return nil
 }
 
-// ---- Types ----
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type GHInstallation struct {
 	ID      int64 `json:"id"`
@@ -56,12 +58,6 @@ type GHInstallation struct {
 		ID        int64  `json:"id"`
 		AvatarURL string `json:"avatar_url"`
 	} `json:"account"`
-}
-
-type GHOrgTeam struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
 }
 
 type GHUser struct {
@@ -91,9 +87,7 @@ type GHPullRequest struct {
 	State   string `json:"state"`
 	Draft   bool   `json:"draft"`
 	HTMLURL string `json:"html_url"`
-	// Mergeable is null until GitHub computes it (async after push).
-	Mergeable *bool `json:"mergeable"`
-	User      struct {
+	User    struct {
 		Login     string `json:"login"`
 		AvatarURL string `json:"avatar_url"`
 	} `json:"user"`
@@ -103,10 +97,8 @@ type GHPullRequest struct {
 	} `json:"head"`
 	Base struct {
 		Ref string `json:"ref"`
+		SHA string `json:"sha"`
 	} `json:"base"`
-	RequestedReviewers []struct {
-		Login string `json:"login"`
-	} `json:"requested_reviewers"`
 	Additions    int        `json:"additions"`
 	Deletions    int        `json:"deletions"`
 	ChangedFiles int        `json:"changed_files"`
@@ -114,23 +106,28 @@ type GHPullRequest struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 	ClosedAt     *time.Time `json:"closed_at"`
 	MergedAt     *time.Time `json:"merged_at"`
-	MergedBy     *struct {
-		Login string `json:"login"`
-	} `json:"merged_by"`
+	MergeCommitSHA *string  `json:"merge_commit_sha"`
 }
 
-type GHReview struct {
-	ID          int64     `json:"id"`
-	State       string    `json:"state"`
-	CommitID    string    `json:"commit_id"` // SHA at which the review was submitted
-	SubmittedAt time.Time `json:"submitted_at"`
-	User        struct {
-		Login     string `json:"login"`
-		AvatarURL string `json:"avatar_url"`
-	} `json:"user"`
+// GHTreeEntry is one file entry in the git tree.
+type GHTreeEntry struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+	Type string `json:"type"` // "blob" | "tree"
+	SHA  string `json:"sha"`
+	Size int    `json:"size"`
 }
 
-// ---- Methods ----
+// GHCompareFile is a changed file in a compare response.
+type GHCompareFile struct {
+	Filename  string `json:"filename"`
+	Status    string `json:"status"` // added | modified | removed | renamed
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Patch     string `json:"patch"` // unified diff
+}
+
+// ── Methods ───────────────────────────────────────────────────────────────────
 
 func (c *Client) ListInstallationRepos(ctx context.Context) ([]InstallationRepo, error) {
 	var result ListInstallationReposResponse
@@ -148,70 +145,12 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string) (
 	return prs, nil
 }
 
-// ListClosedPullRequestsSince fetches closed PRs updated after `since`, paginating
-// until results are older than the cutoff. Callers should filter by closed_at.
-func (c *Client) ListClosedPullRequestsSince(ctx context.Context, owner, repo string, since time.Time) ([]GHPullRequest, error) {
-	var all []GHPullRequest
-	for page := 1; page <= 10; page++ { // cap at 1000 PRs (10 pages × 100)
-		var batch []GHPullRequest
-		url := fmt.Sprintf("/repos/%s/%s/pulls?state=closed&per_page=100&page=%d&sort=updated&direction=desc", owner, repo, page)
-		if err := c.do(ctx, "GET", url, &batch); err != nil {
-			return nil, err
-		}
-		if len(batch) == 0 {
-			break
-		}
-		for _, pr := range batch {
-			// UpdatedAt is the sort key; once the whole page is older than since we can stop.
-			all = append(all, pr)
-		}
-		// Stop paginating when the oldest PR on this page predates our window.
-		oldest := batch[len(batch)-1]
-		if oldest.UpdatedAt.Before(since) {
-			break
-		}
-	}
-	return all, nil
-}
-
 func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (*GHPullRequest, error) {
 	var pr GHPullRequest
 	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/pulls/%d", owner, repo, number), &pr); err != nil {
 		return nil, err
 	}
 	return &pr, nil
-}
-
-func (c *Client) ListPRReviews(ctx context.Context, owner, repo string, number int) ([]GHReview, error) {
-	var reviews []GHReview
-	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews", owner, repo, number), &reviews); err != nil {
-		return nil, err
-	}
-	return reviews, nil
-}
-
-func (c *Client) ListOrgTeams(ctx context.Context, org string) ([]GHOrgTeam, error) {
-	var teams []GHOrgTeam
-	if err := c.do(ctx, "GET", fmt.Sprintf("/orgs/%s/teams?per_page=100", org), &teams); err != nil {
-		return nil, err
-	}
-	return teams, nil
-}
-
-func (c *Client) ListOrgTeamMembers(ctx context.Context, org, teamSlug string) ([]GHUser, error) {
-	var members []GHUser
-	if err := c.do(ctx, "GET", fmt.Sprintf("/orgs/%s/teams/%s/members?per_page=100", org, teamSlug), &members); err != nil {
-		return nil, err
-	}
-	return members, nil
-}
-
-func (c *Client) ListOrgMembers(ctx context.Context, org string) ([]GHUser, error) {
-	var members []GHUser
-	if err := c.do(ctx, "GET", fmt.Sprintf("/orgs/%s/members?per_page=100", org), &members); err != nil {
-		return nil, err
-	}
-	return members, nil
 }
 
 func (c *Client) GetAuthenticatedUser(ctx context.Context) (*GHUser, error) {
@@ -222,16 +161,57 @@ func (c *Client) GetAuthenticatedUser(ctx context.Context) (*GHUser, error) {
 	return &user, nil
 }
 
-func (c *Client) ListUserOrgs(ctx context.Context) ([]struct {
-	Login     string `json:"login"`
-	AvatarURL string `json:"avatar_url"`
-}, error) {
-	var orgs []struct {
-		Login     string `json:"login"`
-		AvatarURL string `json:"avatar_url"`
+// GetBranchSHA returns the HEAD commit SHA of a branch.
+func (c *Client) GetBranchSHA(ctx context.Context, owner, repo, branch string) (string, error) {
+	var result struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
 	}
-	if err := c.do(ctx, "GET", "/user/orgs?per_page=100", &orgs); err != nil {
+	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/git/ref/heads/%s", owner, repo, branch), &result); err != nil {
+		return "", err
+	}
+	return result.Object.SHA, nil
+}
+
+// GetTree returns the full file tree at a given commit SHA.
+func (c *Client) GetTree(ctx context.Context, owner, repo, sha string) ([]GHTreeEntry, error) {
+	var result struct {
+		Tree     []GHTreeEntry `json:"tree"`
+		Truncated bool         `json:"truncated"`
+	}
+	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/git/trees/%s?recursive=1", owner, repo, sha), &result); err != nil {
 		return nil, err
 	}
-	return orgs, nil
+	return result.Tree, nil
+}
+
+// GetFileContent fetches the raw bytes of a file at the given ref.
+func (c *Client) GetFileContent(ctx context.Context, owner, repo, path, ref string) ([]byte, error) {
+	var result struct {
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	url := fmt.Sprintf("/repos/%s/%s/contents/%s?ref=%s", owner, repo, path, ref)
+	if err := c.do(ctx, "GET", url, &result); err != nil {
+		return nil, err
+	}
+	if result.Encoding != "base64" {
+		return nil, fmt.Errorf("unexpected encoding %q for file %s", result.Encoding, path)
+	}
+	// GitHub wraps base64 with newlines — strip them before decoding.
+	clean := strings.ReplaceAll(result.Content, "\n", "")
+	return base64.StdEncoding.DecodeString(clean)
+}
+
+// CompareCommits returns the list of changed files between base and head.
+func (c *Client) CompareCommits(ctx context.Context, owner, repo, base, head string) ([]GHCompareFile, error) {
+	var result struct {
+		Files []GHCompareFile `json:"files"`
+	}
+	url := fmt.Sprintf("/repos/%s/%s/compare/%s...%s", owner, repo, base, head)
+	if err := c.do(ctx, "GET", url, &result); err != nil {
+		return nil, err
+	}
+	return result.Files, nil
 }

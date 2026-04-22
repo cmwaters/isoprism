@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aperture/api/internal/api"
-	"github.com/aperture/api/internal/config"
-	"github.com/aperture/api/internal/db"
-	"github.com/aperture/api/internal/github"
+	"github.com/isoprism/api/internal/api"
+	"github.com/isoprism/api/internal/config"
+	"github.com/isoprism/api/internal/db"
+	"github.com/isoprism/api/internal/github"
 )
 
 func main() {

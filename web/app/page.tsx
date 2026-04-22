@@ -1,43 +1,32 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { apiFetch } from "@/lib/api";
-import { Organization } from "@/lib/types";
+import { Repository } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function RootPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
+  if (!user) redirect("/login");
 
   const { data: session } = await supabase.auth.getSession();
   const token = session.session?.access_token;
+  if (!token) redirect("/login");
 
-  if (!token) {
-    redirect("/login");
-  }
-
-  let firstOrgSlug: string | null = null;
+  // Check for an active repo
   try {
-    const { orgs } = await apiFetch<{ orgs: Organization[] }>(
-      "/api/v1/me/orgs",
-      token
-    );
-
-    if (orgs && orgs.length > 0) {
-      firstOrgSlug = orgs[0].slug;
+    const { repos } = await apiFetch<{ repos: Repository[] }>("/api/v1/me/repos", token);
+    if (repos && repos.length > 0) {
+      // Prefer a ready repo
+      const ready = repos.find((r) => r.index_status === "ready");
+      if (ready) redirect(`/repos/${ready.id}`);
+      // Otherwise go to onboarding/repos to trigger indexing
+      redirect("/onboarding/repos");
     }
   } catch {
-    // Fall through to onboarding
-  }
-
-  if (firstOrgSlug) {
-    redirect(`/orgs/${firstOrgSlug}`);
+    // No repos yet
   }
 
   redirect("/onboarding");
