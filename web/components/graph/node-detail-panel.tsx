@@ -1,7 +1,6 @@
 "use client";
 
 import { GraphEdge, GraphNode, GraphPR } from "@/lib/types";
-import { packageColor } from "./graph-canvas";
 import DiffBlock from "./diff-block";
 import { useState } from "react";
 
@@ -64,8 +63,7 @@ function NodeDetail({
   showDiff: boolean;
   onToggleDiff: () => void;
 }) {
-  const pkgColor = packageColor(node.full_name);
-  const pkgPrefix = node.full_name.includes(".") ? node.full_name.split(".")[0] : "";
+  const pkgPrefix = pkgLabel(node);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
@@ -76,7 +74,7 @@ function NodeDetail({
 
       {/* Package label */}
       {pkgPrefix && (
-        <p style={{ fontSize: 11, color: pkgColor, marginBottom: 4, fontWeight: 500 }}>
+        <p style={{ fontSize: 11, color: "#EF5DA8", marginBottom: 4, fontWeight: 500 }}>
           {pkgPrefix}
         </p>
       )}
@@ -166,8 +164,7 @@ function RelationSection({
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {nodes.map((n) => {
-          const pkgColor = packageColor(n.full_name);
-          const pkg = n.full_name.includes(".") ? n.full_name.split(".")[0] : "";
+          const pkg = pkgLabel(n);
           return (
             <button
               key={n.id}
@@ -184,7 +181,7 @@ function RelationSection({
               }}
             >
               <div>
-                {pkg && <span style={{ fontSize: 11, color: pkgColor }}>{pkg}.</span>}
+                {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
                 <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
               </div>
               {n.change_type === "added" && (
@@ -199,6 +196,16 @@ function RelationSection({
       </div>
     </div>
   );
+}
+
+function pkgLabel(node: GraphNode): string {
+  const parts = node.file_path.split("/");
+  const pkg = parts.length >= 2 ? parts[parts.length - 2] : "";
+  if (node.kind === "method" || node.full_name.includes(".")) {
+    const prefix = node.full_name.split(".").slice(0, -1).join(".");
+    return pkg ? `${pkg}.${prefix}` : prefix;
+  }
+  return pkg;
 }
 
 function calleesOf(nodeID: string, edges: GraphEdge[]): string[] {

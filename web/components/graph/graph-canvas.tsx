@@ -12,51 +12,109 @@ import {
   ReactFlowProvider,
   NodeMouseHandler,
   PanOnScrollMode,
+  ConnectionMode,
+  MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import dagre from "@dagrejs/dagre";
 import { GraphResponse, GraphNode as APIGraphNode } from "@/lib/types";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel from "./node-detail-panel";
 
 const nodeTypes = { graphNode: GraphNodeComponent };
 
-// ── Package color table ───────────────────────────────────────────────────────
-export function packageColor(fullName: string): string {
-  const prefix = fullName.split(".")[0].toLowerCase();
-  if (prefix.includes("types")) return "#3B82F6";
-  if (prefix.includes("crypto")) return "#06B6D4";
-  if (prefix.includes("consensus")) return "#EC4899";
-  if (prefix.includes("p2p")) return "#F59E0B";
-  if (prefix.includes("rpc")) return "#8B5CF6";
-  return "#6B7280";
+// ── Card color by kind ────────────────────────────────────────────────────────
+export function cardColorByKind(kind: string): string {
+  switch (kind) {
+    case "function":
+    case "method":
+      return "#D5E7EB";
+    case "struct":
+    case "type":
+      return "#CBCCE5";
+    case "interface":
+      return "#E5C8DC";
+    default:
+      return "#D5E7EB";
+  }
 }
 
-// ── Dagre layout ──────────────────────────────────────────────────────────────
-const NODE_W = 240;
-const NODE_H = 120;
+// ── Concentric ring layout ────────────────────────────────────────────────────
+const NODE_W = 220;
+const BASE_RADIUS = 300;
+const MIN_SPACING = 220;
 
-function layoutNodes(nodes: Node[], edges: Edge[]): Node[] {
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "TB", ranksep: 80, nodesep: 40 });
+function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
+  const changedIDs = new Set(graphNodes.filter((n) => n.node_type === "changed").map((n) => n.id));
 
-  nodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
-  edges.forEach((e) => g.setEdge(e.source, e.target));
-  dagre.layout(g);
-
-  return nodes.map((n) => {
-    const pos = g.node(n.id);
-    return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } };
+  const neighbors = new Map<string, string[]>();
+  nodes.forEach((n) => neighbors.set(n.id, []));
+  edges.forEach((e) => {
+    neighbors.get(e.source)?.push(e.target);
+    neighbors.get(e.target)?.push(e.source);
   });
+
+  const levels = new Map<string, number>();
+  const queue: string[] = [];
+
+  if (changedIDs.size > 0) {
+    changedIDs.forEach((id) => { levels.set(id, 0); queue.push(id); });
+  } else {
+    nodes.forEach((n) => { levels.set(n.id, 0); queue.push(n.id); });
+  }
+
+  let head = 0;
+  while (head < queue.length) {
+    const curr = queue[head++];
+    const level = levels.get(curr)!;
+    for (const nb of (neighbors.get(curr) ?? [])) {
+      if (!levels.has(nb)) { levels.set(nb, level + 1); queue.push(nb); }
+    }
+  }
+
+  const maxLevel = Math.max(0, ...Array.from(levels.values()));
+  nodes.forEach((n) => { if (!levels.has(n.id)) levels.set(n.id, maxLevel + 1); });
+
+  const byLevel = new Map<number, Node[]>();
+  nodes.forEach((n) => {
+    const lvl = levels.get(n.id) ?? 0;
+    if (!byLevel.has(lvl)) byLevel.set(lvl, []);
+    byLevel.get(lvl)!.push(n);
+  });
+
+  const positions = new Map<string, { x: number; y: number }>();
+
+  byLevel.forEach((levelNodes, level) => {
+    const count = levelNodes.length;
+    if (level === 0) {
+      const spacing = NODE_W + 60;
+      const totalW = count * spacing - 60;
+      const startX = -totalW / 2;
+      levelNodes.forEach((n, i) => {
+        positions.set(n.id, { x: startX + i * spacing, y: 0 });
+      });
+    } else {
+      const radius = Math.max(level * BASE_RADIUS, (count * MIN_SPACING) / (2 * Math.PI));
+      levelNodes.forEach((n, i) => {
+        const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+        positions.set(n.id, {
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius,
+        });
+      });
+    }
+  });
+
+  return nodes.map((n) => ({
+    ...n,
+    position: positions.get(n.id) ?? { x: 0, y: 0 },
+  }));
 }
 
-// ── Inner canvas (needs ReactFlowProvider context) ────────────────────────────
+// ── Inner canvas ──────────────────────────────────────────────────────────────
 function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }) {
   const { fitView } = useReactFlow();
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
 
-  // Build React Flow nodes
   const initialNodes: Node[] = graph.nodes.map((n) => ({
     id: n.id,
     type: "graphNode",
@@ -64,26 +122,26 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
     position: { x: 0, y: 0 },
   }));
 
-  // Build React Flow edges
-  const nodeColorMap: Record<string, string> = {};
-  graph.nodes.forEach((n) => {
-    nodeColorMap[n.id] = packageColor(n.full_name);
+  const initialEdges: Edge[] = graph.edges.map((e, idx) => {
+    const src = graph.nodes.find((n) => n.id === e.caller_id);
+    const color = src ? cardColorByKind(src.kind) : "#9CA3AF";
+    return {
+      id: `e${idx}`,
+      source: e.caller_id,
+      target: e.callee_id,
+      type: "default",
+      style: { stroke: color, strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color },
+    };
   });
 
-  const initialEdges: Edge[] = graph.edges.map((e, idx) => ({
-    id: `e${idx}`,
-    source: e.caller_id,
-    target: e.callee_id,
-    type: "bezier",
-    style: { stroke: nodeColorMap[e.caller_id] ?? "#6B7280", strokeWidth: 1 },
-    markerEnd: { type: "arrow" as any, width: 8, height: 8, color: nodeColorMap[e.caller_id] ?? "#6B7280" },
-  }));
-
-  const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes(initialNodes, initialEdges));
+  const [nodes, , onNodesChange] = useNodesState(
+    concentricLayout(initialNodes, initialEdges, graph.nodes)
+  );
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
   useEffect(() => {
-    setTimeout(() => fitView({ padding: 0.2 }), 50);
+    setTimeout(() => fitView({ padding: 0.15 }), 50);
   }, [fitView]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
@@ -101,7 +159,6 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw" }}>
-      {/* Detail panel */}
       <NodeDetailPanel
         node={selectedNode}
         allNodes={graph.nodes}
@@ -114,7 +171,6 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
         pr={graph.pr}
       />
 
-      {/* Graph canvas */}
       <div style={{ flex: 1, background: "#EBE9E9", position: "relative" }}>
         {/* Top bar */}
         <div style={{
@@ -155,17 +211,17 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
+            connectionMode={ConnectionMode.Loose}
             fitView
             panOnScroll
             panOnScrollMode={PanOnScrollMode.Free}
-            minZoom={0.2}
+            minZoom={0.15}
             maxZoom={2}
             proOptions={{ hideAttribution: true }}
           >
             <Background color="#D8D6D6" gap={20} size={1} />
           </ReactFlow>
 
-          {/* Zoom controls */}
           <div style={{
             position: "absolute",
             bottom: 24,
@@ -175,10 +231,9 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
             gap: 4,
             zIndex: 10,
           }}>
-            <ZoomControls onFit={() => fitView({ padding: 0.2 })} />
+            <ZoomControls onFit={() => fitView({ padding: 0.15 })} />
           </div>
 
-          {/* Node count notice */}
           {totalNodes >= maxNodes && (
             <div style={{
               position: "absolute",
@@ -220,8 +275,6 @@ function ZoomControls({ onFit }: { onFit: () => void }) {
     </>
   );
 }
-
-// ── Public export ─────────────────────────────────────────────────────────────
 
 export default function GraphCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }) {
   return (

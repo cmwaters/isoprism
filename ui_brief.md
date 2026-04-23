@@ -153,7 +153,7 @@ This panel updates when the user clicks a node in the graph. Default state (no n
 
 1. **File path** — `path/to/file.go` — 11px, `#AAAAAA`, at very top.
 
-2. **Package label** — e.g. `types.MockPV` — 11px, package color (see Package Color Table below), 8px below file path.
+2. **Package label** — e.g. `types.MockPV` — 11px, `#EF5DA8` (fuchsia), 8px below file path.
 
 3. **Function name** — 22px semibold, `#111111`, 4px below package label.
 
@@ -183,35 +183,37 @@ This panel updates when the user clicks a node in the graph. Default state (no n
 - Left: "← Back" link in `#888888`, separator `·`, PR number in `#888888`, PR title in `#111111` semibold.
 - Right: "View on GitHub →" link in `#6366F1`.
 
-**Graph layout:** Hierarchical (dagre, top-to-bottom). Changed nodes are centred; callers above, callees below. Pan and zoom freely.
+**Graph layout:** Concentric rings. Changed nodes sit at the centre; BFS assigns each connected node a ring level. Level 0 nodes spread horizontally; outer rings are evenly distributed around a circle whose radius adapts to node count (`max(level × 300px, count × 220px / 2π)`). Pan and zoom freely.
 
-**Package Color Table** — used consistently across node labels, edge colors, and panel labels:
+**Node color by kind:**
 
-| Package prefix | Color |
+| Kind | Background |
 |---|---|
-| `types` | `#3B82F6` (blue) |
-| `crypto` | `#06B6D4` (cyan) |
-| `consensus` | `#EC4899` (pink) |
-| `p2p` | `#F59E0B` (amber) |
-| `rpc` | `#8B5CF6` (violet) |
-| other / unknown | `#6B7280` (gray) |
+| `function`, `method` | `#D5E7EB` (steel blue-grey) |
+| `struct`, `type` | `#CBCCE5` (lavender) |
+| `interface` | `#E5C8DC` (rose) |
+| Selected (any kind) | `#F5F5F5` |
 
-**Node anatomy** (white card, `box-shadow: 0 1px 4px rgba(0,0,0,0.12)`, 8px border-radius, 10px padding):
-- **Package label** — 11px, package color, top of card.
-- **Function name** — 13px semibold, `#111111`, 3px below package label.
-- **Parameters** — 11px, `#444444`, one per line below function name.
-- **Return types** — same style, below a 1px `#EEEEEE` divider.
-- **Diff stat badges** (changed nodes only): green `+N` and red `-N` pills. 8px margin-top.
-- **Status badge**: "Deleted" red pill or "Added" green pill for added/deleted nodes.
+**Node anatomy** (colored card, `box-shadow: 0 1px 4px rgba(0,0,0,0.12)`, 8px border-radius, 10px padding, monospace font):
+- **Package label** — 11px, `#EF5DA8` (fuchsia), top of card. Format: `pkg` for functions; `pkg.ReceiverType` for methods (package inferred from file path directory).
+- **Function name** — 13px semibold, `#111111`.
+- **Parameters** — 11px per line: param name in `#444444`, type in `#0088FF` (blue).
+- **Return types** — 11px, `#FF383C` (red), below a 1px `rgba(0,0,0,0.1)` divider.
+- **Status badge**: "Deleted" red pill or "Added" green pill, inline after returns.
+
+**Diff pills** (changed nodes only) — rendered **below** the card, not inside:
+- Added lines: `#EF5DA8` background, white text, 12px border-radius, `+N` format.
+- Removed lines: `#E08D8D` background, white text, 12px border-radius, `-N` format.
 
 **Node states:**
-- **Default:** white card, standard shadow.
-- **Selected:** white card, stronger shadow `0 4px 16px rgba(0,0,0,0.18)`.
-- **Hover:** `box-shadow: 0 2px 8px rgba(0,0,0,0.15)`, cursor pointer.
+- **Default:** kind-colored card, standard shadow.
+- **Selected:** `#F5F5F5` background, stronger shadow `0 4px 16px rgba(0,0,0,0.18)`.
+
+**Handles:** All 4 sides (Top target, Left target, Right source, Bottom source), opacity 0. `ConnectionMode.Loose` enabled.
 
 **Edges:**
-- Thin bezier curves, 1px stroke.
-- Color matches the source node's package color.
+- Bezier curves, 1.5px stroke, `MarkerType.ArrowClosed` triangle arrowhead.
+- Color matches the **source node's kind color** (same table as node backgrounds).
 
 **Zoom controls:** bottom-right corner. `+` / `−` / `⊡ fit` buttons, 36px each, white bg, `#E4E4E4` border, 6px border-radius, `#444444` icon text.
 
