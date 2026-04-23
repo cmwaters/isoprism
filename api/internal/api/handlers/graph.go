@@ -30,14 +30,17 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load PR
+	// Load PR + main commit SHA
 	var pr models.GraphPR
-	var baseCommit, headCommit string
+	var baseCommit, headCommit, mainCommitSHA string
 	err := h.DB.QueryRow(ctx, `
-		select id, number, title, html_url,
-		       coalesce(base_commit_sha,''), coalesce(head_commit_sha,'')
-		from pull_requests where id=$1 and repo_id=$2
-	`, prID, repoID).Scan(&pr.ID, &pr.Number, &pr.Title, &pr.HTMLURL, &baseCommit, &headCommit)
+		select pr.id, pr.number, pr.title, pr.html_url,
+		       coalesce(pr.base_commit_sha,''), coalesce(pr.head_commit_sha,''),
+		       coalesce(r.main_commit_sha,'')
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		where pr.id=$1 and pr.repo_id=$2
+	`, prID, repoID).Scan(&pr.ID, &pr.Number, &pr.Title, &pr.HTMLURL, &baseCommit, &headCommit, &mainCommitSHA)
 	if err != nil {
 		http.Error(w, "pr not found", http.StatusNotFound)
 		return
@@ -45,7 +48,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	pr.BaseCommitSHA = baseCommit
 	pr.HeadCommitSHA = headCommit
 
-	// Load changed nodes (directly modified)
+	// Load changed nodes from pr_node_changes
 	type rawChange struct {
 		nodeID        string
 		changeType    string
@@ -86,46 +89,113 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// One-hop expansion: find callers and callees of changed nodes
-	// Use the head commit for context
-	type edgeRow struct {
-		callerID string
-		calleeID string
+	// Get full_names of the changed nodes (stored at PR head SHA)
+	changedIDToFullName := map[string]string{}
+	changedFullNames := make([]string, 0, len(changedIDs))
+	fnRows, _ := h.DB.Query(ctx, `select id, full_name from code_nodes where id = any($1::uuid[])`, changedIDs)
+	if fnRows != nil {
+		defer fnRows.Close()
+		for fnRows.Next() {
+			var id, fn string
+			fnRows.Scan(&id, &fn)
+			changedIDToFullName[id] = fn
+			changedFullNames = append(changedFullNames, fn)
+		}
+		fnRows.Close()
 	}
-	var allEdges []edgeRow
-	callerSet := map[string]bool{} // nodes that call a changed node
-	calleeSet := map[string]bool{} // nodes called by a changed node
 
-	edgeRows, _ := h.DB.Query(ctx, `
-		select ce.caller_id, ce.callee_id
-		from code_edges ce
-		join code_nodes cn on cn.id = ce.caller_id or cn.id = ce.callee_id
-		where cn.repo_id = $1
-		  and cn.commit_sha = $2
-		  and (ce.caller_id = any($3::uuid[]) or ce.callee_id = any($3::uuid[]))
-	`, repoID, headCommit, changedIDs)
-	if edgeRows != nil {
-		defer edgeRows.Close()
-		for edgeRows.Next() {
-			var e edgeRow
-			if err := edgeRows.Scan(&e.callerID, &e.calleeID); err != nil {
-				continue
+	// Find equivalent node IDs at the main branch commit (for edge lookups).
+	// code_edges are stored with main-branch node IDs during repo_init.
+	mainIDByFullName := map[string]string{}
+	fullNameByMainID := map[string]string{}
+	var mainChangedIDs []string
+	if mainCommitSHA != "" && len(changedFullNames) > 0 {
+		mRows, _ := h.DB.Query(ctx, `
+			select id, full_name from code_nodes
+			where repo_id=$1 and commit_sha=$2 and full_name = any($3)
+		`, repoID, mainCommitSHA, changedFullNames)
+		if mRows != nil {
+			defer mRows.Close()
+			for mRows.Next() {
+				var id, fn string
+				mRows.Scan(&id, &fn)
+				mainIDByFullName[fn] = id
+				fullNameByMainID[id] = fn
+				mainChangedIDs = append(mainChangedIDs, id)
 			}
-			allEdges = append(allEdges, e)
-			for _, cid := range changedIDs {
-				if e.calleeID == cid {
-					callerSet[e.callerID] = true
-				}
-				if e.callerID == cid {
-					calleeSet[e.calleeID] = true
-				}
+			mRows.Close()
+		}
+	}
+
+	// Build lookup IDs: prefer main-branch IDs (so edges resolve), fall back to PR head IDs
+	lookupIDs := make([]string, 0, len(mainChangedIDs)+len(changedIDs))
+	lookupIDs = append(lookupIDs, mainChangedIDs...)
+	// Also include PR-head IDs to catch edges built during open_pr
+	for _, id := range changedIDs {
+		if fn, ok := changedIDToFullName[id]; ok {
+			if _, hasmain := mainIDByFullName[fn]; !hasmain {
+				lookupIDs = append(lookupIDs, id)
 			}
 		}
 	}
 
-	// Build the full node ID set (cap at 20)
+	// Query call edges touching any of the lookup IDs (no commit_sha filter — edges
+	// may exist at either main SHA or PR head SHA depending on when they were built)
+	type edgeRow struct{ callerID, calleeID string }
+	var allEdges []edgeRow
+	callerSet := map[string]bool{}
+	calleeSet := map[string]bool{}
+
+	if len(lookupIDs) > 0 {
+		eRows, _ := h.DB.Query(ctx, `
+			select caller_id, callee_id
+			from code_edges
+			where repo_id = $1
+			  and (caller_id = any($2::uuid[]) or callee_id = any($2::uuid[]))
+		`, repoID, lookupIDs)
+		if eRows != nil {
+			defer eRows.Close()
+			for eRows.Next() {
+				var e edgeRow
+				eRows.Scan(&e.callerID, &e.calleeID)
+				allEdges = append(allEdges, e)
+
+				// Determine caller/callee relative to changed nodes.
+				// An ID is "changed" if it's a main-branch equivalent of a changed node
+				// or directly a PR-head changed node.
+				isChanged := func(id string) bool {
+					if _, ok := changedSet[id]; ok {
+						return true
+					}
+					if fn, ok := fullNameByMainID[id]; ok {
+						for _, cid := range changedIDs {
+							if changedIDToFullName[cid] == fn {
+								return true
+							}
+						}
+					}
+					return false
+				}
+
+				if isChanged(e.calleeID) {
+					callerSet[e.callerID] = true
+				}
+				if isChanged(e.callerID) {
+					calleeSet[e.calleeID] = true
+				}
+			}
+			eRows.Close()
+		}
+	}
+
+	// Build the full node ID set (cap at 20).
+	// Changed nodes use their PR-head IDs; context nodes use whatever ID the edge returned.
 	includedIDs := map[string]bool{}
 	for _, id := range changedIDs {
+		includedIDs[id] = true
+	}
+	// Also include main-branch changed IDs so we can resolve context edges
+	for _, id := range mainChangedIDs {
 		includedIDs[id] = true
 	}
 	for id := range callerSet {
@@ -139,7 +209,6 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fetch node details
 	idList := make([]string, 0, len(includedIDs))
 	for id := range includedIDs {
 		idList = append(idList, id)
@@ -170,43 +239,91 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		if summary != "" {
 			n.Summary = &summary
 		}
+		nodeMap[n.ID] = n
+	}
 
-		// Tag node type
-		if _, isChanged := changedSet[n.ID]; isChanged {
-			n.NodeType = "changed"
-			c := changedSet[n.ID]
-			n.ChangeSummary = c.changeSummary
-			n.DiffHunk = c.diffHunk
-			ct := c.changeType
-			n.ChangeType = &ct
-			if c.diffHunk != nil {
-				added, removed := countDiffLines(*c.diffHunk)
-				n.LinesAdded = added
-				n.LinesRemoved = removed
-			}
-		} else if callerSet[n.ID] {
+	// Tag node types. For nodes that appear in both PR-head and main-branch forms,
+	// prefer the PR-head version (it has change info).
+	finalNodeMap := map[string]models.GraphNode{} // keyed by the ID we'll use in the response
+
+	// First pass: add changed nodes (PR-head IDs) with change info
+	for _, id := range changedIDs {
+		n, ok := nodeMap[id]
+		if !ok {
+			continue
+		}
+		n.NodeType = "changed"
+		c := changedSet[id]
+		n.ChangeSummary = c.changeSummary
+		n.DiffHunk = c.diffHunk
+		ct := c.changeType
+		n.ChangeType = &ct
+		if c.diffHunk != nil {
+			added, removed := countDiffLines(*c.diffHunk)
+			n.LinesAdded = added
+			n.LinesRemoved = removed
+		}
+		finalNodeMap[id] = n
+	}
+
+	// Build a lookup: main-branch ID → PR-head changed node ID (for edge remapping)
+	mainIDToPRID := map[string]string{}
+	for prID2, fn := range changedIDToFullName {
+		if mainID, ok := mainIDByFullName[fn]; ok {
+			mainIDToPRID[mainID] = prID2
+		}
+	}
+
+	// Second pass: add context nodes (caller/callee) that aren't already included
+	for id := range includedIDs {
+		// Skip if it's a main-branch equivalent of a changed node
+		if prEquiv, ok := mainIDToPRID[id]; ok {
+			_ = prEquiv
+			continue
+		}
+		if _, already := finalNodeMap[id]; already {
+			continue
+		}
+		n, ok := nodeMap[id]
+		if !ok {
+			continue
+		}
+		if callerSet[id] {
 			n.NodeType = "caller"
 		} else {
 			n.NodeType = "callee"
 		}
-
-		nodeMap[n.ID] = n
+		finalNodeMap[id] = n
 	}
 
-	// Build response nodes and filter edges to only included nodes
-	nodes := make([]models.GraphNode, 0, len(nodeMap))
-	for _, n := range nodeMap {
+	// Remap edges: replace main-branch changed node IDs with their PR-head IDs
+	remapID := func(id string) string {
+		if prEquiv, ok := mainIDToPRID[id]; ok {
+			return prEquiv
+		}
+		return id
+	}
+
+	nodes := make([]models.GraphNode, 0, len(finalNodeMap))
+	for _, n := range finalNodeMap {
 		nodes = append(nodes, n)
 	}
 
 	edges := make([]models.GraphEdge, 0)
 	for _, e := range allEdges {
-		if includedIDs[e.callerID] && includedIDs[e.calleeID] {
-			edges = append(edges, models.GraphEdge{
-				CallerID: e.callerID,
-				CalleeID: e.calleeID,
-			})
+		callerID := remapID(e.callerID)
+		calleeID := remapID(e.calleeID)
+		// Only include edges where both endpoints are in the final node set
+		if _, ok := finalNodeMap[callerID]; !ok {
+			continue
 		}
+		if _, ok := finalNodeMap[calleeID]; !ok {
+			continue
+		}
+		edges = append(edges, models.GraphEdge{
+			CallerID: callerID,
+			CalleeID: calleeID,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

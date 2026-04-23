@@ -83,9 +83,12 @@ function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode
 
   const positions = new Map<string, { x: number; y: number }>();
 
+  const hasOuterRings = byLevel.size > 1;
+
   byLevel.forEach((levelNodes, level) => {
     const count = levelNodes.length;
-    if (level === 0) {
+    if (level === 0 && hasOuterRings && count <= 3) {
+      // Few changed nodes with outer context: place in a tight row at centre
       const spacing = NODE_W + 60;
       const totalW = count * spacing - 60;
       const startX = -totalW / 2;
@@ -93,14 +96,20 @@ function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode
         positions.set(n.id, { x: startX + i * spacing, y: 0 });
       });
     } else {
-      const radius = Math.max(level * BASE_RADIUS, (count * MIN_SPACING) / (2 * Math.PI));
-      levelNodes.forEach((n, i) => {
-        const angle = (2 * Math.PI * i) / count - Math.PI / 2;
-        positions.set(n.id, {
-          x: Math.cos(angle) * radius,
-          y: Math.sin(angle) * radius,
+      // All other cases (including sole ring): circle arrangement
+      if (count === 1) {
+        positions.set(levelNodes[0].id, { x: 0, y: 0 });
+      } else {
+        const minR = level === 0 ? 180 : level * BASE_RADIUS;
+        const radius = Math.max(minR, (count * MIN_SPACING) / (2 * Math.PI));
+        levelNodes.forEach((n, i) => {
+          const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+          positions.set(n.id, {
+            x: Math.cos(angle) * radius,
+            y: Math.sin(angle) * radius,
+          });
         });
-      });
+      }
     }
   });
 

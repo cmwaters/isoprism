@@ -250,6 +250,63 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			generated_at  = excluded.generated_at
 	`, prID, nullIfEmpty(summary), nodesChanged, nullIfZero(riskScore), nullIfEmpty(riskLabel), modelName, now)
 
+	// Build call edges for the PR's changed files (stored at headSHA).
+	// This ensures changed functions have edges even if they're not in code_edges
+	// from the initial repo index (which uses main branch SHAs).
+	allHeadNodes := make([]parser.Node, 0)
+	for _, c := range changed {
+		if c.changeType != "deleted" {
+			allHeadNodes = append(allHeadNodes, c.node)
+		}
+	}
+	if len(allHeadNodes) > 0 {
+		nodeByName := make(map[string]bool, len(allHeadNodes))
+		for _, n := range allHeadNodes {
+			nodeByName[n.FullName] = true
+		}
+		// Also include all known nodes so cross-file edges can resolve
+		knownRows, _ := db.Query(ctx, `select full_name from code_nodes where repo_id=$1 and commit_sha=$2`, repoID, headSHA)
+		if knownRows != nil {
+			defer knownRows.Close()
+			for knownRows.Next() {
+				var fn string
+				knownRows.Scan(&fn)
+				nodeByName[fn] = true
+			}
+			knownRows.Close()
+		}
+
+		for _, n := range allHeadNodes {
+			edges := parser.ExtractCallEdges([]byte(n.Body), n.FilePath, nodeByName)
+			var callerID string
+			db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3 and file_path=$4`,
+				repoID, headSHA, n.FullName, n.FilePath).Scan(&callerID)
+			if callerID == "" {
+				continue
+			}
+			for _, edge := range edges {
+				var calleeID string
+				db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
+					repoID, headSHA, edge.CalleeFullName).Scan(&calleeID)
+				if calleeID == "" {
+					// Try main branch as fallback
+					db.QueryRow(ctx, `
+						select id from code_nodes
+						where repo_id=$1 and full_name=$2
+						order by created_at desc limit 1
+					`, repoID, edge.CalleeFullName).Scan(&calleeID)
+				}
+				if calleeID != "" && calleeID != callerID {
+					db.Exec(ctx, `
+						insert into code_edges (repo_id, commit_sha, caller_id, callee_id)
+						values ($1,$2,$3,$4)
+						on conflict do nothing
+					`, repoID, headSHA, callerID, calleeID)
+				}
+			}
+		}
+	}
+
 	// Mark ready
 	db.Exec(ctx, `update pull_requests set graph_status='ready' where id=$1`, prID)
 	log.Printf("OpenPR: completed for pr %s (%d changed nodes)", prID, nodesChanged)
