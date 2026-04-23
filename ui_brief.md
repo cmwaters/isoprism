@@ -1,6 +1,6 @@
 # Isoprism — UI Brief
 
-> For AI generation and Figma design | Updated: 2026-04-21
+> For AI generation and Figma design | Updated: 2026-04-23
 
 ---
 
@@ -9,19 +9,20 @@
 **Typeface:** Inter (or equivalent geometric sans-serif). All body text 14–15px. Headings 20–28px. Monospace (JetBrains Mono or similar) for function signatures and code.
 
 **Palette:**
-- Background: `#0A0A0A` (near-black)
-- Surface: `#111111` (cards, panels)
-- Surface raised: `#1A1A1A` (hover states, expanded panels)
-- Border: `#242424`
-- Text primary: `#F0F0F0`
-- Text secondary: `#888888`
-- Text muted: `#555555`
-- Accent (changed nodes): `#6366F1` (indigo-500)
-- Accent dim (caller/callee nodes): `#312E81` (indigo-900, background) with `#818CF8` (indigo-400, text)
+- Background: `#EBE9E9` (warm off-white)
+- Surface: `#E1E1E1` (sidebars, panels)
+- Surface raised: `#D8D8D8` (selected states)
+- Border: `#D4D4D4`
+- Text primary: `#111111`
+- Text secondary: `#666666`
+- Text muted: `#888888`
+- Text faint: `#AAAAAA`
+- Accent (changed nodes / CTA): `#6366F1` (indigo-500)
+- Accent dim (caller/callee nodes): `#C7D2FE` (indigo-200, border) with `#6366F1` (text)
 - Success: `#22C55E`
 - Destructive: `#EF4444`
 
-**Aesthetic:** Dark, minimal, instrument-like. Inspired by Linear and Vercel's dashboard. High contrast between text and background. No gradients. No shadows except subtle `box-shadow: 0 0 0 1px #242424` for card borders.
+**Aesthetic:** Light, minimal, instrument-like. High contrast between text and background. No gradients. No shadows except subtle `box-shadow: 0 1px 4px rgba(0,0,0,0.08)` for card borders.
 
 **Spacing system:** 4px base unit. Common values: 8, 12, 16, 20, 24, 32, 48px.
 
@@ -34,45 +35,44 @@
 **Layout:** Full viewport. Vertically and horizontally centred content column, max-width 360px.
 
 **Content (top to bottom):**
-1. Isoprism logo mark — a small abstract graph icon (3 nodes connected by 2 edges), 32×32px, white
-2. Product name "Isoprism" in 20px semibold, white, 12px below the logo
+1. Isoprism logo mark — a small abstract graph icon (3 nodes connected by 2 edges), 32×32px, `#111111`
+2. Product name "Isoprism" in 20px semibold, `#111111`, 12px below the logo
 3. 48px gap
-4. Headline: "Understand what your PRs actually change." — 28px, semibold, white, centered, max 2 lines
-5. Subheading: "A graph view of every function affected. Plain-language summaries. No diffs." — 15px, `#888888`, centered, 12px below headline
+4. Headline: "Understand what your PRs actually change." — 28px, semibold, `#111111`, centered, max 2 lines
+5. Subheading: "A graph view of every function affected. Plain-language summaries. No diffs." — 15px, `#666666`, centered, 12px below headline
 6. 40px gap
-7. **GitHub sign-in button** — full width, 48px height, `#F0F0F0` background, `#0A0A0A` text, 8px border-radius. GitHub Octocat icon (20px) left of text "Continue with GitHub". On hover: `#FFFFFF` background.
+7. **GitHub sign-in button** — full width, 48px height, `#111111` background, white text, 8px border-radius. GitHub Octocat icon (20px) left of text "Continue with GitHub". On hover: `#333333` background.
 8. 48px gap below button
-9. Fine print: "By signing in you authorise read access to your repositories." — 12px, `#555555`, centered
+9. Fine print: "By signing in you authorise read access to your repositories." — 12px, `#888888`, centered
 
-**Background:** Solid `#0A0A0A`. No image, no pattern.
+**Background:** Solid `#EBE9E9`. No image, no pattern.
 
 ---
 
 ## Screen 2 — Repo Selection
 
 **Layout:** Full viewport. Two zones:
-- Left sidebar (240px wide, full height, `#111111` background, `#242424` right border)
-- Main content area (remaining width)
+- Left sidebar (240px wide, full height, `#E1E1E1` background, `#D4D4D4` right border)
+- Main content area (remaining width, `#EBE9E9` background)
 
 **Left Sidebar:**
 - Isoprism logo mark + "Isoprism" wordmark at top, 20px padding
-- User avatar (24px circle) + GitHub username below, 16px text, `#888888`, at bottom of sidebar with 20px padding
 
 **Main Content (centred column, max-width 560px, vertically centred in viewport):**
-1. Heading: "Select a repository" — 24px semibold, white
-2. Subheading: "Isoprism will index this repository's pull requests." — 15px, `#888888`, 8px below heading
+1. Heading: "Select a repository" — 24px semibold, `#111111`
+2. Subheading: "Isoprism will index this repository's pull requests." — 15px, `#666666`, 8px below heading
 3. 24px gap
-4. **Search input** — full width, 44px height, `#111111` background, `#242424` border, 6px border-radius. Placeholder: "Search repositories…" in `#555555`. Magnifier icon on left inside.
+4. **Search input** — full width, 44px height, white background, `#D4D4D4` border, 6px border-radius. Placeholder: "Search repositories…" in `#AAAAAA`. Magnifier icon on left inside.
 5. 16px gap
 6. **Repository list** — scrollable, max-height ~400px. Each row:
    - Height: 56px
-   - `#111111` background, `#242424` border, 6px border-radius, 1px gap between rows
-   - Left: repo name in 14px semibold white + org/owner prefix in `#555555` 13px
-   - Right: language badge (e.g. "TypeScript") in `#1A1A1A` with `#555555` border, 11px text; and last-updated timestamp in `#555555` 12px
-   - Selected state: `#1A1A1A` background, `#6366F1` left border (3px), repo name in `#6366F1`
-   - Hover state: `#141414` background
+   - White background, `#D4D4D4` border, 6px border-radius, 1px gap between rows
+   - Left: repo name in 14px semibold `#111111` + org/owner prefix in `#888888` 13px
+   - Right: branch badge (e.g. "main") in `#EBE9E9` with `#D4D4D4` border, 11px `#888888` text
+   - Selected state: `#D8D8D8` background, `#6366F1` left border (3px), repo name in `#6366F1`
+   - Hover state: `#F0F0F0` background
 7. 24px gap
-8. **Continue button** — right-aligned, 140px wide, 44px height, `#6366F1` background, white text "Index repository →", 6px border-radius. Disabled (opacity 0.4) until a repo is selected.
+8. **Continue button** — right-aligned, 180px wide, 44px height, `#6366F1` background, white text "Index repository →", 6px border-radius. Disabled (opacity 0.4) until a repo is selected.
 
 ---
 
@@ -83,42 +83,42 @@
 **Content:**
 1. Repo name + GitHub icon in small badge at top: `acme/backend`
 2. 32px gap
-3. Animated progress indicator — a horizontal bar, `#1A1A1A` track, `#6366F1` fill that animates from 0 to ~70% over 3 seconds then pulses. Width: full column. Height: 3px.
+3. Animated progress indicator — a horizontal bar, `#D4D4D4` track, `#6366F1` fill that animates from 0 to ~70% over 3 seconds then pulses. Width: full column. Height: 3px.
 4. 16px gap
-5. Status label — 14px, `#888888`, left-aligned under the bar. Cycles through:
+5. Status label — 14px, `#666666`, left-aligned under the bar. Cycles through:
    - "Fetching pull requests…"
    - "Analysing changed functions…"
    - "Building call graphs…"
    (Each phase lasts ~1.5s, fades between them)
-6. When complete (no more than ~10 seconds), transition immediately to Screen 4 (PR Queue).
+6. When complete, transition immediately to Screen 4 (PR Queue).
 
 ---
 
 ## Screen 4 — PR Queue
 
-**Layout:** Same two-zone layout. Main content column max-width 720px, vertically positioned in upper half of viewport with top padding of 48px.
+**Layout:** Same two-zone layout. Main content column max-width 720px, top padding 48px.
 
 **Content:**
-1. Breadcrumb: small text `acme/backend` in `#555555`, 13px, at top
+1. Breadcrumb: small text `acme/backend` in `#888888`, 13px, at top
 2. 8px gap
-3. Heading: "Pull requests" — 22px semibold, white
-4. Subheading: "Top 5 open PRs ranked by wait time and impact." — 14px, `#888888`, 8px below
+3. Heading: "Pull requests" — 22px semibold, `#111111`
+4. Subheading: "Top 5 open PRs ranked by wait time and impact." — 14px, `#666666`, 8px below
 5. 24px gap
-6. **PR List** — 5 rows. Each row is a card:
+6. **PR List** — up to 5 rows. Each row is a card:
    - Height: auto, min 72px
-   - `#111111` background, `#242424` border, 8px border-radius
-   - 16px gap between cards
-   - Hover state: `#141414` background, cursor pointer
-   - **Left edge accent bar** (4px wide, full height): `#6366F1` for the highest urgency PR, `#312E81` for the rest
+   - White background, `#D4D4D4` border, 8px border-radius
+   - 12px gap between cards
+   - Hover state: `#F5F5F5` background, cursor pointer
+   - **Left edge accent bar** (4px wide, full height): `#6366F1` for the highest urgency PR, `#C7D2FE` for the rest
    
    **Card layout (16px internal padding):**
-   - Row 1: PR number `#555555 · #42` and title `#F0F0F0` 15px semibold, inline
-   - Row 2 (8px below): One-line AI summary — 14px `#888888`
+   - Row 1: PR number `#AAAAAA · #42` and title `#111111` 15px semibold, inline
+   - Row 2 (8px below): One-line AI summary — 14px `#666666`
    - Row 3 (10px below): Three small badges inline:
-     - Time open: clock icon + "3 days" — `#1A1A1A` bg, `#888888` text, 11px
+     - Time open: clock icon + "3 days" — `#F0F0F0` bg, `#D4D4D4` border, `#666666` text, 11px
      - Functions affected: graph-node icon + "12 functions" — same style
-     - Risk: coloured dot + "Medium risk" — dot colour matches risk level (green/amber/red), `#888888` text
-   - Far right: chevron `›` in `#555555`, vertically centred
+     - Risk: coloured dot + "Medium risk" — dot colour matches risk level (green/amber/red), `#666666` text
+   - Far right: chevron `›` in `#AAAAAA`, vertically centred
 
 ---
 
@@ -138,7 +138,7 @@ This is the primary screen. It has two zones:
 
 ![Graph View Reference](graph-view-reference.png)
 
-**Important:** Both the Node Detail Panel and Graph Canvas use a **light theme** (panel `#DCDCDC`, canvas `#EBE9E9`; dark text).
+**Both the Node Detail Panel and Graph Canvas use a light theme** (panel `#DCDCDC`, canvas `#EBE9E9`; dark text).
 
 ---
 
@@ -151,39 +151,39 @@ This panel updates when the user clicks a node in the graph. Default state (no n
 
 **Node selected state (top to bottom, 20px padding):**
 
-1. **File path** — `path/to/file.go` — 11px, `#AAAAAA`, at very top. This is the source file where the function is defined.
+1. **File path** — `path/to/file.go` — 11px, `#AAAAAA`, at very top.
 
 2. **Package label** — e.g. `types.MockPV` — 11px, package color (see Package Color Table below), 8px below file path.
 
 3. **Function name** — 22px semibold, `#111111`, 4px below package label.
 
-4. **Description** — 14px, `#555555`, line-height 1.6, 12px below name. 2–3 sentences describing what the function does.
+4. **Description** — 14px, `#555555`, line-height 1.6, 12px below name.
 
 5. **"What's Changed?" card** (only for directly modified functions) — 16px below description:
    - Container: `#F0FFF4` background, `#BBF7D0` left border (3px), 8px border-radius, 12px padding.
    - Label: "What's Changed?" — 12px semibold, `#166534`, margin-bottom 6px.
-   - Body: 13px, `#333333`, line-height 1.6. 2 sentences max describing what specifically changed.
+   - Body: 13px, `#333333`, line-height 1.6.
 
 6. **"Calls" section** — 20px below the changed card (or description if no change card):
    - Label: "Calls" — 11px uppercase, `#AAAAAA`, letter-spacing 0.08em.
-   - **Call rows** (one per called function, 8px gap between rows): each row is a horizontal flex container:
-     - Left: package label (11px, package color) + function name (13px, `#222222`), stacked vertically or inline.
-     - Right: optional status badge (see below). Right-aligned.
+   - **Call rows**: package label (11px, package color) + function name (13px, `#222222`).
    - If no calls, omit section.
 
 7. **"Is Called By" section** — 16px below Calls, same row structure.
 
-**Status badges** (appear on call rows in the panel, and on nodes in the graph):
-- **Deleted** — red pill: `#FEE2E2` background, `#EF4444` text, 10px, 4px border-radius. Shown when a call relationship was removed.
-- **Added +N** — green pill: `#DCFCE7` background, `#16A34A` text, 10px, 4px border-radius. The `+N` is the line count added. Shown when a call was newly introduced.
+**Status badges:**
+- **Deleted** — red pill: `#FEE2E2` background, `#EF4444` text, 10px, 4px border-radius.
+- **Added** — green pill: `#DCFCE7` background, `#16A34A` text, 10px, 4px border-radius.
 
 ---
 
 ### Graph Canvas (remaining width, `#EBE9E9` background)
 
-The graph is an interactive force-directed graph. Changed nodes tend to be positioned centrally; callers and callees radiate outward organically.
+**Top bar** (`#E1E1E1` background, `#D4D4D4` bottom border, 48px height):
+- Left: "← Back" link in `#888888`, separator `·`, PR number in `#888888`, PR title in `#111111` semibold.
+- Right: "View on GitHub →" link in `#6366F1`.
 
-**Graph layout:** Force-directed. No strict row hierarchy. Changed nodes gravitate toward the centre of the viewport. Related nodes cluster near their connections. Pan and zoom freely.
+**Graph layout:** Hierarchical (dagre, top-to-bottom). Changed nodes are centred; callers above, callees below. Pan and zoom freely.
 
 **Package Color Table** — used consistently across node labels, edge colors, and panel labels:
 
@@ -196,35 +196,32 @@ The graph is an interactive force-directed graph. Changed nodes tend to be posit
 | `rpc` | `#8B5CF6` (violet) |
 | other / unknown | `#6B7280` (gray) |
 
-**Node anatomy** (white card, `box-shadow: 0 1px 4px rgba(0,0,0,0.12)`, 8px border-radius, no border, 10px padding):
-- **Package label** — 11px, package color (see table), top of card.
+**Node anatomy** (white card, `box-shadow: 0 1px 4px rgba(0,0,0,0.12)`, 8px border-radius, 10px padding):
+- **Package label** — 11px, package color, top of card.
 - **Function name** — 13px semibold, `#111111`, 3px below package label.
-- **Parameters** — listed below function name, one per line: `paramName  type` where the type is rendered in the package color of that type's package (or gray if primitive). 11px, 3px line gap.
-- **Return types** — same style as params, below a 1px `#EEEEEE` divider, 4px below last param.
-- **Diff stat badges** (bottom of card, only on directly changed nodes): green pill `+N` and red pill `-N` showing lines added/removed. Same pill style as status badges above. 8px margin-top.
-- **Status badge** (bottom-right, for nodes whose relationship to the changed function is new or deleted): "Deleted" red pill or "Added +N" green pill.
+- **Parameters** — 11px, `#444444`, one per line below function name.
+- **Return types** — same style, below a 1px `#EEEEEE` divider.
+- **Diff stat badges** (changed nodes only): green `+N` and red `-N` pills. 8px margin-top.
+- **Status badge**: "Deleted" red pill or "Added" green pill for added/deleted nodes.
 
 **Node states:**
 - **Default:** white card, standard shadow.
-- **Selected:** white card, stronger shadow `0 4px 16px rgba(0,0,0,0.18)`, cursor pointer.
+- **Selected:** white card, stronger shadow `0 4px 16px rgba(0,0,0,0.18)`.
 - **Hover:** `box-shadow: 0 2px 8px rgba(0,0,0,0.15)`, cursor pointer.
 
 **Edges:**
 - Thin bezier curves, 1px stroke.
-- Color matches the **source node's package color** (same color as the source's package label).
-- No arrowheads, or a very subtle 4px filled triangle at the target end.
+- Color matches the source node's package color.
 
-**Zoom controls:** bottom-right corner. `+` / `−` / `⊡ fit` buttons, 36px each, `#FFFFFF` bg, `#E4E4E4` border, 6px border-radius, `#444444` icon text. User can also pinch-zoom and drag to pan.
+**Zoom controls:** bottom-right corner. `+` / `−` / `⊡ fit` buttons, 36px each, white bg, `#E4E4E4` border, 6px border-radius, `#444444` icon text.
 
-**Empty area behaviour:** Clicking empty canvas deselects the current node (panel returns to default state).
-
-**Node count cap:** Maximum 20 nodes displayed. If the graph would exceed this, show a small notice: "Showing 20 of {n} affected functions" in `#AAAAAA` 12px in the bottom-left of the canvas.
+**Node count cap:** Maximum 20 nodes. If exceeded, show "Showing 20 of {n} affected functions" in `#888888` 12px, bottom-left of canvas.
 
 ---
 
 ## Responsive Behaviour
 
-The prototype is designed for desktop only (1280px+ wide screens). No mobile layout required. On screens narrower than 900px, show a message: "Isoprism is designed for desktop. Please open on a larger screen."
+Designed for desktop only (1280px+ wide screens). No mobile layout required.
 
 ---
 
@@ -235,12 +232,11 @@ The prototype is designed for desktop only (1280px+ wide screens). No mobile lay
 | Click PR card | Navigate to PR Graph View for that PR |
 | Click graph node | Update Node Detail Panel with that node's data |
 | Click "Show diff" | Expand inline diff inside Node Detail Panel |
-| Click node chip in "Calls" / "Called by" | Pan graph to that node and select it |
+| Click node chip in "Calls" / "Called by" | Select that node |
 | Click empty canvas | Deselect node, panel shows default state |
 | Click "View on GitHub →" | Open GitHub PR URL in new tab |
 | Click back breadcrumb | Return to PR Queue |
 | Zoom controls | Zoom graph canvas in/out or fit to screen |
-| Keyboard: `Escape` | Deselect current node |
 
 ---
 
@@ -251,12 +247,11 @@ The prototype is designed for desktop only (1280px+ wide screens). No mobile lay
 | `LoginPage` | Full-screen login with GitHub button |
 | `RepoSelector` | Searchable repo list with single-select |
 | `IndexingState` | Animated progress bar with status messages |
-| `PRQueue` | List of 5 PR cards with urgency ordering |
+| `PRQueue` | List of PR cards with urgency ordering |
 | `PRCard` | Single PR row: title, summary, badges, chevron |
-| `GraphCanvas` | Force-directed graph canvas (pan/zoom/click), light `#EBE9E9` bg |
+| `GraphCanvas` | Dagre-layout graph canvas (pan/zoom/click), `#EBE9E9` bg |
 | `GraphNode` | White card node: package label, function name, params, return types, optional diff badges |
-| `NodeDetailPanel` | Light-theme side panel (`#DCDCDC` bg): file path, package label, function name, description, What's Changed card, Calls/Called-by rows |
-| `StatusBadge` | Pill badge for Added/Deleted status on call rows and canvas nodes |
-| `DiffStatBadge` | `+N` / `-N` pill badges shown on changed nodes in the canvas |
-| `TopBar` | PR breadcrumb, title, and GitHub link (dark theme) |
-| `AppSidebar` | Narrow left sidebar with logo and user avatar |
+| `NodeDetailPanel` | Light side panel (`#DCDCDC` bg): file path, package label, function name, description, What's Changed card, Calls/Called-by rows |
+| `DiffBlock` | Inline unified diff renderer with green/red line highlighting |
+| `TopBar` | PR breadcrumb, title, and GitHub link (`#E1E1E1` background) |
+| `AppSidebar` | Narrow left sidebar (`#E1E1E1` background) with logo |
