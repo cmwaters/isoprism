@@ -83,8 +83,9 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 
 	// Parse files concurrently (bounded pool of 10)
 	type fileResult struct {
-		nodes []parser.Node
-		path  string
+		nodes   []parser.Node
+		path    string
+		content []byte
 	}
 	results := make(chan fileResult, len(sourceFiles))
 	sem := make(chan struct{}, 10)
@@ -105,7 +106,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 			}
 			nodes := parser.Parse(content, entry.Path)
 			if len(nodes) > 0 {
-				results <- fileResult{nodes: nodes, path: entry.Path}
+				results <- fileResult{nodes: nodes, path: entry.Path, content: content}
 			}
 		}()
 	}
@@ -115,10 +116,12 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 		close(results)
 	}()
 
-	// Collect all parsed nodes
+	// Collect all parsed nodes and file contents
 	var allNodes []parser.Node
+	fileContents := map[string][]byte{} // filePath → full source
 	for fr := range results {
 		allNodes = append(allNodes, fr.nodes...)
+		fileContents[fr.path] = fr.content
 	}
 	log.Printf("RepoInit: parsed %d nodes", len(allNodes))
 
@@ -143,19 +146,20 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 		nodeIDs[n.FullName] = id
 	}
 
-	// Extract and insert call edges
+	// Extract and insert call edges — pass full file content, not per-node snippets.
+	// parser.ParseFile requires a complete Go file; a bare function body won't parse.
 	nodeByName := make(map[string]bool, len(allNodes))
 	for _, n := range allNodes {
 		nodeByName[n.FullName] = true
 	}
 
-	for _, n := range allNodes {
-		edges := parser.ExtractCallEdges([]byte(n.Body), n.FilePath, nodeByName)
-		callerID, ok := nodeIDs[n.FullName]
-		if !ok {
-			continue
-		}
+	for filePath, content := range fileContents {
+		edges := parser.ExtractCallEdges(content, filePath, nodeByName)
 		for _, edge := range edges {
+			callerID, ok := nodeIDs[edge.CallerFullName]
+			if !ok {
+				continue
+			}
 			calleeID, ok := nodeIDs[edge.CalleeFullName]
 			if !ok {
 				continue
@@ -167,6 +171,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 			`, repoID, headSHA, callerID, calleeID)
 		}
 	}
+	log.Printf("RepoInit: extracted call edges for %d files", len(fileContents))
 
 	// AI enrichment: generate summaries for all nodes
 	if enricher != nil && len(allNodes) > 0 {
