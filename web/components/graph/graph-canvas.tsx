@@ -39,9 +39,9 @@ export function cardColorByKind(kind: string): string {
 }
 
 // ── Concentric ring layout ────────────────────────────────────────────────────
-const NODE_W = 220;
-const BASE_RADIUS = 300;
-const MIN_SPACING = 220;
+const NODE_W = 280;
+const BASE_RADIUS = 380;
+const MIN_SPACING = 300;
 
 function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
   const changedIDs = new Set(graphNodes.filter((n) => n.node_type === "changed").map((n) => n.id));

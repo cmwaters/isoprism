@@ -310,20 +310,41 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	edges := make([]models.GraphEdge, 0)
+	seenEdges := map[string]bool{}
 	for _, e := range allEdges {
 		callerID := remapID(e.callerID)
 		calleeID := remapID(e.calleeID)
-		// Only include edges where both endpoints are in the final node set
 		if _, ok := finalNodeMap[callerID]; !ok {
 			continue
 		}
 		if _, ok := finalNodeMap[calleeID]; !ok {
 			continue
 		}
-		edges = append(edges, models.GraphEdge{
-			CallerID: callerID,
-			CalleeID: calleeID,
-		})
+		key := callerID + "|" + calleeID
+		if !seenEdges[key] {
+			seenEdges[key] = true
+			edges = append(edges, models.GraphEdge{CallerID: callerID, CalleeID: calleeID})
+		}
+	}
+
+	// Add implicit struct → method edges (methods whose full_name = StructName.MethodName)
+	for structID, structNode := range finalNodeMap {
+		if structNode.Kind != "struct" && structNode.Kind != "type" {
+			continue
+		}
+		prefix := structNode.Name + "."
+		for methodID, methodNode := range finalNodeMap {
+			if methodID == structID || methodNode.Kind != "method" {
+				continue
+			}
+			if strings.HasPrefix(methodNode.FullName, prefix) {
+				key := structID + "|" + methodID
+				if !seenEdges[key] {
+					seenEdges[key] = true
+					edges = append(edges, models.GraphEdge{CallerID: structID, CalleeID: methodID})
+				}
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
