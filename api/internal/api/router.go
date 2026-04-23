@@ -49,6 +49,30 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	// Debug endpoints — no auth, for development use only
+	r.Post("/debug/repos/{repoID}/reindex", func(w http.ResponseWriter, r *http.Request) {
+		repoID := chi.URLParam(r, "repoID")
+		db.Exec(r.Context(), `update repositories set index_status='pending' where id=$1`, repoID)
+		go func() {
+			bgCtx := context.Background()
+			events.RepoInit(bgCtx, db, appClient, enricher, repoID)
+		}()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"status": "reindex_started", "repo_id": repoID})
+	})
+
+	r.Post("/debug/prs/{prID}/reprocess", func(w http.ResponseWriter, r *http.Request) {
+		prID := chi.URLParam(r, "prID")
+		go func() {
+			bgCtx := context.Background()
+			events.OpenPR(bgCtx, db, appClient, enricher, prID)
+		}()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"status": "reprocess_started", "pr_id": prID})
+	})
+
 	// Public routes
 	r.Post("/webhooks/github", ghHandler.HandleWebhook)
 	r.Get("/api/v1/github/callback", ghHandler.HandleInstallationCallback)

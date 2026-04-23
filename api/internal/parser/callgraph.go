@@ -32,6 +32,21 @@ func extractGoCallEdges(src []byte, filePath string, nodeByName map[string]bool)
 		return nil
 	}
 
+	// Build a secondary lookup: bare method name → full_name (e.g. "save" → "store.save").
+	// Used to resolve receiver method calls where we only see the bare method name in the AST.
+	// If two different types share a method name, mark as ambiguous (empty string).
+	methodLookup := map[string]string{}
+	for fn := range nodeByName {
+		if dot := strings.Index(fn, "."); dot != -1 {
+			bare := fn[dot+1:]
+			if prev, exists := methodLookup[bare]; !exists {
+				methodLookup[bare] = fn
+			} else if prev != fn {
+				methodLookup[bare] = "" // ambiguous
+			}
+		}
+	}
+
 	var edges []CallEdge
 
 	for _, decl := range f.Decls {
@@ -51,12 +66,21 @@ func extractGoCallEdges(src []byte, filePath string, nodeByName map[string]bool)
 			if !ok {
 				return true
 			}
-			callee := callExprToName(call.Fun)
-			if callee == "" {
+
+			bare := callExprToName(call.Fun)
+			if bare == "" {
 				return true
 			}
-			// Only include calls to symbols we've parsed
-			if nodeByName[callee] && callee != callerName {
+
+			// Resolve to full_name: try exact match first, then method lookup.
+			callee := ""
+			if nodeByName[bare] {
+				callee = bare
+			} else if resolved, ok := methodLookup[bare]; ok && resolved != "" {
+				callee = resolved
+			}
+
+			if callee != "" && callee != callerName {
 				edges = append(edges, CallEdge{
 					CallerFullName: callerName,
 					CalleeFullName: callee,
@@ -74,8 +98,6 @@ func callExprToName(e ast.Expr) string {
 	case *ast.Ident:
 		return t.Name
 	case *ast.SelectorExpr:
-		// Could be pkg.Func or recv.Method; we return just the method name
-		// so it can match unqualified parsed names.
 		return t.Sel.Name
 	default:
 		return ""
