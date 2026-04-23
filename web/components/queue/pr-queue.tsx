@@ -12,7 +12,7 @@ export default function PRQueue({ prs, repoID }: Props) {
   const router = useRouter();
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {prs.map((pr, idx) => (
         <PRCard
           key={pr.id}
@@ -35,9 +35,9 @@ function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: 
     <button
       onClick={onClick}
       style={{
-        background: "#111111",
-        border: "1px solid #242424",
-        borderLeft: `4px solid ${isTop ? "#6366F1" : "#312E81"}`,
+        background: "#FFFFFF",
+        border: "1px solid #D4D4D4",
+        borderLeft: `4px solid ${isTop ? "#6366F1" : "#C7D2FE"}`,
         borderRadius: 8,
         padding: 16,
         display: "flex",
@@ -48,21 +48,21 @@ function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: 
         width: "100%",
         transition: "background 150ms ease-out",
       }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#141414"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#111111"; }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#F5F5F5"; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#FFFFFF"; }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Row 1: number + title */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-          <span style={{ color: "#555555", fontSize: 14, flexShrink: 0 }}>#{pr.number}</span>
-          <span style={{ color: "#F0F0F0", fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ color: "#AAAAAA", fontSize: 14, flexShrink: 0 }}>#{pr.number}</span>
+          <span style={{ color: "#111111", fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {pr.title}
           </span>
         </div>
 
         {/* Row 2: AI summary */}
         {pr.summary && (
-          <p style={{ color: "#888888", fontSize: 14, margin: "0 0 10px 0", lineHeight: 1.5 }}>
+          <p style={{ color: "#666666", fontSize: 14, margin: "0 0 10px 0", lineHeight: 1.5 }}>
             {pr.summary}
           </p>
         )}
@@ -80,7 +80,7 @@ function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: 
         </div>
       </div>
 
-      <span style={{ color: "#555555", fontSize: 20, marginLeft: 16, flexShrink: 0 }}>›</span>
+      <span style={{ color: "#AAAAAA", fontSize: 20, marginLeft: 16, flexShrink: 0 }}>›</span>
     </button>
   );
 }
@@ -91,12 +91,12 @@ function Badge({ icon, label }: { icon: React.ReactNode; label: string }) {
       display: "inline-flex",
       alignItems: "center",
       gap: 4,
-      background: "#1A1A1A",
-      border: "1px solid #242424",
+      background: "#F0F0F0",
+      border: "1px solid #D4D4D4",
       borderRadius: 4,
       padding: "2px 8px",
       fontSize: 11,
-      color: "#888888",
+      color: "#666666",
     }}>
       {typeof icon === "string" ? <span>{icon}</span> : icon}
       {label}

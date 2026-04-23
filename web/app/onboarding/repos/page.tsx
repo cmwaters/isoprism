@@ -63,27 +63,27 @@ function ReposContent() {
 
   if (loading) {
     return (
-      <div style={{ background: "#0A0A0A", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: 24, height: 24, border: "2px solid #333", borderTopColor: "#6366F1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ background: "#EBE9E9", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 24, height: 24, border: "2px solid #CCCCCC", borderTopColor: "#6366F1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
       </div>
     );
   }
 
   return (
-    <div style={{ background: "#0A0A0A", minHeight: "100vh", display: "flex" }}>
+    <div style={{ background: "#EBE9E9", minHeight: "100vh", display: "flex" }}>
       {/* Sidebar */}
-      <div style={{ width: 240, background: "#111111", borderRight: "1px solid #242424", padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div style={{ width: 240, background: "#E1E1E1", borderRight: "1px solid #D4D4D4", padding: 20, display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <GraphLogo />
-          <span style={{ color: "#F0F0F0", fontSize: 15, fontWeight: 600 }}>Isoprism</span>
+          <span style={{ color: "#111111", fontSize: 15, fontWeight: 600 }}>Isoprism</span>
         </div>
       </div>
 
       {/* Main content */}
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 48 }}>
         <div style={{ maxWidth: 560, width: "100%" }}>
-          <h1 style={{ color: "#F0F0F0", fontSize: 24, fontWeight: 600, margin: 0 }}>Select a repository</h1>
-          <p style={{ color: "#888888", fontSize: 15, marginTop: 8, marginBottom: 24 }}>
+          <h1 style={{ color: "#111111", fontSize: 24, fontWeight: 600, margin: 0 }}>Select a repository</h1>
+          <p style={{ color: "#666666", fontSize: 15, marginTop: 8, marginBottom: 24 }}>
             Isoprism will index this repository&apos;s pull requests.
           </p>
 
@@ -100,10 +100,10 @@ function ReposContent() {
               style={{
                 width: "100%",
                 height: 44,
-                background: "#111111",
-                border: "1px solid #242424",
+                background: "#FFFFFF",
+                border: "1px solid #D4D4D4",
                 borderRadius: 6,
-                color: "#F0F0F0",
+                color: "#111111",
                 fontSize: 14,
                 paddingLeft: 36,
                 paddingRight: 12,
@@ -116,7 +116,7 @@ function ReposContent() {
           {/* Repo list */}
           <div style={{ maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
             {filtered.length === 0 ? (
-              <p style={{ color: "#555555", fontSize: 14, textAlign: "center", padding: "32px 0" }}>
+              <p style={{ color: "#888888", fontSize: 14, textAlign: "center", padding: "32px 0" }}>
                 {repos.length === 0 ? "No repositories found. Make sure the GitHub App is installed on your account." : "No results match your search."}
               </p>
             ) : (
@@ -129,9 +129,9 @@ function ReposContent() {
                     onClick={() => setSelected(repo.id)}
                     style={{
                       height: 56,
-                      background: isSelected ? "#1A1A1A" : "#111111",
-                      border: "1px solid #242424",
-                      borderLeft: isSelected ? "3px solid #6366F1" : "1px solid #242424",
+                      background: isSelected ? "#D8D8D8" : "#FFFFFF",
+                      border: "1px solid #D4D4D4",
+                      borderLeft: isSelected ? "3px solid #6366F1" : "1px solid #D4D4D4",
                       borderRadius: 6,
                       display: "flex",
                       alignItems: "center",
@@ -140,14 +140,14 @@ function ReposContent() {
                       cursor: "pointer",
                       textAlign: "left",
                     }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#141414"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#111111"; }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#F0F0F0"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#FFFFFF"; }}
                   >
                     <div>
-                      <span style={{ color: "#555555", fontSize: 13 }}>{owner}/</span>
-                      <span style={{ color: isSelected ? "#6366F1" : "#F0F0F0", fontSize: 14, fontWeight: 600 }}>{name}</span>
+                      <span style={{ color: "#888888", fontSize: 13 }}>{owner}/</span>
+                      <span style={{ color: isSelected ? "#6366F1" : "#111111", fontSize: 14, fontWeight: 600 }}>{name}</span>
                     </div>
-                    <span style={{ background: "#1A1A1A", border: "1px solid #555555", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#555555" }}>
+                    <span style={{ background: "#EBE9E9", border: "1px solid #D4D4D4", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#888888" }}>
                       {repo.default_branch}
                     </span>
                   </button>
@@ -186,7 +186,7 @@ function ReposContent() {
 
 function SearchIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555555" strokeWidth="2" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#AAAAAA" strokeWidth="2" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>
       <circle cx="11" cy="11" r="8" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
@@ -196,11 +196,11 @@ function SearchIcon() {
 function GraphLogo() {
   return (
     <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-      <circle cx="8" cy="16" r="4" fill="white" />
-      <circle cx="24" cy="8" r="4" fill="white" />
-      <circle cx="24" cy="24" r="4" fill="white" />
-      <line x1="12" y1="14" x2="20" y2="10" stroke="white" strokeWidth="1.5" />
-      <line x1="12" y1="18" x2="20" y2="22" stroke="white" strokeWidth="1.5" />
+      <circle cx="8" cy="16" r="4" fill="#111111" />
+      <circle cx="24" cy="8" r="4" fill="#111111" />
+      <circle cx="24" cy="24" r="4" fill="#111111" />
+      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
+      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
     </svg>
   );
 }

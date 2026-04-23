@@ -24,20 +24,20 @@ export default function LoginPage() {
 
   return (
     <div
-      style={{ background: "#0A0A0A" }}
+      style={{ background: "#EBE9E9" }}
       className="min-h-screen flex items-center justify-center"
     >
       <div style={{ maxWidth: 360, width: "100%", padding: "0 24px" }}>
         {/* Logo + wordmark */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 48 }}>
           <GraphLogo />
-          <span style={{ color: "#F0F0F0", fontSize: 20, fontWeight: 600 }}>Isoprism</span>
+          <span style={{ color: "#111111", fontSize: 20, fontWeight: 600 }}>Isoprism</span>
         </div>
 
-        <h1 style={{ color: "#F0F0F0", fontSize: 28, fontWeight: 600, marginBottom: 12, lineHeight: 1.25 }}>
+        <h1 style={{ color: "#111111", fontSize: 28, fontWeight: 600, marginBottom: 12, lineHeight: 1.25 }}>
           Understand what your PRs actually change.
         </h1>
-        <p style={{ color: "#888888", fontSize: 15, marginBottom: 40, lineHeight: 1.6 }}>
+        <p style={{ color: "#666666", fontSize: 15, marginBottom: 40, lineHeight: 1.6 }}>
           A graph view of every function affected. Plain-language summaries. No diffs.
         </p>
 
@@ -47,8 +47,8 @@ export default function LoginPage() {
           style={{
             width: "100%",
             height: 48,
-            background: loading ? "#CCCCCC" : "#F0F0F0",
-            color: "#0A0A0A",
+            background: loading ? "#CCCCCC" : "#111111",
+            color: "#FFFFFF",
             border: "none",
             borderRadius: 8,
             fontSize: 15,
@@ -60,8 +60,8 @@ export default function LoginPage() {
             gap: 10,
             transition: "background 150ms ease-out",
           }}
-          onMouseEnter={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = "#FFFFFF"; }}
-          onMouseLeave={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = "#F0F0F0"; }}
+          onMouseEnter={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = "#333333"; }}
+          onMouseLeave={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = "#111111"; }}
         >
           {loading ? (
             <span style={{ opacity: 0.7 }}>Connecting…</span>
@@ -73,7 +73,7 @@ export default function LoginPage() {
           )}
         </button>
 
-        <p style={{ color: "#555555", fontSize: 12, textAlign: "center", marginTop: 48 }}>
+        <p style={{ color: "#888888", fontSize: 12, textAlign: "center", marginTop: 48 }}>
           By signing in you authorise read access to your repositories.
         </p>
       </div>
@@ -84,11 +84,11 @@ export default function LoginPage() {
 function GraphLogo() {
   return (
     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-      <circle cx="8" cy="16" r="4" fill="white" />
-      <circle cx="24" cy="8" r="4" fill="white" />
-      <circle cx="24" cy="24" r="4" fill="white" />
-      <line x1="12" y1="14" x2="20" y2="10" stroke="white" strokeWidth="1.5" />
-      <line x1="12" y1="18" x2="20" y2="22" stroke="white" strokeWidth="1.5" />
+      <circle cx="8" cy="16" r="4" fill="#111111" />
+      <circle cx="24" cy="8" r="4" fill="#111111" />
+      <circle cx="24" cy="24" r="4" fill="#111111" />
+      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
+      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
     </svg>
   );
 }

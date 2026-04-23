@@ -121,20 +121,20 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
           position: "absolute",
           top: 0, left: 0, right: 0,
           height: 48,
-          background: "#0A0A0A",
-          borderBottom: "1px solid #242424",
+          background: "#E1E1E1",
+          borderBottom: "1px solid #D4D4D4",
           display: "flex",
           alignItems: "center",
           padding: "0 20px",
           gap: 16,
           zIndex: 10,
         }}>
-          <a href={`/repos/${repoID}`} style={{ color: "#555555", fontSize: 13, textDecoration: "none" }}>
+          <a href={`/repos/${repoID}`} style={{ color: "#888888", fontSize: 13, textDecoration: "none" }}>
             ← Back
           </a>
-          <span style={{ color: "#555555" }}>·</span>
+          <span style={{ color: "#AAAAAA" }}>·</span>
           <span style={{ color: "#888888", fontSize: 13 }}>#{graph.pr.number}</span>
-          <span style={{ color: "#F0F0F0", fontSize: 14, fontWeight: 500 }}>{graph.pr.title}</span>
+          <span style={{ color: "#111111", fontSize: 14, fontWeight: 500 }}>{graph.pr.title}</span>
           <div style={{ flex: 1 }} />
           <a
             href={graph.pr.html_url}
@@ -184,7 +184,7 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
               position: "absolute",
               bottom: 24,
               left: 24,
-              color: "#AAAAAA",
+              color: "#888888",
               fontSize: 12,
               zIndex: 10,
             }}>

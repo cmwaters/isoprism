@@ -74,12 +74,12 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
   }, [repoID]);
 
   return (
-    <div style={{ background: "#0A0A0A", minHeight: "100vh", display: "flex" }}>
+    <div style={{ background: "#EBE9E9", minHeight: "100vh", display: "flex" }}>
       {/* Sidebar */}
-      <div style={{ width: 240, background: "#111111", borderRight: "1px solid #242424", padding: 20 }}>
+      <div style={{ width: 240, background: "#E1E1E1", borderRight: "1px solid #D4D4D4", padding: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <GraphLogo />
-          <span style={{ color: "#F0F0F0", fontSize: 15, fontWeight: 600 }}>Isoprism</span>
+          <span style={{ color: "#111111", fontSize: 15, fontWeight: 600 }}>Isoprism</span>
         </div>
       </div>
 
@@ -88,7 +88,7 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
           {/* Repo badge */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 32 }}>
             <GitHubIcon />
-            <span style={{ color: "#888888", fontSize: 14 }}>{repoName}</span>
+            <span style={{ color: "#666666", fontSize: 14 }}>{repoName}</span>
           </div>
 
           {failed ? (
@@ -98,7 +98,7 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
           ) : (
             <>
               {/* Progress bar */}
-              <div style={{ width: "100%", height: 3, background: "#1A1A1A", borderRadius: 2, overflow: "hidden", marginBottom: 16 }}>
+              <div style={{ width: "100%", height: 3, background: "#D4D4D4", borderRadius: 2, overflow: "hidden", marginBottom: 16 }}>
                 <div
                   style={{
                     height: "100%",
@@ -109,7 +109,7 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
                   }}
                 />
               </div>
-              <p style={{ color: "#888888", fontSize: 14 }}>{STATUS_MESSAGES[msgIndex]}</p>
+              <p style={{ color: "#666666", fontSize: 14 }}>{STATUS_MESSAGES[msgIndex]}</p>
             </>
           )}
         </div>
@@ -121,11 +121,11 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
 function GraphLogo() {
   return (
     <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-      <circle cx="8" cy="16" r="4" fill="white" />
-      <circle cx="24" cy="8" r="4" fill="white" />
-      <circle cx="24" cy="24" r="4" fill="white" />
-      <line x1="12" y1="14" x2="20" y2="10" stroke="white" strokeWidth="1.5" />
-      <line x1="12" y1="18" x2="20" y2="22" stroke="white" strokeWidth="1.5" />
+      <circle cx="8" cy="16" r="4" fill="#111111" />
+      <circle cx="24" cy="8" r="4" fill="#111111" />
+      <circle cx="24" cy="24" r="4" fill="#111111" />
+      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
+      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
     </svg>
   );
 }

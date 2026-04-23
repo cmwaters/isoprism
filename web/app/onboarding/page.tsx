@@ -32,19 +32,14 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0A0A0A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ minHeight: "100vh", background: "#EBE9E9", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: "100%", maxWidth: 360, padding: "0 24px" }}>
         <div style={{ marginBottom: 48, display: "flex", alignItems: "center", gap: 10 }}>
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <circle cx="14" cy="14" r="14" fill="#6366F1" />
-            <circle cx="10" cy="14" r="3" fill="white" />
-            <circle cx="18" cy="14" r="3" fill="white" />
-            <line x1="13" y1="14" x2="15" y2="14" stroke="white" strokeWidth="1.5" />
-          </svg>
-          <span style={{ color: "#F0F0F0", fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}>Isoprism</span>
+          <GraphLogo />
+          <span style={{ color: "#111111", fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}>Isoprism</span>
         </div>
 
-        <h1 style={{ color: "#F0F0F0", fontSize: 24, fontWeight: 600, marginBottom: 8 }}>Connect GitHub</h1>
+        <h1 style={{ color: "#111111", fontSize: 24, fontWeight: 600, marginBottom: 8 }}>Connect GitHub</h1>
         <p style={{ color: "#666666", fontSize: 14, marginBottom: 32, lineHeight: 1.6 }}>
           Install the Isoprism GitHub App to start indexing your repository.
         </p>
@@ -57,10 +52,10 @@ export default function OnboardingPage() {
           style={{
             width: "100%",
             height: 44,
-            background: "#F0F0F0",
+            background: "#111111",
             border: "none",
             borderRadius: 8,
-            color: "#0A0A0A",
+            color: "#FFFFFF",
             fontSize: 14,
             fontWeight: 600,
             cursor: loading ? "not-allowed" : "pointer",
@@ -82,5 +77,17 @@ export default function OnboardingPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+function GraphLogo() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+      <circle cx="8" cy="16" r="4" fill="#111111" />
+      <circle cx="24" cy="8" r="4" fill="#111111" />
+      <circle cx="24" cy="24" r="4" fill="#111111" />
+      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
+      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
+    </svg>
   );
 }
