@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -130,7 +131,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			changed = append(changed, changedNode{
 				node:       n,
 				changeType: changeType,
-				diffHunk:   file.Patch,
+				diffHunk:   extractFunctionHunk(file.Patch, n.LineStart, n.LineEnd),
 			})
 		}
 
@@ -317,13 +318,70 @@ func nullIfZero(n int) interface{} {
 	return n
 }
 
-// trimDiffHunk limits patch text to avoid huge DB rows.
-func trimDiffHunk(patch string) string {
-	const maxLen = 8000
-	if len(patch) > maxLen {
-		return patch[:maxLen] + "\n... (truncated)"
+// extractFunctionHunk returns only the unified-diff hunks from patch that
+// overlap with [lineStart, lineEnd] in the new (head) file.
+func extractFunctionHunk(patch string, lineStart, lineEnd int) string {
+	if patch == "" {
+		return ""
 	}
-	return patch
+	lines := strings.Split(patch, "\n")
+
+	// Split patch into per-hunk slices; each starts with a @@ header.
+	type hunk struct {
+		header   string
+		newStart int
+		newEnd   int
+		lines    []string
+	}
+	var hunks []hunk
+	var cur *hunk
+	for _, line := range lines {
+		if strings.HasPrefix(line, "@@") {
+			if cur != nil {
+				hunks = append(hunks, *cur)
+			}
+			ns, nc := parseHunkHeader(line)
+			cur = &hunk{header: line, newStart: ns, newEnd: ns + nc - 1}
+		} else if cur != nil {
+			cur.lines = append(cur.lines, line)
+			if !strings.HasPrefix(line, "-") {
+				// context and added lines advance the new-file counter
+			}
+		}
+	}
+	if cur != nil {
+		hunks = append(hunks, *cur)
+	}
+
+	var out []string
+	for _, h := range hunks {
+		if h.newStart <= lineEnd && h.newEnd >= lineStart {
+			out = append(out, h.header)
+			out = append(out, h.lines...)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func parseHunkHeader(header string) (newStart, newCount int) {
+	// Format: @@ -a,b +c,d @@ optional context
+	plusIdx := strings.Index(header, "+")
+	if plusIdx < 0 {
+		return 0, 1
+	}
+	rest := header[plusIdx+1:]
+	end := strings.IndexAny(rest, " @")
+	if end > 0 {
+		rest = rest[:end]
+	}
+	if ci := strings.Index(rest, ","); ci >= 0 {
+		newStart, _ = strconv.Atoi(rest[:ci])
+		newCount, _ = strconv.Atoi(rest[ci+1:])
+	} else {
+		newStart, _ = strconv.Atoi(rest)
+		newCount = 1
+	}
+	return
 }
 
 // countDiffLines counts +/- lines in a unified diff patch.
