@@ -13,7 +13,7 @@ interface Props {
   pr: GraphPR;
 }
 
-export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, pr }: Props) {
+export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, repoID, pr }: Props) {
   const [showDiff, setShowDiff] = useState(false);
 
   return (
@@ -31,7 +31,7 @@ export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, p
       }}
     >
       {!node ? (
-        <PRSummaryPanel pr={pr} allNodes={allNodes} onSelectNode={onSelectNode} />
+        <PRSummaryPanel pr={pr} allNodes={allNodes} repoID={repoID} onSelectNode={onSelectNode} />
       ) : (
         <NodeDetail
           node={node}
@@ -49,33 +49,55 @@ export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, p
 function PRSummaryPanel({
   pr,
   allNodes,
+  repoID,
   onSelectNode,
 }: {
   pr: GraphPR;
   allNodes: GraphNode[];
+  repoID: string;
   onSelectNode: (id: string) => void;
 }) {
   const changedNodes = allNodes.filter((n) => n.node_type === "changed");
+  const totalAdded = changedNodes.reduce((s, n) => s + (n.lines_added || 0), 0);
+  const totalRemoved = changedNodes.reduce((s, n) => s + (n.lines_removed || 0), 0);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+      {/* Back link */}
+      <a
+        href={`/repos/${repoID}`}
+        style={{ fontSize: 13, color: "#888888", textDecoration: "none", marginBottom: 16, display: "inline-block" }}
+      >
+        ← Back
+      </a>
+
       {/* PR number + title */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 4 }}>#{pr.number}</p>
       <h2 style={{ fontSize: 15, fontWeight: 600, color: "#111111", margin: "0 0 12px 0", lineHeight: 1.4 }}>
         {pr.title}
       </h2>
 
-      {/* Author */}
-      {pr.author_login && (
-        <div style={{ marginBottom: 16 }}>
+      {/* Author + diff stats */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        {pr.author_login && (
           <span style={{
             background: "#F0F0F0", border: "1px solid #D4D4D4",
             borderRadius: 12, padding: "2px 10px", fontSize: 11, color: "#555555",
           }}>
             {pr.author_login}
           </span>
-        </div>
-      )}
+        )}
+        {totalAdded > 0 && (
+          <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>
+            +{totalAdded}
+          </span>
+        )}
+        {totalRemoved > 0 && (
+          <span style={{ background: "#FEE2E2", color: "#EF4444", borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>
+            -{totalRemoved}
+          </span>
+        )}
+      </div>
 
       {/* PR body (description) */}
       {pr.body && (
@@ -95,7 +117,7 @@ function PRSummaryPanel({
           <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
             Changes
           </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 20 }}>
             {changedNodes.map((n) => {
               const pkg = pkgLabel(n);
               return (
@@ -116,6 +138,16 @@ function PRSummaryPanel({
           </div>
         </>
       )}
+
+      {/* View on GitHub */}
+      <a
+        href={pr.html_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ fontSize: 13, color: "#6366F1", textDecoration: "none" }}
+      >
+        View on GitHub →
+      </a>
     </div>
   );
 }
@@ -289,7 +321,9 @@ function RelationSection({
 
 function pkgLabel(node: GraphNode): string {
   const parts = node.file_path.split("/");
-  const pkg = parts.length >= 2 ? parts[parts.length - 2] : "";
+  const pkg = parts.length >= 2
+    ? parts[parts.length - 2]
+    : parts[0].replace(/\.[^.]+$/, "");
   if (node.kind === "method" || node.full_name.includes(".")) {
     const prefix = node.full_name.split(".").slice(0, -1).join(".");
     return pkg ? `${pkg}.${prefix}` : prefix;

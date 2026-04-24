@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useMemo } from "react";
 import {
   ReactFlow,
   Node,
   Edge,
   Background,
   useNodesState,
-  useEdgesState,
+
   useReactFlow,
   ReactFlowProvider,
   NodeMouseHandler,
@@ -124,30 +124,41 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
   const { fitView } = useReactFlow();
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
 
-  const initialNodes: Node[] = graph.nodes.map((n) => ({
+  const initialNodes: Node[] = useMemo(() => graph.nodes.map((n) => ({
     id: n.id,
     type: "graphNode",
     data: { node: n },
     position: { x: 0, y: 0 },
-  }));
+  })), [graph.nodes]);
 
-  const initialEdges: Edge[] = graph.edges.map((e, idx) => {
-    const src = graph.nodes.find((n) => n.id === e.caller_id);
-    const color = src ? cardColorByKind(src.kind) : "#9CA3AF";
-    return {
-      id: `e${idx}`,
-      source: e.caller_id,
-      target: e.callee_id,
-      type: "default",
-      style: { stroke: color, strokeWidth: 1.5 },
-      markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color },
-    };
-  });
+  const baseEdges: Edge[] = useMemo(() => graph.edges.map((e, idx) => ({
+    id: `e${idx}`,
+    source: e.caller_id,
+    target: e.callee_id,
+    type: "default",
+  })), [graph.edges]);
 
   const [nodes, , onNodesChange] = useNodesState(
-    concentricLayout(initialNodes, initialEdges, graph.nodes)
+    concentricLayout(initialNodes, baseEdges, graph.nodes)
   );
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+
+  // Recompute edge styles whenever selection changes
+  const edges: Edge[] = useMemo(() => {
+    const selID = selectedNode?.id ?? null;
+    return baseEdges.map((e) => {
+      const isConnected = selID && (e.source === selID || e.target === selID);
+      const isDimmed = selID && !isConnected;
+      const color = isConnected ? "#333333" : isDimmed ? "#CCCCCC" : "#888888";
+      const width = isConnected ? 2 : 1;
+      return {
+        ...e,
+        style: { stroke: color, strokeWidth: width },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color },
+      };
+    });
+  }, [baseEdges, selectedNode]);
+
+  const onEdgesChange = useCallback(() => {}, []);
 
   useEffect(() => {
     setTimeout(() => fitView({ padding: 0.15 }), 50);
@@ -181,37 +192,7 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
       />
 
       <div style={{ flex: 1, background: "#EBE9E9", position: "relative" }}>
-        {/* Top bar */}
-        <div style={{
-          position: "absolute",
-          top: 0, left: 0, right: 0,
-          height: 48,
-          background: "#E1E1E1",
-          borderBottom: "1px solid #D4D4D4",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 20px",
-          gap: 16,
-          zIndex: 10,
-        }}>
-          <a href={`/repos/${repoID}`} style={{ color: "#888888", fontSize: 13, textDecoration: "none" }}>
-            ← Back
-          </a>
-          <span style={{ color: "#AAAAAA" }}>·</span>
-          <span style={{ color: "#888888", fontSize: 13 }}>#{graph.pr.number}</span>
-          <span style={{ color: "#111111", fontSize: 14, fontWeight: 500 }}>{graph.pr.title}</span>
-          <div style={{ flex: 1 }} />
-          <a
-            href={graph.pr.html_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: "#6366F1", fontSize: 13, textDecoration: "none" }}
-          >
-            View on GitHub →
-          </a>
-        </div>
-
-        <div style={{ position: "absolute", inset: 0, top: 48 }}>
+        <div style={{ position: "absolute", inset: 0 }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}

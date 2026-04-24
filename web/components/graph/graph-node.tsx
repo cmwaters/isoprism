@@ -32,7 +32,10 @@ function Divider({ color }: { color: string }) {
 
 function inferPackageLabel(node: GraphNode): string {
   const parts = node.file_path.split("/");
-  const pkg = parts.length >= 2 ? parts[parts.length - 2] : "";
+  // Use directory name as package; fall back to filename stem for root-level files
+  const pkg = parts.length >= 2
+    ? parts[parts.length - 2]
+    : parts[0].replace(/\.[^.]+$/, "");
   if (node.kind === "method" || node.full_name.includes(".")) {
     const prefix = node.full_name.split(".").slice(0, -1).join(".");
     return pkg ? `${pkg}.${prefix}` : prefix;

@@ -73,6 +73,63 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		json.NewEncoder(w).Encode(map[string]string{"status": "reprocess_started", "pr_id": prID})
 	})
 
+	// Sync PR metadata (title, body, author) from GitHub — useful when webhook was missed.
+	r.Post("/debug/prs/{prID}/sync", func(w http.ResponseWriter, r *http.Request) {
+		prID := chi.URLParam(r, "prID")
+		ctx := r.Context()
+
+		var fullName string
+		var installationID int64
+		var prNumber int
+		err := db.QueryRow(ctx, `
+			select r.full_name, gi.installation_id, pr.number
+			from pull_requests pr
+			join repositories r on r.id = pr.repo_id
+			join github_installations gi on gi.id = r.installation_id
+			where pr.id = $1
+		`, prID).Scan(&fullName, &installationID, &prNumber)
+		if err != nil {
+			http.Error(w, "pr not found", http.StatusNotFound)
+			return
+		}
+
+		ghClient, err := appClient.ClientForInstallation(ctx, installationID)
+		if err != nil {
+			http.Error(w, "github client error", http.StatusInternalServerError)
+			return
+		}
+
+		parts := strings.SplitN(fullName, "/", 2)
+		if len(parts) != 2 {
+			http.Error(w, "invalid repo name", http.StatusInternalServerError)
+			return
+		}
+
+		pr, err := ghClient.GetPullRequest(ctx, parts[0], parts[1], prNumber)
+		if err != nil {
+			http.Error(w, "github fetch error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		db.Exec(ctx, `
+			update pull_requests set
+				title = $1, body = $2, author_login = $3, author_avatar_url = $4,
+				state = $5, head_commit_sha = $6, base_commit_sha = $7
+			where id = $8
+		`, pr.Title, pr.Body, pr.User.Login, pr.User.AvatarURL,
+			pr.State, pr.Head.SHA, pr.Base.SHA, prID)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":      "synced",
+			"pr_id":       prID,
+			"author":      pr.User.Login,
+			"body_length": len(pr.Body),
+			"additions":   pr.Additions,
+			"deletions":   pr.Deletions,
+		})
+	})
+
 	// Public routes
 	r.Post("/webhooks/github", ghHandler.HandleWebhook)
 	r.Get("/api/v1/github/callback", ghHandler.HandleInstallationCallback)
