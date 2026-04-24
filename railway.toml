@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "cd api && go build -o /app/server ./cmd/api"
+buildCommand = "go build -o /app/server ./cmd/api"
 
 [deploy]
 startCommand = "/app/server"
