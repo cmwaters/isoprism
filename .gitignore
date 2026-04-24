@@ -22,3 +22,6 @@ Thumbs.db
 .vscode/
 *.swp
 .vercel
+
+# Claude Code worktrees
+.claude/worktrees/
