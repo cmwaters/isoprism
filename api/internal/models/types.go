@@ -170,4 +170,6 @@ type GraphPR struct {
 	HTMLURL       string `json:"html_url"`
 	BaseCommitSHA string `json:"base_commit_sha"`
 	HeadCommitSHA string `json:"head_commit_sha"`
+	Body          string `json:"body"`
+	AuthorLogin   string `json:"author_login"`
 }

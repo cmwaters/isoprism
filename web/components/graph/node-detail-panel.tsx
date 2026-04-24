@@ -31,9 +31,7 @@ export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, p
       }}
     >
       {!node ? (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <p style={{ color: "#999999", fontSize: 14 }}>Select a node to inspect it.</p>
-        </div>
+        <PRSummaryPanel pr={pr} allNodes={allNodes} onSelectNode={onSelectNode} />
       ) : (
         <NodeDetail
           node={node}
@@ -43,6 +41,80 @@ export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, p
           showDiff={showDiff}
           onToggleDiff={() => setShowDiff((v) => !v)}
         />
+      )}
+    </div>
+  );
+}
+
+function PRSummaryPanel({
+  pr,
+  allNodes,
+  onSelectNode,
+}: {
+  pr: GraphPR;
+  allNodes: GraphNode[];
+  onSelectNode: (id: string) => void;
+}) {
+  const changedNodes = allNodes.filter((n) => n.node_type === "changed");
+
+  return (
+    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+      {/* PR number + title */}
+      <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 4 }}>#{pr.number}</p>
+      <h2 style={{ fontSize: 15, fontWeight: 600, color: "#111111", margin: "0 0 12px 0", lineHeight: 1.4 }}>
+        {pr.title}
+      </h2>
+
+      {/* Author */}
+      {pr.author_login && (
+        <div style={{ marginBottom: 16 }}>
+          <span style={{
+            background: "#F0F0F0", border: "1px solid #D4D4D4",
+            borderRadius: 12, padding: "2px 10px", fontSize: 11, color: "#555555",
+          }}>
+            {pr.author_login}
+          </span>
+        </div>
+      )}
+
+      {/* PR body (description) */}
+      {pr.body && (
+        <>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            Description
+          </p>
+          <div style={{ fontSize: 13, color: "#555555", lineHeight: 1.6, marginBottom: 20, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {pr.body}
+          </div>
+        </>
+      )}
+
+      {/* Changes list */}
+      {changedNodes.length > 0 && (
+        <>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            Changes
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {changedNodes.map((n) => {
+              const pkg = pkgLabel(n);
+              return (
+                <button
+                  key={n.id}
+                  onClick={() => onSelectNode(n.id)}
+                  style={{
+                    background: "#F0F0F0", border: "none", borderRadius: 4,
+                    padding: "4px 8px", cursor: "pointer", textAlign: "left",
+                    display: "flex", alignItems: "center", gap: 4,
+                  }}
+                >
+                  {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
+                  <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
@@ -105,7 +177,20 @@ function NodeDetail({
           padding: 12,
           marginBottom: 16,
         }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: "#166534", marginBottom: 6 }}>What&apos;s Changed?</p>
+          {/* Header row: label + stat pills */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: "#166534", margin: 0 }}>What&apos;s Changed?</p>
+            {node.lines_added > 0 && (
+              <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: 12, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
+                +{node.lines_added}
+              </span>
+            )}
+            {node.lines_removed > 0 && (
+              <span style={{ background: "#FEE2E2", color: "#EF4444", borderRadius: 12, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
+                -{node.lines_removed}
+              </span>
+            )}
+          </div>
           <p style={{ fontSize: 13, color: "#333333", lineHeight: 1.6, margin: 0 }}>{node.change_summary}</p>
 
           {node.diff_hunk && (
@@ -185,10 +270,14 @@ function RelationSection({
                 <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
               </div>
               {n.change_type === "added" && (
-                <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: 4, padding: "0 4px", fontSize: 10 }}>Added</span>
+                <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: 4, padding: "0 5px", fontSize: 10, fontWeight: 500, whiteSpace: "nowrap" }}>
+                  Added {n.lines_added > 0 ? `+${n.lines_added}` : ""}
+                </span>
               )}
               {n.change_type === "deleted" && (
-                <span style={{ background: "#FEE2E2", color: "#EF4444", borderRadius: 4, padding: "0 4px", fontSize: 10 }}>Deleted</span>
+                <span style={{ background: "#FEE2E2", color: "#EF4444", borderRadius: 4, padding: "0 5px", fontSize: 10, fontWeight: 500 }}>
+                  Deleted
+                </span>
               )}
             </button>
           );

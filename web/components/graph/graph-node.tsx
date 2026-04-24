@@ -110,50 +110,33 @@ function parseGoParams(s: string): { name: string; type: string }[] {
   return result;
 }
 
-function DiffSection({ node, dividerColor }: { node: GraphNode; dividerColor: string }) {
+function DiffPills({ node }: { node: GraphNode }) {
   if (!node.change_type) return null;
-
+  const pillBase: React.CSSProperties = {
+    display: "inline-flex", alignItems: "center",
+    borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 500,
+  };
   return (
-    <>
-      <Divider color={dividerColor} />
+    <div style={{ display: "flex", gap: 6, marginTop: 6, paddingLeft: 2 }}>
       {node.change_type === "added" && (
-        <div style={{ color: "#8DE08E", fontSize: 11, fontFamily: "monospace", lineHeight: 1.6 }}>
-          + Added · {node.lines_added} lines
-        </div>
+        <span style={{ ...pillBase, background: "#DCFCE7", color: "#16A34A" }}>
+          Added {node.lines_added > 0 ? `+${node.lines_added}` : ""}
+        </span>
       )}
       {node.change_type === "deleted" && (
-        <div style={{ color: "#E08D8D", fontSize: 11, fontFamily: "monospace", lineHeight: 1.6 }}>
-          - Removed · {node.lines_removed} lines
-        </div>
+        <span style={{ ...pillBase, background: "#FEE2E2", color: "#EF4444" }}>Deleted</span>
       )}
-      {node.change_type === "modified" && node.diff_hunk && (() => {
-        const lines = node.diff_hunk.split("\n")
-          .filter(l => (l.startsWith("+") || l.startsWith("-")) && !l.startsWith("+++") && !l.startsWith("---"))
-          .slice(0, 8);
-        return lines.length > 0 ? (
-          <div>
-            {lines.map((line, i) => (
-              <div key={i} style={{
-                fontSize: 10,
-                fontFamily: "monospace",
-                color: line.startsWith("+") ? "#8DE08E" : "#E08D8D",
-                whiteSpace: "pre",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                lineHeight: 1.5,
-              }}>
-                {line}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ display: "flex", gap: 10 }}>
-            {node.lines_added > 0 && <span style={{ color: "#8DE08E", fontSize: 11, fontFamily: "monospace" }}>+{node.lines_added}</span>}
-            {node.lines_removed > 0 && <span style={{ color: "#E08D8D", fontSize: 11, fontFamily: "monospace" }}>-{node.lines_removed}</span>}
-          </div>
-        );
-      })()}
-    </>
+      {node.change_type === "modified" && (
+        <>
+          {node.lines_added > 0 && (
+            <span style={{ ...pillBase, background: "#DCFCE7", color: "#16A34A" }}>+{node.lines_added}</span>
+          )}
+          {node.lines_removed > 0 && (
+            <span style={{ ...pillBase, background: "#FEE2E2", color: "#EF4444" }}>-{node.lines_removed}</span>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -163,7 +146,6 @@ function GraphNodeComponent({ data, selected }: Props) {
   const dividerColor = darken(bg);
   const pkgLabel = inferPackageLabel(node);
   const { params, returns } = parseGoSignature(node.signature);
-  const hasDiff = node.node_type === "changed" && !!node.change_type;
   const hasSignature = params.length > 0 || returns.length > 0;
 
   const handleStyle = { opacity: 0, width: 8, height: 8 };
@@ -222,10 +204,10 @@ function GraphNodeComponent({ data, selected }: Props) {
             ))}
           </>
         )}
-
-        {/* Diff section — inside card, below a full-width divider */}
-        {hasDiff && <DiffSection node={node} dividerColor={dividerColor} />}
       </div>
+
+      {/* Diff pills — below the card, not inside */}
+      <DiffPills node={node} />
     </div>
   );
 }

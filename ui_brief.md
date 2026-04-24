@@ -1,6 +1,6 @@
 # Isoprism — UI Brief
 
-> For AI generation and Figma design | Updated: 2026-04-23
+> For AI generation and Figma design | Updated: 2026-04-24
 
 ---
 
@@ -124,56 +124,70 @@
 
 ## Screen 5 — PR Graph View
 
-This is the primary screen. It has two zones:
+This is the primary screen. It has three distinct sub-views depending on context.
 
 ```
 ┌──────────────────┬───────────────────────────────────────┐
 │                  │                                       │
-│  Node Detail     │  Graph Canvas                        │
-│  Panel           │                                       │
+│  Left Panel      │  Graph Canvas                        │
 │  (~280px)        │  (remaining width)                   │
 │                  │                                       │
 └──────────────────┴───────────────────────────────────────┘
 ```
 
-![Graph View Reference](graph-view-reference.png)
+### Sub-view A — Repo browse (no PR, no node selected)
 
-**Both the Node Detail Panel and Graph Canvas use a light theme** (panel `#DCDCDC`, canvas `#EBE9E9`; dark text).
+![RepoView](RepoView.png)
+
+Left panel shows "Select a node to inspect it." placeholder. Canvas shows the static graph for the repo's main branch — all nodes plain (no diff state).
 
 ---
 
-### Node Detail Panel (~280px wide, `#DCDCDC` background, right border `1px #E4E4E4`)
+### Sub-view B — PR open, no node selected
 
-This panel updates when the user clicks a node in the graph. Default state (no node selected) shows:
+![OpenPRView](OpenPRView.png)
 
-**Default state:**
-- Centred placeholder text: "Select a node to inspect it." — 14px `#999999`
+The left panel shows PR summary information. Canvas shows the PR diff graph with diff pills below changed nodes.
 
-**Node selected state (top to bottom, 20px padding):**
+**Left Panel — PR Summary:**
 
-1. **File path** — `path/to/file.go` — 11px, `#AAAAAA`, at very top.
+Top section (20px padding):
+1. **PR number** — `#N` in 11px `#AAAAAA`
+2. **PR title** — 15px semibold, `#111111`, 4px below number
+3. 12px gap
+4. **Author chip** — small pill: `#F0F0F0` background, `#D4D4D4` border, 11px, author username
+5. 16px gap
+6. **Description section** — label "Description" in 11px uppercase `#AAAAAA`, then the PR body text (the PR description / first comment) rendered as plain pre-wrapped text, 13px `#555555`, line-height 1.6
+7. 16px gap
+8. **Changes section** — label "Changes" in 11px uppercase `#AAAAAA`, then a list of changed node rows:
+    - Each row: package label (11px, fuchsia `#EF5DA8`) + function name (13px `#222222`) in a light `#F0F0F0` pill, 4px border-radius, 6px horizontal padding, clickable (selects the node)
 
-2. **Package label** — e.g. `types.MockPV` — 11px, `#EF5DA8` (fuchsia), 8px below file path.
+---
 
-3. **Function name** — 22px semibold, `#111111`, 4px below package label.
+### Sub-view C — PR open, node selected
 
-4. **Description** — 14px, `#555555`, line-height 1.6, 12px below name.
+![OpenComponentPRView](OpenComponentPRView.png)
 
-5. **"What's Changed?" card** (only for directly modified functions) — 16px below description:
-   - Container: `#F0FFF4` background, `#BBF7D0` left border (3px), 8px border-radius, 12px padding.
-   - Label: "What's Changed?" — 12px semibold, `#166534`, margin-bottom 6px.
-   - Body: 13px, `#333333`, line-height 1.6.
+Left panel reverts to node detail. Changed nodes gain inline status in the Calls/Called-by sections.
 
-6. **"Calls" section** — 20px below the changed card (or description if no change card):
-   - Label: "Calls" — 11px uppercase, `#AAAAAA`, letter-spacing 0.08em.
-   - **Call rows**: package label (11px, package color) + function name (13px, `#222222`).
-   - If no calls, omit section.
+**Left Panel — Node Detail (20px padding):**
 
-7. **"Is Called By" section** — 16px below Calls, same row structure.
-
-**Status badges:**
-- **Deleted** — red pill: `#FEE2E2` background, `#EF4444` text, 10px, 4px border-radius.
-- **Added** — green pill: `#DCFCE7` background, `#16A34A` text, 10px, 4px border-radius.
+1. **← back arrow** — links back (clears selection, returns to Sub-view B)
+2. **File path** — `path/to/file.go` — 11px, `#AAAAAA`, 8px below arrow
+3. **Package label** — e.g. `types.MockPV` — 11px, `#EF5DA8`, 4px below file path
+4. **Function name** — 22px semibold, `#111111`, 4px below package label
+5. **Description** — 14px, `#555555`, line-height 1.6, 12px below name
+6. **"What's Changed?" card** (only for directly modified functions) — 16px below description:
+   - Container: `#F0FFF4` background, `#BBF7D0` left border (3px), 8px border-radius, 12px padding
+   - Header row: "What's Changed?" label (12px semibold `#166534`) + inline `+N` / `-N` stat pills
+   - Body: 13px, `#333333`, line-height 1.6 — the change summary text
+7. **"Calls" section** — 20px below:
+   - Label: "Calls" — 11px uppercase `#AAAAAA`, letter-spacing 0.08em
+   - Each row: package label (11px, fuchsia) + function name (13px `#222222`)
+   - If the callee is itself a changed node, show its status badge inline on the right:
+     - "Deleted" — `#FEE2E2` bg, `#EF4444` text, 10px, 4px border-radius
+     - "Added +N" — `#DCFCE7` bg, `#16A34A` text
+8. **"Is Called By" section** — 16px below Calls, same row structure with status badges
 
 ---
 
@@ -183,7 +197,7 @@ This panel updates when the user clicks a node in the graph. Default state (no n
 - Left: "← Back" link in `#888888`, separator `·`, PR number in `#888888`, PR title in `#111111` semibold.
 - Right: "View on GitHub →" link in `#6366F1`.
 
-**Graph layout:** Concentric rings. Changed nodes sit at the centre; BFS assigns each connected node a ring level. Level 0 nodes spread horizontally; outer rings are evenly distributed around a circle whose radius adapts to node count (`max(level × 300px, count × 220px / 2π)`). Pan and zoom freely.
+**Graph layout:** Concentric rings. Changed nodes sit at the centre; BFS assigns each connected node a ring level. Outer rings are evenly distributed around a circle whose radius adapts to node count (`max(level × 380px, count × 300px / 2π)`). Pan and zoom freely.
 
 **Node color by kind:**
 
@@ -194,26 +208,28 @@ This panel updates when the user clicks a node in the graph. Default state (no n
 | `interface` | `#E5C8DC` (rose) |
 | Selected (any kind) | `#F5F5F5` |
 
-**Node anatomy** (colored card, `box-shadow: 0 1px 4px rgba(0,0,0,0.12)`, 8px border-radius, 10px padding, monospace font):
-- **Package label** — 11px, `#EF5DA8` (fuchsia), top of card. Format: `pkg` for functions; `pkg.ReceiverType` for methods (package inferred from file path directory).
+**Node anatomy** (colored card, no shadow, 8px border-radius, 10px padding, monospace font, `display: inline-flex`):
+- **Package label** — 11px, `#EF5DA8` (fuchsia), top of card. Format: `pkg` for functions; `pkg.ReceiverType` for methods.
 - **Function name** — 13px semibold, `#111111`.
 - **Parameters** — 11px per line: param name in `#444444`, type in `#0088FF` (blue).
-- **Return types** — 11px, `#FF383C` (red), below a 1px `rgba(0,0,0,0.1)` divider.
-- **Status badge**: "Deleted" red pill or "Added" green pill, inline after returns.
+- **Full-width divider** (darken card color by ~13%) — separates params from returns.
+- **Return types** — 11px per line, `#FF383C` (red).
+- No diff content inside the card.
 
-**Diff pills** (changed nodes only) — rendered **below** the card, not inside:
-- Added lines: `#EF5DA8` background, white text, 12px border-radius, `+N` format.
-- Removed lines: `#E08D8D` background, white text, 12px border-radius, `-N` format.
+**Diff pills** (changed nodes only) — rendered **below** the card, not inside it. 12px border-radius, 11px font:
+- Modified: green pill `+N` (`#DCFCE7` bg, `#16A34A` text) and red pill `-N` (`#FEE2E2` bg, `#EF4444` text), side by side
+- Added: single green pill `Added +N`
+- Deleted: single red pill `Deleted`
 
 **Node states:**
-- **Default:** kind-colored card, standard shadow.
-- **Selected:** `#F5F5F5` background, stronger shadow `0 4px 16px rgba(0,0,0,0.18)`.
+- **Default:** kind-colored card.
+- **Selected:** `#F5F5F5` background.
 
 **Handles:** All 4 sides (Top target, Left target, Right source, Bottom source), opacity 0. `ConnectionMode.Loose` enabled.
 
 **Edges:**
 - Bezier curves, 1.5px stroke, `MarkerType.ArrowClosed` triangle arrowhead.
-- Color matches the **source node's kind color** (same table as node backgrounds).
+- Color matches the **source node's kind color**.
 
 **Zoom controls:** bottom-right corner. `+` / `−` / `⊡ fit` buttons, 36px each, white bg, `#E4E4E4` border, 6px border-radius, `#444444` icon text.
 
@@ -231,11 +247,11 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 
 | Action | Result |
 |---|---|
-| Click PR card | Navigate to PR Graph View for that PR |
-| Click graph node | Update Node Detail Panel with that node's data |
-| Click "Show diff" | Expand inline diff inside Node Detail Panel |
+| Click PR card | Navigate to PR Graph View (Sub-view B) |
+| Click graph node | Open node detail panel (Sub-view C) |
+| Click ← in node detail | Clear selection, return to Sub-view B |
 | Click node chip in "Calls" / "Called by" | Select that node |
-| Click empty canvas | Deselect node, panel shows default state |
+| Click empty canvas | Deselect node, return to Sub-view B |
 | Click "View on GitHub →" | Open GitHub PR URL in new tab |
 | Click back breadcrumb | Return to PR Queue |
 | Zoom controls | Zoom graph canvas in/out or fit to screen |
@@ -251,9 +267,10 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 | `IndexingState` | Animated progress bar with status messages |
 | `PRQueue` | List of PR cards with urgency ordering |
 | `PRCard` | Single PR row: title, summary, badges, chevron |
-| `GraphCanvas` | Dagre-layout graph canvas (pan/zoom/click), `#EBE9E9` bg |
-| `GraphNode` | White card node: package label, function name, params, return types, optional diff badges |
-| `NodeDetailPanel` | Light side panel (`#DCDCDC` bg): file path, package label, function name, description, What's Changed card, Calls/Called-by rows |
-| `DiffBlock` | Inline unified diff renderer with green/red line highlighting |
+| `GraphCanvas` | Concentric-ring graph canvas (pan/zoom/click), `#EBE9E9` bg |
+| `GraphNode` | Kind-colored card: package label, function name, params, return types. Diff pills rendered below (not inside) the card. |
+| `NodeDetailPanel` | Left panel with three states: placeholder (no PR), PR summary (PR open, no node), node detail (node selected) |
+| `PRSummaryPanel` | PR title, author, +/- stats, AI summary bullets, test plan bullets, changes list |
+| `DiffPills` | Green +N / red -N pill badges rendered below a graph node |
 | `TopBar` | PR breadcrumb, title, and GitHub link (`#E1E1E1` background) |
 | `AppSidebar` | Narrow left sidebar (`#E1E1E1` background) with logo |

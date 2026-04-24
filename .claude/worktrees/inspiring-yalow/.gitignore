@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+web/.next/
+web/out/
+
+# Env files
+.env
+.env.local
+.env*.local
+api/.env
+
+# Go
+api/bin/
+api/*.exe
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

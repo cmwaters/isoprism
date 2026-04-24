@@ -85,6 +85,8 @@ export interface GraphPR {
   html_url: string;
   base_commit_sha: string;
   head_commit_sha: string;
+  body: string;
+  author_login: string;
 }
 
 export interface GraphResponse {

@@ -36,11 +36,13 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	err := h.DB.QueryRow(ctx, `
 		select pr.id, pr.number, pr.title, pr.html_url,
 		       coalesce(pr.base_commit_sha,''), coalesce(pr.head_commit_sha,''),
-		       coalesce(r.main_commit_sha,'')
+		       coalesce(r.main_commit_sha,''),
+		       coalesce(pr.body,''), coalesce(pr.author_login,'')
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
 		where pr.id=$1 and pr.repo_id=$2
-	`, prID, repoID).Scan(&pr.ID, &pr.Number, &pr.Title, &pr.HTMLURL, &baseCommit, &headCommit, &mainCommitSHA)
+	`, prID, repoID).Scan(&pr.ID, &pr.Number, &pr.Title, &pr.HTMLURL, &baseCommit, &headCommit, &mainCommitSHA,
+		&pr.Body, &pr.AuthorLogin)
 	if err != nil {
 		http.Error(w, "pr not found", http.StatusNotFound)
 		return
