@@ -39,7 +39,7 @@ type MeasuredNode = {
 };
 
 const DIFF_PILLS_HEIGHT = 28;
-const CARD_CORNER_MARGIN = 16;
+const CARD_CORNER_MARGIN = 20;
 const MIN_ANCHOR_SPACING = 20;
 
 function cardRect(node: MeasuredNode): Rect {
@@ -58,10 +58,10 @@ function rectCenter(rect: Rect): Point {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
 
-function anchorFromSide(rect: Rect, side: AnchorSide, offset: number, cornerMargin = CARD_CORNER_MARGIN): Anchor {
+function anchorFromSide(rect: Rect, side: AnchorSide, offset: number): Anchor {
   const horizontal = side === "top" || side === "bottom";
   const length = horizontal ? rect.width : rect.height;
-  const margin = Math.min(cornerMargin, length / 2);
+  const margin = Math.min(CARD_CORNER_MARGIN, length / 2);
   const clampedOffset = Math.max(margin, Math.min(length - margin, offset));
 
   switch (side) {
@@ -134,10 +134,7 @@ function spacedFaceAnchors(rect: Rect, anchors: Anchor[]): Anchor[] {
 
   const side = anchors[0].side;
   const length = side === "top" || side === "bottom" ? rect.width : rect.height;
-  const requiredSpan = MIN_ANCHOR_SPACING * (anchors.length - 1);
-  const margin = length >= requiredSpan
-    ? Math.min(CARD_CORNER_MARGIN, (length - requiredSpan) / 2)
-    : 0;
+  const margin = Math.min(CARD_CORNER_MARGIN, length / 2);
   const minOffset = margin;
   const maxOffset = length - margin;
   const available = maxOffset - minOffset;
@@ -169,7 +166,7 @@ function spacedFaceAnchors(rect: Rect, anchors: Anchor[]): Anchor[] {
 
   const result = [...anchors];
   byOffset.forEach(({ index }, sortedIndex) => {
-    result[index] = anchorFromSide(rect, side, offsets[sortedIndex], margin);
+    result[index] = anchorFromSide(rect, side, offsets[sortedIndex]);
   });
 
   return result;
