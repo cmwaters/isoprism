@@ -7,12 +7,14 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/isoprism/api/internal/github"
 	"github.com/isoprism/api/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type GraphHandler struct {
-	DB *pgxpool.Pool
+	DB        *pgxpool.Pool
+	AppClient *github.AppClient
 }
 
 // GET /api/v1/repos/{repoID}/prs/{prID}/graph
@@ -366,4 +368,142 @@ func countDiffLines(patch string) (added, removed int) {
 		}
 	}
 	return
+}
+
+// GET /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code
+func (h *GraphHandler) GetNodeCode(w http.ResponseWriter, r *http.Request) {
+	repoID := chi.URLParam(r, "repoID")
+	prID := chi.URLParam(r, "prID")
+	nodeID := chi.URLParam(r, "nodeID")
+	userID := r.Header.Get("X-User-ID")
+	ctx := r.Context()
+
+	type nodeMeta struct {
+		id        string
+		fullName  string
+		filePath  string
+		language  string
+		lineStart int
+		lineEnd   int
+	}
+
+	var fullName string
+	var installationID int64
+	var baseCommit, headCommit string
+	err := h.DB.QueryRow(ctx, `
+		select r.full_name, gi.installation_id,
+		       coalesce(pr.base_commit_sha,''), coalesce(pr.head_commit_sha,'')
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		join github_installations gi on gi.id = r.installation_id
+		where pr.id=$1 and pr.repo_id=$2 and r.user_id=$3
+	`, prID, repoID, userID).Scan(&fullName, &installationID, &baseCommit, &headCommit)
+	if err != nil {
+		http.Error(w, "pr not found", http.StatusNotFound)
+		return
+	}
+
+	var selected nodeMeta
+	err = h.DB.QueryRow(ctx, `
+		select id, full_name, file_path, language, line_start, line_end
+		from code_nodes
+		where id=$1 and repo_id=$2
+	`, nodeID, repoID).Scan(&selected.id, &selected.fullName, &selected.filePath, &selected.language, &selected.lineStart, &selected.lineEnd)
+	if err != nil {
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
+
+	var changeType, diffHunk *string
+	_ = h.DB.QueryRow(ctx, `
+		select change_type, diff_hunk
+		from pr_node_changes
+		where pull_request_id=$1 and node_id=$2
+	`, prID, nodeID).Scan(&changeType, &diffHunk)
+
+	findNode := func(commitSHA string) *nodeMeta {
+		if commitSHA == "" {
+			return nil
+		}
+		var n nodeMeta
+		err := h.DB.QueryRow(ctx, `
+			select id, full_name, file_path, language, line_start, line_end
+			from code_nodes
+			where repo_id=$1 and commit_sha=$2 and full_name=$3 and file_path=$4
+		`, repoID, commitSHA, selected.fullName, selected.filePath).Scan(&n.id, &n.fullName, &n.filePath, &n.language, &n.lineStart, &n.lineEnd)
+		if err != nil {
+			return nil
+		}
+		return &n
+	}
+
+	baseNode := findNode(baseCommit)
+	headNode := findNode(headCommit)
+
+	if changeType == nil {
+		// Context nodes are not in pr_node_changes. Show the head version when present,
+		// otherwise fall back to the selected node metadata.
+		if headNode == nil {
+			headNode = &selected
+		}
+	}
+
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) != 2 {
+		http.Error(w, "invalid repo name", http.StatusInternalServerError)
+		return
+	}
+
+	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		log.Printf("GetNodeCode: github client: %v", err)
+		http.Error(w, "github client error", http.StatusInternalServerError)
+		return
+	}
+
+	fetchSegment := func(n *nodeMeta, commitSHA string) *models.NodeCodeSegment {
+		if n == nil || commitSHA == "" {
+			return nil
+		}
+		content, err := ghClient.GetFileContent(ctx, parts[0], parts[1], n.filePath, commitSHA)
+		if err != nil {
+			log.Printf("GetNodeCode: fetch %s@%s: %v", n.filePath, commitSHA, err)
+			return nil
+		}
+		return &models.NodeCodeSegment{
+			CommitSHA: commitSHA,
+			StartLine: n.lineStart,
+			EndLine:   n.lineEnd,
+			Source:    sliceSourceLines(string(content), n.lineStart, n.lineEnd),
+		}
+	}
+
+	response := models.NodeCodeResponse{
+		NodeID:     nodeID,
+		FilePath:   selected.filePath,
+		Language:   selected.language,
+		Base:       fetchSegment(baseNode, baseCommit),
+		Head:       fetchSegment(headNode, headCommit),
+		DiffHunk:   diffHunk,
+		ChangeType: changeType,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func sliceSourceLines(source string, startLine, endLine int) string {
+	if startLine <= 0 || endLine < startLine {
+		return ""
+	}
+	lines := strings.Split(source, "\n")
+	start := startLine - 1
+	if start >= len(lines) {
+		return ""
+	}
+	end := endLine
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[start:end], "\n")
 }

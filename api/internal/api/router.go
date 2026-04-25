@@ -42,7 +42,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	}
 	repoHandler := &handlers.RepoHandler{DB: db}
 	queueHandler := &handlers.QueueHandler{DB: db}
-	graphHandler := &handlers.GraphHandler{DB: db}
+	graphHandler := &handlers.GraphHandler{DB: db, AppClient: appClient}
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -148,6 +148,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 			r.Get("/status", repoHandler.GetRepoStatus)
 			r.Get("/queue", queueHandler.GetQueue)
 			r.Get("/prs/{prID}/graph", graphHandler.GetGraph)
+			r.Get("/prs/{prID}/nodes/{nodeID}/code", graphHandler.GetNodeCode)
 		})
 	})
 

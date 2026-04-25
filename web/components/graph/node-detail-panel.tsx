@@ -1,8 +1,9 @@
 "use client";
 
-import { GraphEdge, GraphNode, GraphPR } from "@/lib/types";
-import DiffBlock from "./diff-block";
-import { useState, type CSSProperties } from "react";
+import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment } from "@/lib/types";
+import { apiFetch } from "@/lib/api";
+import type { CodeViewMode, PanelMode } from "./graph-canvas";
+import { useEffect, useState, type CSSProperties } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -13,11 +14,28 @@ interface Props {
   onSelectNode: (id: string) => void;
   repoID: string;
   pr: GraphPR;
+  token: string;
+  mode: PanelMode;
+  codeViewMode: CodeViewMode;
+  onModeChange: (mode: PanelMode) => void;
+  onCodeViewModeChange: (mode: CodeViewMode) => void;
+  onViewCode: (mode: CodeViewMode) => void;
 }
 
-export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, repoID, pr }: Props) {
-  const [showDiff, setShowDiff] = useState(false);
-
+export default function NodeDetailPanel({
+  node,
+  allNodes,
+  edges,
+  onSelectNode,
+  repoID,
+  pr,
+  token,
+  mode,
+  codeViewMode,
+  onModeChange,
+  onCodeViewModeChange,
+  onViewCode,
+}: Props) {
   return (
     <div
       style={{
@@ -32,20 +50,39 @@ export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, r
         flexDirection: "column",
       }}
     >
-      {!node ? (
+      {!node || mode === "overview" ? (
+        !node ? (
         <PRSummaryPanel pr={pr} allNodes={allNodes} repoID={repoID} onSelectNode={onSelectNode} />
-      ) : (
+        ) : (
         <NodeDetail
           node={node}
           allNodes={allNodes}
           edges={edges}
           onSelectNode={onSelectNode}
           onBackToOverview={() => {
-            setShowDiff(false);
             onSelectNode("");
+            onModeChange("overview");
+            onCodeViewModeChange("plain");
           }}
-          showDiff={showDiff}
-          onToggleDiff={() => setShowDiff((v) => !v)}
+          mode={mode}
+          onModeChange={onModeChange}
+          onViewCode={onViewCode}
+        />
+        )
+      ) : (
+        <CodePanel
+          node={node}
+          repoID={repoID}
+          prID={pr.id}
+          token={token}
+          viewMode={codeViewMode}
+          onViewModeChange={onCodeViewModeChange}
+          onBackToOverview={() => onModeChange("overview")}
+          onBackToPR={() => {
+            onSelectNode("");
+            onModeChange("overview");
+            onCodeViewModeChange("plain");
+          }}
         />
       )}
     </div>
@@ -160,22 +197,25 @@ function NodeDetail({
   edges,
   onSelectNode,
   onBackToOverview,
-  showDiff,
-  onToggleDiff,
+  mode,
+  onModeChange,
+  onViewCode,
 }: {
   node: GraphNode;
   allNodes: GraphNode[];
   edges: GraphEdge[];
   onSelectNode: (id: string) => void;
   onBackToOverview: () => void;
-  showDiff: boolean;
-  onToggleDiff: () => void;
+  mode: PanelMode;
+  onModeChange: (mode: PanelMode) => void;
+  onViewCode: (mode: CodeViewMode) => void;
 }) {
   const pkgPrefix = pkgLabel(node);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
       <BackControl onClick={onBackToOverview} />
+      <ModeToggle mode={mode} onModeChange={onModeChange} canShowCode />
 
       {/* File path */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
@@ -233,19 +273,31 @@ function NodeDetail({
 
           {node.diff_hunk && (
             <button
-              onClick={onToggleDiff}
-              style={{ background: "none", border: "none", color: "#166534", fontSize: 12, cursor: "pointer", padding: 0, marginTop: 8, textDecoration: "underline" }}
+              onClick={() => onViewCode("diff")}
+              style={{ background: "none", border: "none", color: "#166534", fontSize: 12, cursor: "pointer", padding: 0, marginTop: 8 }}
             >
-              {showDiff ? "Hide diff" : "Show diff"}
+              View Diff →
             </button>
-          )}
-          {showDiff && node.diff_hunk && (
-            <div style={{ marginTop: 8 }}>
-              <DiffBlock patch={node.diff_hunk} />
-            </div>
           )}
         </div>
       )}
+
+      <button
+        onClick={() => onViewCode(node.diff_hunk ? "diff" : "plain")}
+        style={{
+          background: "#CFCFCF",
+          border: "none",
+          borderRadius: 4,
+          color: "#222222",
+          cursor: "pointer",
+          fontSize: 12,
+          marginBottom: 4,
+          padding: "8px 10px",
+          textAlign: "left",
+        }}
+      >
+        {node.diff_hunk ? "Open code/diff view →" : "Open code view →"}
+      </button>
 
       {/* Calls section */}
       <RelationSection
@@ -263,6 +315,244 @@ function NodeDetail({
         onSelectNode={onSelectNode}
       />
     </div>
+  );
+}
+
+function CodePanel({
+  node,
+  repoID,
+  prID,
+  token,
+  viewMode,
+  onViewModeChange,
+  onBackToOverview,
+  onBackToPR,
+}: {
+  node: GraphNode;
+  repoID: string;
+  prID: string;
+  token: string;
+  viewMode: CodeViewMode;
+  onViewModeChange: (mode: CodeViewMode) => void;
+  onBackToOverview: () => void;
+  onBackToPR: () => void;
+}) {
+  const [code, setCode] = useState<NodeCodeResponse | null>(null);
+  const [error, setError] = useState<{ nodeID: string; message: string } | null>(null);
+  const pkgPrefix = pkgLabel(node);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    apiFetch<NodeCodeResponse>(
+      `/api/v1/repos/${repoID}/prs/${prID}/nodes/${node.id}/code`,
+      token
+    )
+      .then((response) => {
+        if (!cancelled) setCode(response);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError({ nodeID: node.id, message: err.message });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [node.id, prID, repoID, token]);
+
+  const codeForNode = code?.node_id === node.id ? code : null;
+  const errorForNode = error?.nodeID === node.id ? error.message : null;
+  const loading = !codeForNode && !errorForNode;
+  const canShowDiff = Boolean(node.diff_hunk || codeForNode?.diff_hunk);
+  const plainSegment = codeForNode?.head ?? codeForNode?.base;
+
+  return (
+    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+      <BackControl onClick={onBackToPR} />
+      <ModeToggle mode="code" onModeChange={(mode) => {
+        if (mode === "overview") onBackToOverview();
+      }} canShowCode />
+
+      <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
+        {node.file_path}
+      </p>
+      {pkgPrefix && (
+        <p style={{ fontSize: 11, color: "#EF5DA8", marginBottom: 4, fontWeight: 500 }}>
+          {pkgPrefix}
+        </p>
+      )}
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
+        {node.name}
+      </h2>
+
+      <CodeModeToggle viewMode={viewMode} onViewModeChange={onViewModeChange} canShowDiff={canShowDiff} />
+
+      {loading && (
+        <p style={{ color: "#777777", fontSize: 13, marginTop: 16 }}>Loading code…</p>
+      )}
+
+      {errorForNode && (
+        <div style={{ background: "#FEE2E2", borderRadius: 6, color: "#991B1B", fontSize: 12, lineHeight: 1.5, marginTop: 16, padding: 10 }}>
+          {errorForNode}
+        </div>
+      )}
+
+      {!loading && !errorForNode && viewMode === "diff" && canShowDiff && (
+        <UnifiedDiffViewer patch={codeForNode?.diff_hunk ?? node.diff_hunk ?? ""} />
+      )}
+
+      {!loading && !errorForNode && viewMode === "diff" && !canShowDiff && (
+        <p style={{ color: "#777777", fontSize: 13, marginTop: 16 }}>No diff is available for this node.</p>
+      )}
+
+      {!loading && !errorForNode && viewMode === "plain" && plainSegment && (
+        <SourceViewer segment={plainSegment} />
+      )}
+
+      {!loading && !errorForNode && viewMode === "plain" && !plainSegment && codeForNode?.diff_hunk && (
+        <UnifiedDiffViewer patch={codeForNode.diff_hunk} />
+      )}
+    </div>
+  );
+}
+
+function ModeToggle({
+  mode,
+  onModeChange,
+  canShowCode,
+}: {
+  mode: PanelMode;
+  onModeChange: (mode: PanelMode) => void;
+  canShowCode: boolean;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginBottom: 16 }}>
+      {(["overview", "code"] as PanelMode[]).map((item) => {
+        const active = mode === item;
+        return (
+          <button
+            key={item}
+            type="button"
+            disabled={item === "code" && !canShowCode}
+            onClick={() => onModeChange(item)}
+            style={{
+              background: active ? "#111111" : "#CFCFCF",
+              border: "none",
+              borderRadius: 4,
+              color: active ? "#FFFFFF" : "#333333",
+              cursor: item === "code" && !canShowCode ? "not-allowed" : "pointer",
+              fontSize: 12,
+              padding: "7px 8px",
+              textTransform: "capitalize",
+            }}
+          >
+            {item}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CodeModeToggle({
+  viewMode,
+  onViewModeChange,
+  canShowDiff,
+}: {
+  viewMode: CodeViewMode;
+  onViewModeChange: (mode: CodeViewMode) => void;
+  canShowDiff: boolean;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginBottom: 12 }}>
+      {(["plain", "diff"] as CodeViewMode[]).map((item) => {
+        const active = viewMode === item;
+        const disabled = item === "diff" && !canShowDiff;
+        return (
+          <button
+            key={item}
+            type="button"
+            disabled={disabled}
+            onClick={() => onViewModeChange(item)}
+            style={{
+              background: active ? "#111111" : "#CFCFCF",
+              border: "none",
+              borderRadius: 4,
+              color: active ? "#FFFFFF" : "#333333",
+              cursor: disabled ? "not-allowed" : "pointer",
+              fontSize: 12,
+              padding: "7px 8px",
+              textTransform: "capitalize",
+            }}
+          >
+            {item}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
+  const lines = segment.source.split("\n");
+
+  return (
+    <pre style={{
+      background: "#F4F4F4",
+      border: "1px solid #CFCFCF",
+      borderRadius: 6,
+      color: "#222222",
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 11,
+      lineHeight: 1.55,
+      margin: 0,
+      overflow: "auto",
+      padding: "10px 0",
+      whiteSpace: "pre",
+    }}>
+      {lines.map((line, index) => (
+        <span key={index} style={{ display: "grid", gridTemplateColumns: "42px 1fr", minWidth: 0 }}>
+          <span style={{ color: "#999999", paddingRight: 10, textAlign: "right", userSelect: "none" }}>
+            {segment.start_line + index}
+          </span>
+          <span style={{ paddingRight: 10 }}>{line || " "}</span>
+        </span>
+      ))}
+    </pre>
+  );
+}
+
+function UnifiedDiffViewer({ patch }: { patch: string }) {
+  const lines = patch.split("\n");
+
+  return (
+    <pre style={{
+      background: "#F4F4F4",
+      border: "1px solid #CFCFCF",
+      borderRadius: 6,
+      color: "#222222",
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 11,
+      lineHeight: 1.55,
+      margin: 0,
+      overflow: "auto",
+      padding: "10px 0",
+      whiteSpace: "pre",
+    }}>
+      {lines.map((line, index) => {
+        const added = line.startsWith("+") && !line.startsWith("+++");
+        const removed = line.startsWith("-") && !line.startsWith("---");
+        const hunk = line.startsWith("@@");
+        const background = added ? "#A7E7A4" : removed ? "#E58A8A" : hunk ? "#E8E8FF" : "transparent";
+        const color = hunk ? "#4F46E5" : "#222222";
+
+        return (
+          <span key={index} style={{ background, color, display: "block", padding: "0 10px" }}>
+            {line || " "}
+          </span>
+        );
+      })}
+    </pre>
   );
 }
 

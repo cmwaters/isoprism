@@ -27,5 +27,5 @@ export default async function PRGraphPage({ params }: Props) {
     redirect(`/repos/${repoID}`);
   }
 
-  return <GraphCanvas graph={graph!} repoID={repoID} />;
+  return <GraphCanvas graph={graph!} repoID={repoID} token={token} />;
 }

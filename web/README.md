@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Isoprism Web
 
-## Getting Started
+Isoprism is a PR review interface that turns code changes into a semantic call graph. Reviewers can inspect changed functions, structs, and nearby callers/callees, then switch between summary-first review and source/diff review for a selected node.
 
-First, run the development server:
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The web app runs on [http://localhost:3000](http://localhost:3000). It talks to the Go API at `NEXT_PUBLIC_API_URL`, defaulting to `http://localhost:8080`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Useful checks:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npm run build
+```
 
-## Learn More
+## PR graph view
 
-To learn more about Next.js, take a look at the following resources:
+The PR page at `/repos/[repoID]/pr/[prID]` fetches `GET /api/v1/repos/{repoID}/prs/{prID}/graph` and renders:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- A call graph of changed nodes plus nearby caller/callee context.
+- A left side panel that defaults to the semantic overview.
+- Node cards with package/type labels, signatures, and added/removed/deleted pills.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The side panel has two modes:
 
-## Deploy on Vercel
+- `Overview`: semantic PR or node summary, change explanation, diff stats, calls, and callers.
+- `Code`: a lazy-loaded source viewer for the selected function or struct. Changed nodes can toggle between plain code and unified diff. Context nodes show plain code when available.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The `View Diff` and `Open code/diff view` controls switch the side panel into `Code` mode without changing the selected graph node.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## API contract used by the code panel
+
+The code panel lazily fetches:
+
+```http
+GET /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code
+```
+
+Response:
+
+```ts
+interface NodeCodeResponse {
+  node_id: string;
+  file_path: string;
+  language: string;
+  base?: {
+    commit_sha: string;
+    start_line: number;
+    end_line: number;
+    source: string;
+  };
+  head?: {
+    commit_sha: string;
+    start_line: number;
+    end_line: number;
+    source: string;
+  };
+  diff_hunk?: string;
+  change_type?: "added" | "modified" | "deleted";
+}
+```
+
+Expected behavior:
+
+- `modified`: may include both `base` and `head`, plus `diff_hunk`.
+- `added`: includes `head` when source can be fetched, plus `diff_hunk`.
+- `deleted`: includes `base` when source can be fetched, plus `diff_hunk`.
+- Caller/callee context nodes are not PR changes; they show the head version when available.
+- If GitHub source fetching fails, the UI still uses `diff_hunk` from graph processing when present.
+
+## Development debug endpoints
+
+The API includes unauthenticated debug endpoints for rebuilding graph data:
+
+```http
+POST /debug/repos/{repoID}/reindex
+POST /debug/prs/{prID}/reprocess
+```
+
+Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes` and `code_edges` from main branch HEAD. `reprocess` rebuilds `pr_node_changes` and PR call edges for one PR.

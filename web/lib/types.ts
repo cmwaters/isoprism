@@ -95,6 +95,25 @@ export interface GraphResponse {
   edges: GraphEdge[];
 }
 
+// ── Node code ────────────────────────────────────────────────────────────────
+
+export interface NodeCodeSegment {
+  commit_sha: string;
+  start_line: number;
+  end_line: number;
+  source: string;
+}
+
+export interface NodeCodeResponse {
+  node_id: string;
+  file_path: string;
+  language: string;
+  base?: NodeCodeSegment;
+  head?: NodeCodeSegment;
+  diff_hunk?: string;
+  change_type?: "added" | "modified" | "deleted";
+}
+
 // ── Repo status ───────────────────────────────────────────────────────────────
 
 export interface RepoStatus {

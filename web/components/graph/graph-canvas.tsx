@@ -37,6 +37,8 @@ type MeasuredNode = {
   height?: number;
   data?: { node?: APIGraphNode };
 };
+export type PanelMode = "overview" | "code";
+export type CodeViewMode = "plain" | "diff";
 
 const DIFF_PILLS_HEIGHT = 28;
 const CARD_CORNER_MARGIN = 20;
@@ -354,9 +356,11 @@ function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode
 }
 
 // ── Inner canvas ──────────────────────────────────────────────────────────────
-function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }) {
+function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: string; token: string }) {
   const { fitView } = useReactFlow();
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
+  const [panelMode, setPanelMode] = useState<PanelMode>("overview");
+  const [codeViewMode, setCodeViewMode] = useState<CodeViewMode>("plain");
 
   const initialNodes: Node[] = useMemo(() => graph.nodes.map((n) => ({
     id: n.id,
@@ -402,11 +406,16 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
     (_, node) => {
       const apiNode = graph.nodes.find((n) => n.id === node.id) ?? null;
       setSelectedNode(apiNode);
+      setPanelMode("overview");
     },
     [graph.nodes]
   );
 
-  const onPaneClick = useCallback(() => setSelectedNode(null), []);
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null);
+    setPanelMode("overview");
+    setCodeViewMode("plain");
+  }, []);
 
   const totalNodes = graph.nodes.length;
   const maxNodes = 20;
@@ -423,6 +432,15 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
         }}
         repoID={repoID}
         pr={graph.pr}
+        token={token}
+        mode={panelMode}
+        codeViewMode={codeViewMode}
+        onModeChange={setPanelMode}
+        onCodeViewModeChange={setCodeViewMode}
+        onViewCode={(viewMode) => {
+          setCodeViewMode(viewMode);
+          setPanelMode("code");
+        }}
       />
 
       <div style={{ flex: 1, background: "#EBE9E9", position: "relative" }}>
@@ -501,10 +519,10 @@ function ZoomControls({ onFit }: { onFit: () => void }) {
   );
 }
 
-export default function GraphCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }) {
+export default function GraphCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: string; token: string }) {
   return (
     <ReactFlowProvider>
-      <InnerCanvas graph={graph} repoID={repoID} />
+      <InnerCanvas graph={graph} repoID={repoID} token={token} />
     </ReactFlowProvider>
   );
 }

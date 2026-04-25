@@ -173,3 +173,22 @@ type GraphPR struct {
 	Body          string `json:"body"`
 	AuthorLogin   string `json:"author_login"`
 }
+
+// ── Node code API response ───────────────────────────────────────────────────
+
+type NodeCodeSegment struct {
+	CommitSHA string `json:"commit_sha"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+	Source    string `json:"source"`
+}
+
+type NodeCodeResponse struct {
+	NodeID     string           `json:"node_id"`
+	FilePath   string           `json:"file_path"`
+	Language   string           `json:"language"`
+	Base       *NodeCodeSegment `json:"base,omitempty"`
+	Head       *NodeCodeSegment `json:"head,omitempty"`
+	DiffHunk   *string          `json:"diff_hunk,omitempty"`
+	ChangeType *string          `json:"change_type,omitempty"`
+}
