@@ -526,7 +526,7 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 /auth/callback                   Supabase auth callback
 /onboarding                      GitHub App install (first-time)
 /onboarding/repos                Repo selection → triggers RepoInit
-/                                Root: redirect to repo queue or /onboarding
+/                                Root: auth/status redirect to repo queue or onboarding
 /repos/[repoID]                  PR Queue (top 5 PRs)
 /repos/[repoID]/pr/[prID]        PR Graph View
 /settings                        Repo management, delete account
@@ -549,7 +549,7 @@ React Flow (`@xyflow/react`) with a concentric ring layout:
 - Changed nodes anchor the centre; a few changed nodes with surrounding context are placed in a tight centre row
 - BFS over graph edges assigns surrounding caller/callee nodes to outer rings
 - Node `kind` drives the card colour; `node_type` drives central placement and changed-node diff pills
-- Edges use a custom smart Bezier renderer that connects the closest points on each card border and makes the curve leave and enter perpendicular to those borders
+- Edges use a custom smart Bezier renderer that attaches to fixed, evenly spaced points on the raw card body, excludes diff pills from edge geometry, avoids corners, and makes curves leave and enter perpendicular to the chosen faces
 - `onNodeClick` updates `selectedNodeId` state; `NodeDetailPanel` reads from it, and its back control clears the selection to return to the PR summary
 - Maximum 20 nodes rendered; excess nodes shown as a count notice
 
@@ -568,9 +568,10 @@ React Flow (`@xyflow/react`) with a concentric ring layout:
 
 1. `/login` → Supabase Auth GitHub OAuth
 2. GitHub → `/auth/callback` → Supabase session
-3. Callback calls `GET /api/v1/auth/status?github_token=…&user_id=…`
-4. API checks if user's GitHub account matches an existing installation:
-   - **Match**: redirect to `/repos/{repoID}`
+3. `/` and `/auth/callback` both call `GET /api/v1/auth/status?user_id=…`
+4. API checks whether the user has a ready repo or an installed-but-unindexed repo:
+   - **Ready repo**: redirect to `/repos/{repoID}`
+   - **Installed but not indexed**: redirect to `/onboarding/repos`
    - **No match**: redirect to `/onboarding`
 
 ### Isolation

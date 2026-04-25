@@ -16,6 +16,7 @@ type RepoHandler struct {
 }
 
 // GET /api/v1/auth/status?user_id={uuid}
+// Shared redirect helper for the landing page and auth callback.
 // Returns a redirect URL based on whether the user has a ready repo.
 func (h *RepoHandler) GetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("user_id")

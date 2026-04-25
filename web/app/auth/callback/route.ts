@@ -15,15 +15,14 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}${next}`);
       }
 
-      // Otherwise, check org membership to determine where to send the user
-      const providerToken = data.session.provider_token;
+      // Otherwise, ask the shared auth-status helper where to send the user.
       const userId = data.session.user.id;
       const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
-      if (providerToken && apiUrl) {
+      if (apiUrl) {
         try {
           const statusRes = await fetch(
-            `${apiUrl}/api/v1/auth/status?github_token=${providerToken}&user_id=${userId}`
+            `${apiUrl}/api/v1/auth/status?user_id=${userId}`
           );
           if (statusRes.ok) {
             const { redirect } = await statusRes.json();
