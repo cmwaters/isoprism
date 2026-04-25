@@ -28,105 +28,32 @@ const edgeTypes = { smartBezier: SmartBezierEdge };
 
 type Point = { x: number; y: number };
 type Rect = Point & { width: number; height: number };
-type Segment = { a: Point; b: Point; normal: Point };
+type Anchor = Point & { normal: Point; angle: number };
 type MeasuredNode = {
   internals: { positionAbsolute: Point };
   measured: { width?: number; height?: number };
   width?: number;
   height?: number;
+  data?: { node?: APIGraphNode };
 };
 
-function nodeRect(node: MeasuredNode): Rect {
+const DIFF_PILLS_HEIGHT = 28;
+const CARD_CORNER_MARGIN = 16;
+
+function cardRect(node: MeasuredNode): Rect {
+  const measuredHeight = node.measured.height ?? node.height ?? 120;
+  const hasDiffPills = Boolean(node.data?.node?.change_type);
+
   return {
     x: node.internals.positionAbsolute.x,
     y: node.internals.positionAbsolute.y,
     width: node.measured.width ?? node.width ?? NODE_W,
-    height: node.measured.height ?? node.height ?? 120,
+    height: Math.max(48, measuredHeight - (hasDiffPills ? DIFF_PILLS_HEIGHT : 0)),
   };
 }
 
 function rectCenter(rect: Rect): Point {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-}
-
-function rectSegments(rect: Rect): Segment[] {
-  const x1 = rect.x;
-  const x2 = rect.x + rect.width;
-  const y1 = rect.y;
-  const y2 = rect.y + rect.height;
-  return [
-    { a: { x: x1, y: y1 }, b: { x: x2, y: y1 }, normal: { x: 0, y: -1 } },
-    { a: { x: x2, y: y1 }, b: { x: x2, y: y2 }, normal: { x: 1, y: 0 } },
-    { a: { x: x2, y: y2 }, b: { x: x1, y: y2 }, normal: { x: 0, y: 1 } },
-    { a: { x: x1, y: y2 }, b: { x: x1, y: y1 }, normal: { x: -1, y: 0 } },
-  ];
-}
-
-function closestPointOnSegment(point: Point, segment: Segment): Point {
-  const dx = segment.b.x - segment.a.x;
-  const dy = segment.b.y - segment.a.y;
-  const lengthSq = dx * dx + dy * dy;
-  if (lengthSq === 0) return segment.a;
-
-  const t = Math.max(0, Math.min(1, ((point.x - segment.a.x) * dx + (point.y - segment.a.y) * dy) / lengthSq));
-  return { x: segment.a.x + t * dx, y: segment.a.y + t * dy };
-}
-
-function distanceSq(a: Point, b: Point): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
-}
-
-function isVertical(segment: Segment): boolean {
-  return segment.a.x === segment.b.x;
-}
-
-function rangeOverlap(a1: number, a2: number, b1: number, b2: number): [number, number] | null {
-  const start = Math.max(Math.min(a1, a2), Math.min(b1, b2));
-  const end = Math.min(Math.max(a1, a2), Math.max(b1, b2));
-  return start <= end ? [start, end] : null;
-}
-
-function closestPointsBetweenSegments(source: Segment, target: Segment): { source: Point; target: Point } {
-  const sourceVertical = isVertical(source);
-  const targetVertical = isVertical(target);
-
-  if (sourceVertical && targetVertical) {
-    const overlap = rangeOverlap(source.a.y, source.b.y, target.a.y, target.b.y);
-    if (overlap) {
-      const y = (overlap[0] + overlap[1]) / 2;
-      return { source: { x: source.a.x, y }, target: { x: target.a.x, y } };
-    }
-  }
-
-  if (!sourceVertical && !targetVertical) {
-    const overlap = rangeOverlap(source.a.x, source.b.x, target.a.x, target.b.x);
-    if (overlap) {
-      const x = (overlap[0] + overlap[1]) / 2;
-      return { source: { x, y: source.a.y }, target: { x, y: target.a.y } };
-    }
-  }
-
-  const vertical = sourceVertical ? source : target;
-  const horizontal = sourceVertical ? target : source;
-  const xOverlap = rangeOverlap(vertical.a.x, vertical.b.x, horizontal.a.x, horizontal.b.x);
-  const yOverlap = rangeOverlap(vertical.a.y, vertical.b.y, horizontal.a.y, horizontal.b.y);
-  if (xOverlap && yOverlap) {
-    const point = { x: vertical.a.x, y: horizontal.a.y };
-    return { source: point, target: point };
-  }
-
-  const candidates = [
-    { source: source.a, target: closestPointOnSegment(source.a, target) },
-    { source: source.b, target: closestPointOnSegment(source.b, target) },
-    { source: closestPointOnSegment(target.a, source), target: target.a },
-    { source: closestPointOnSegment(target.b, source), target: target.b },
-  ];
-
-  return candidates.reduce((best, candidate) => (
-    distanceSq(candidate.source, candidate.target) < distanceSq(best.source, best.target) ? candidate : best
-  ));
 }
 
 function unitVector(from: Point, to: Point): Point {
@@ -136,54 +63,114 @@ function unitVector(from: Point, to: Point): Point {
   return distance === 0 ? { x: 1, y: 0 } : { x: dx / distance, y: dy / distance };
 }
 
-function closestBorderConnection(sourceRect: Rect, targetRect: Rect) {
-  const sourceCenter = rectCenter(sourceRect);
-  const targetCenter = rectCenter(targetRect);
-  const centerDirection = unitVector(sourceCenter, targetCenter);
+function faceCenterAnchor(rect: Rect, normal: Point): Anchor {
+  const center = rectCenter(rect);
 
-  let best:
-    | { source: Point; target: Point; sourceNormal: Point; targetNormal: Point; distance: number; alignment: number }
-    | null = null;
-
-  for (const sourceSegment of rectSegments(sourceRect)) {
-    for (const targetSegment of rectSegments(targetRect)) {
-      const points = closestPointsBetweenSegments(sourceSegment, targetSegment);
-      const distance = distanceSq(points.source, points.target);
-      const alignment =
-        sourceSegment.normal.x * centerDirection.x +
-        sourceSegment.normal.y * centerDirection.y -
-        targetSegment.normal.x * centerDirection.x -
-        targetSegment.normal.y * centerDirection.y;
-
-      if (!best || distance < best.distance - 0.01 || (Math.abs(distance - best.distance) <= 0.01 && alignment > best.alignment)) {
-        best = {
-          source: points.source,
-          target: points.target,
-          sourceNormal: sourceSegment.normal,
-          targetNormal: targetSegment.normal,
-          distance,
-          alignment,
-        };
-      }
-    }
+  if (Math.abs(normal.x) > Math.abs(normal.y)) {
+    return {
+      x: normal.x > 0 ? rect.x + rect.width : rect.x,
+      y: center.y,
+      normal: { x: normal.x > 0 ? 1 : -1, y: 0 },
+      angle: normal.x > 0 ? 0 : Math.PI,
+    };
   }
 
-  return best!;
+  return {
+    x: center.x,
+    y: normal.y > 0 ? rect.y + rect.height : rect.y,
+    normal: { x: 0, y: normal.y > 0 ? 1 : -1 },
+    angle: normal.y > 0 ? Math.PI / 2 : -Math.PI / 2,
+  };
 }
 
-function smartBezierPath(connection: ReturnType<typeof closestBorderConnection>): string {
-  const distance = Math.sqrt(connection.distance);
+function anchorAtAngle(rect: Rect, angle: number): Anchor {
+  const center = rectCenter(rect);
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const scale = Math.min(
+    dx === 0 ? Infinity : (rect.width / 2) / Math.abs(dx),
+    dy === 0 ? Infinity : (rect.height / 2) / Math.abs(dy)
+  );
+
+  let x = center.x + dx * scale;
+  let y = center.y + dy * scale;
+  let normal: Point;
+
+  if (Math.abs(x - rect.x) < 0.01) {
+    normal = { x: -1, y: 0 };
+    y = Math.max(rect.y + CARD_CORNER_MARGIN, Math.min(rect.y + rect.height - CARD_CORNER_MARGIN, y));
+  } else if (Math.abs(x - (rect.x + rect.width)) < 0.01) {
+    normal = { x: 1, y: 0 };
+    y = Math.max(rect.y + CARD_CORNER_MARGIN, Math.min(rect.y + rect.height - CARD_CORNER_MARGIN, y));
+  } else if (Math.abs(y - rect.y) < 0.01) {
+    normal = { x: 0, y: -1 };
+    x = Math.max(rect.x + CARD_CORNER_MARGIN, Math.min(rect.x + rect.width - CARD_CORNER_MARGIN, x));
+  } else {
+    normal = { x: 0, y: 1 };
+    x = Math.max(rect.x + CARD_CORNER_MARGIN, Math.min(rect.x + rect.width - CARD_CORNER_MARGIN, x));
+  }
+
+  return { x, y, normal, angle };
+}
+
+function evenlySpacedAnchors(rect: Rect, count: number): Anchor[] {
+  if (count === 4) {
+    return [
+      faceCenterAnchor(rect, { x: 0, y: -1 }),
+      faceCenterAnchor(rect, { x: 1, y: 0 }),
+      faceCenterAnchor(rect, { x: 0, y: 1 }),
+      faceCenterAnchor(rect, { x: -1, y: 0 }),
+    ];
+  }
+
+  return Array.from({ length: count }, (_, i) => anchorAtAngle(rect, -Math.PI / 2 + (i * Math.PI * 2) / count));
+}
+
+function edgeAngleFromNode(nodeID: string, nodeRect: Rect, edge: Edge, nodeRects: Map<string, Rect>): number {
+  const otherID = edge.source === nodeID ? edge.target : edge.source;
+  const otherRect = nodeRects.get(otherID);
+  if (!otherRect) return 0;
+
+  const from = rectCenter(nodeRect);
+  const to = rectCenter(otherRect);
+  return Math.atan2(to.y - from.y, to.x - from.x);
+}
+
+function endpointAnchor(nodeID: string, edgeID: string, rect: Rect, edges: Edge[], nodeRects: Map<string, Rect>): Anchor {
+  const incidentEdges = edges
+    .filter((edge) => edge.source === nodeID || edge.target === nodeID)
+    .sort((a, b) => {
+      const angleDiff = edgeAngleFromNode(nodeID, rect, a, nodeRects) - edgeAngleFromNode(nodeID, rect, b, nodeRects);
+      return angleDiff === 0 ? a.id.localeCompare(b.id) : angleDiff;
+    });
+
+  if (incidentEdges.length <= 1) {
+    const edge = incidentEdges[0];
+    if (!edge) return faceCenterAnchor(rect, { x: 1, y: 0 });
+
+    const otherID = edge.source === nodeID ? edge.target : edge.source;
+    const otherRect = nodeRects.get(otherID);
+    return faceCenterAnchor(rect, otherRect ? unitVector(rectCenter(rect), rectCenter(otherRect)) : { x: 1, y: 0 });
+  }
+
+  const anchors = evenlySpacedAnchors(rect, incidentEdges.length).sort((a, b) => a.angle - b.angle);
+  const edgeIndex = Math.max(0, incidentEdges.findIndex((edge) => edge.id === edgeID));
+  return anchors[edgeIndex % anchors.length];
+}
+
+function smartBezierPath(sourceAnchor: Anchor, targetAnchor: Anchor): string {
+  const distance = Math.hypot(targetAnchor.x - sourceAnchor.x, targetAnchor.y - sourceAnchor.y);
   const controlDistance = Math.max(36, Math.min(180, distance * 0.36));
   const sourceControl = {
-    x: connection.source.x + connection.sourceNormal.x * controlDistance,
-    y: connection.source.y + connection.sourceNormal.y * controlDistance,
+    x: sourceAnchor.x + sourceAnchor.normal.x * controlDistance,
+    y: sourceAnchor.y + sourceAnchor.normal.y * controlDistance,
   };
   const targetControl = {
-    x: connection.target.x + connection.targetNormal.x * controlDistance,
-    y: connection.target.y + connection.targetNormal.y * controlDistance,
+    x: targetAnchor.x + targetAnchor.normal.x * controlDistance,
+    y: targetAnchor.y + targetAnchor.normal.y * controlDistance,
   };
 
-  return `M ${connection.source.x},${connection.source.y} C ${sourceControl.x},${sourceControl.y} ${targetControl.x},${targetControl.y} ${connection.target.x},${connection.target.y}`;
+  return `M ${sourceAnchor.x},${sourceAnchor.y} C ${sourceControl.x},${sourceControl.y} ${targetControl.x},${targetControl.y} ${targetAnchor.x},${targetAnchor.y}`;
 }
 
 function SmartBezierEdge({
@@ -200,9 +187,21 @@ function SmartBezierEdge({
 }: EdgeProps) {
   const sourceNode = useStore((store) => store.nodeLookup.get(source));
   const targetNode = useStore((store) => store.nodeLookup.get(target));
+  const flowEdges = useStore((store) => store.edges);
+  const nodeLookup = useStore((store) => store.nodeLookup);
 
   const path = sourceNode && targetNode
-    ? smartBezierPath(closestBorderConnection(nodeRect(sourceNode), nodeRect(targetNode)))
+    ? (() => {
+        const nodeRects = new Map(
+          Array.from(nodeLookup.entries()).map(([nodeID, node]) => [nodeID, cardRect(node)])
+        );
+        const sourceRect = cardRect(sourceNode);
+        const targetRect = cardRect(targetNode);
+        return smartBezierPath(
+          endpointAnchor(source, id, sourceRect, flowEdges, nodeRects),
+          endpointAnchor(target, id, targetRect, flowEdges, nodeRects)
+        );
+      })()
     : `M ${sourceX},${sourceY} C ${sourceX},${sourceY} ${targetX},${targetY} ${targetX},${targetY}`;
 
   return (

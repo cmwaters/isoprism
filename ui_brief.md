@@ -229,7 +229,9 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
 
 **Edges:**
 - Smart Bezier curves, 1–2px stroke, `MarkerType.ArrowClosed` triangle arrowhead.
-- Each edge computes the closest pair of points on the source and target card borders, starts perpendicular from the source border, then curves gently into the target border perpendicular to that side.
+- Edges attach to fixed, evenly spaced points on the raw card body only; diff pills below changed nodes are excluded from edge geometry.
+- Anchors are clamped away from card corners. With four incident edges on a node, the anchors are the centre points of the top, right, bottom, and left card faces.
+- Curves start perpendicular from the source face, then bend gently into the target face perpendicular to that side.
 - Default color is `#888888`; selected-node connections are `#333333`; unrelated connections dim to `#CCCCCC`.
 
 **Zoom controls:** bottom-right corner. `+` / `−` / `⊡ fit` buttons, 36px each, white bg, `#E4E4E4` border, 6px border-radius, `#444444` icon text.
