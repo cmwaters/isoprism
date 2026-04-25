@@ -10,7 +10,7 @@ This is a single-person prototype. Use only `main` and `preview` branches:
 # Development flow
 
 - Can you make sure that all documentation is updated to reflect changes in the code. I should be able to use the documentation as a reliable source of the truth
-- Delivery will be verified by deploying the app to https://isoprism.com
+- After local verification passes, commit and push the changes to `main` so delivery can be verified through the deployment at https://isoprism.com
 
 # Debug tooling
 

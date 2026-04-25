@@ -549,7 +549,7 @@ React Flow (`@xyflow/react`) with a concentric ring layout:
 - Changed nodes anchor the centre; a few changed nodes with surrounding context are placed in a tight centre row
 - BFS over graph edges assigns surrounding caller/callee nodes to outer rings
 - Node `kind` drives the card colour; `node_type` drives central placement and changed-node diff pills
-- Edges use a custom smart Bezier renderer that attaches to fixed, evenly spaced points on the raw card body, excludes diff pills from edge geometry, avoids corners, and makes curves leave and enter perpendicular to the chosen faces
+- Edges use a custom smart Bezier renderer that attaches to natural points on the raw card body, excludes diff pills from edge geometry, avoids corners, separates multiple anchors on the same face by at least 20px when space allows, and makes curves leave and enter perpendicular to the chosen faces
 - `onNodeClick` updates `selectedNodeId` state; `NodeDetailPanel` reads from it, and its back control clears the selection to return to the PR summary
 - Maximum 20 nodes rendered; excess nodes shown as a count notice
 

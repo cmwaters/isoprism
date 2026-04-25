@@ -28,7 +28,8 @@ const edgeTypes = { smartBezier: SmartBezierEdge };
 
 type Point = { x: number; y: number };
 type Rect = Point & { width: number; height: number };
-type Anchor = Point & { normal: Point; angle: number };
+type AnchorSide = "top" | "right" | "bottom" | "left";
+type Anchor = Point & { normal: Point; side: AnchorSide; offset: number };
 type MeasuredNode = {
   internals: { positionAbsolute: Point };
   measured: { width?: number; height?: number };
@@ -39,6 +40,7 @@ type MeasuredNode = {
 
 const DIFF_PILLS_HEIGHT = 28;
 const CARD_CORNER_MARGIN = 16;
+const MIN_ANCHOR_SPACING = 20;
 
 function cardRect(node: MeasuredNode): Rect {
   const measuredHeight = node.measured.height ?? node.height ?? 120;
@@ -56,31 +58,22 @@ function rectCenter(rect: Rect): Point {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
 
-function unitVector(from: Point, to: Point): Point {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const distance = Math.hypot(dx, dy);
-  return distance === 0 ? { x: 1, y: 0 } : { x: dx / distance, y: dy / distance };
-}
+function anchorFromSide(rect: Rect, side: AnchorSide, offset: number, cornerMargin = CARD_CORNER_MARGIN): Anchor {
+  const horizontal = side === "top" || side === "bottom";
+  const length = horizontal ? rect.width : rect.height;
+  const margin = Math.min(cornerMargin, length / 2);
+  const clampedOffset = Math.max(margin, Math.min(length - margin, offset));
 
-function faceCenterAnchor(rect: Rect, normal: Point): Anchor {
-  const center = rectCenter(rect);
-
-  if (Math.abs(normal.x) > Math.abs(normal.y)) {
-    return {
-      x: normal.x > 0 ? rect.x + rect.width : rect.x,
-      y: center.y,
-      normal: { x: normal.x > 0 ? 1 : -1, y: 0 },
-      angle: normal.x > 0 ? 0 : Math.PI,
-    };
+  switch (side) {
+    case "top":
+      return { x: rect.x + clampedOffset, y: rect.y, normal: { x: 0, y: -1 }, side, offset: clampedOffset };
+    case "right":
+      return { x: rect.x + rect.width, y: rect.y + clampedOffset, normal: { x: 1, y: 0 }, side, offset: clampedOffset };
+    case "bottom":
+      return { x: rect.x + clampedOffset, y: rect.y + rect.height, normal: { x: 0, y: 1 }, side, offset: clampedOffset };
+    case "left":
+      return { x: rect.x, y: rect.y + clampedOffset, normal: { x: -1, y: 0 }, side, offset: clampedOffset };
   }
-
-  return {
-    x: center.x,
-    y: normal.y > 0 ? rect.y + rect.height : rect.y,
-    normal: { x: 0, y: normal.y > 0 ? 1 : -1 },
-    angle: normal.y > 0 ? Math.PI / 2 : -Math.PI / 2,
-  };
 }
 
 function anchorAtAngle(rect: Rect, angle: number): Anchor {
@@ -94,36 +87,28 @@ function anchorAtAngle(rect: Rect, angle: number): Anchor {
 
   let x = center.x + dx * scale;
   let y = center.y + dy * scale;
-  let normal: Point;
 
   if (Math.abs(x - rect.x) < 0.01) {
-    normal = { x: -1, y: 0 };
-    y = Math.max(rect.y + CARD_CORNER_MARGIN, Math.min(rect.y + rect.height - CARD_CORNER_MARGIN, y));
+    y = Math.max(rect.y, Math.min(rect.y + rect.height, y));
+    return anchorFromSide(rect, "left", y - rect.y);
   } else if (Math.abs(x - (rect.x + rect.width)) < 0.01) {
-    normal = { x: 1, y: 0 };
-    y = Math.max(rect.y + CARD_CORNER_MARGIN, Math.min(rect.y + rect.height - CARD_CORNER_MARGIN, y));
+    y = Math.max(rect.y, Math.min(rect.y + rect.height, y));
+    return anchorFromSide(rect, "right", y - rect.y);
   } else if (Math.abs(y - rect.y) < 0.01) {
-    normal = { x: 0, y: -1 };
-    x = Math.max(rect.x + CARD_CORNER_MARGIN, Math.min(rect.x + rect.width - CARD_CORNER_MARGIN, x));
+    x = Math.max(rect.x, Math.min(rect.x + rect.width, x));
+    return anchorFromSide(rect, "top", x - rect.x);
   } else {
-    normal = { x: 0, y: 1 };
-    x = Math.max(rect.x + CARD_CORNER_MARGIN, Math.min(rect.x + rect.width - CARD_CORNER_MARGIN, x));
+    x = Math.max(rect.x, Math.min(rect.x + rect.width, x));
+    return anchorFromSide(rect, "bottom", x - rect.x);
   }
-
-  return { x, y, normal, angle };
 }
 
-function evenlySpacedAnchors(rect: Rect, count: number): Anchor[] {
-  if (count === 4) {
-    return [
-      faceCenterAnchor(rect, { x: 0, y: -1 }),
-      faceCenterAnchor(rect, { x: 1, y: 0 }),
-      faceCenterAnchor(rect, { x: 0, y: 1 }),
-      faceCenterAnchor(rect, { x: -1, y: 0 }),
-    ];
+function faceCenterAnchor(rect: Rect, normal: Point): Anchor {
+  if (Math.abs(normal.x) > Math.abs(normal.y)) {
+    return anchorFromSide(rect, normal.x > 0 ? "right" : "left", rect.height / 2);
   }
 
-  return Array.from({ length: count }, (_, i) => anchorAtAngle(rect, -Math.PI / 2 + (i * Math.PI * 2) / count));
+  return anchorFromSide(rect, normal.y > 0 ? "bottom" : "top", rect.width / 2);
 }
 
 function edgeAngleFromNode(nodeID: string, nodeRect: Rect, edge: Edge, nodeRects: Map<string, Rect>): number {
@@ -136,26 +121,85 @@ function edgeAngleFromNode(nodeID: string, nodeRect: Rect, edge: Edge, nodeRects
   return Math.atan2(to.y - from.y, to.x - from.x);
 }
 
+function lineAnchor(nodeID: string, rect: Rect, edge: Edge, nodeRects: Map<string, Rect>): Anchor {
+  const otherID = edge.source === nodeID ? edge.target : edge.source;
+  const otherRect = nodeRects.get(otherID);
+  if (!otherRect) return faceCenterAnchor(rect, { x: 1, y: 0 });
+
+  return anchorAtAngle(rect, edgeAngleFromNode(nodeID, rect, edge, nodeRects));
+}
+
+function spacedFaceAnchors(rect: Rect, anchors: Anchor[]): Anchor[] {
+  if (anchors.length <= 1) return anchors;
+
+  const side = anchors[0].side;
+  const length = side === "top" || side === "bottom" ? rect.width : rect.height;
+  const requiredSpan = MIN_ANCHOR_SPACING * (anchors.length - 1);
+  const margin = length >= requiredSpan
+    ? Math.min(CARD_CORNER_MARGIN, (length - requiredSpan) / 2)
+    : 0;
+  const minOffset = margin;
+  const maxOffset = length - margin;
+  const available = maxOffset - minOffset;
+  const spacing = anchors.length > 1 ? Math.min(MIN_ANCHOR_SPACING, available / (anchors.length - 1)) : MIN_ANCHOR_SPACING;
+
+  const byOffset = anchors
+    .map((anchor, index) => ({ anchor, index }))
+    .sort((a, b) => a.anchor.offset - b.anchor.offset || a.index - b.index);
+
+  const offsets = byOffset.map(({ anchor }) => Math.max(minOffset, Math.min(maxOffset, anchor.offset)));
+
+  for (let i = 1; i < offsets.length; i++) {
+    offsets[i] = Math.max(offsets[i], offsets[i - 1] + spacing);
+  }
+
+  const overflow = offsets[offsets.length - 1] - maxOffset;
+  if (overflow > 0) {
+    for (let i = 0; i < offsets.length; i++) offsets[i] -= overflow;
+  }
+
+  for (let i = offsets.length - 2; i >= 0; i--) {
+    offsets[i] = Math.min(offsets[i], offsets[i + 1] - spacing);
+  }
+
+  const underflow = minOffset - offsets[0];
+  if (underflow > 0) {
+    for (let i = 0; i < offsets.length; i++) offsets[i] += underflow;
+  }
+
+  const result = [...anchors];
+  byOffset.forEach(({ index }, sortedIndex) => {
+    result[index] = anchorFromSide(rect, side, offsets[sortedIndex], margin);
+  });
+
+  return result;
+}
+
 function endpointAnchor(nodeID: string, edgeID: string, rect: Rect, edges: Edge[], nodeRects: Map<string, Rect>): Anchor {
-  const incidentEdges = edges
-    .filter((edge) => edge.source === nodeID || edge.target === nodeID)
-    .sort((a, b) => {
-      const angleDiff = edgeAngleFromNode(nodeID, rect, a, nodeRects) - edgeAngleFromNode(nodeID, rect, b, nodeRects);
-      return angleDiff === 0 ? a.id.localeCompare(b.id) : angleDiff;
-    });
+  const incidentEdges = edges.filter((edge) => edge.source === nodeID || edge.target === nodeID);
 
   if (incidentEdges.length <= 1) {
     const edge = incidentEdges[0];
-    if (!edge) return faceCenterAnchor(rect, { x: 1, y: 0 });
-
-    const otherID = edge.source === nodeID ? edge.target : edge.source;
-    const otherRect = nodeRects.get(otherID);
-    return faceCenterAnchor(rect, otherRect ? unitVector(rectCenter(rect), rectCenter(otherRect)) : { x: 1, y: 0 });
+    return edge ? lineAnchor(nodeID, rect, edge, nodeRects) : faceCenterAnchor(rect, { x: 1, y: 0 });
   }
 
-  const anchors = evenlySpacedAnchors(rect, incidentEdges.length).sort((a, b) => a.angle - b.angle);
-  const edgeIndex = Math.max(0, incidentEdges.findIndex((edge) => edge.id === edgeID));
-  return anchors[edgeIndex % anchors.length];
+  const anchorsByEdge = incidentEdges.map((edge) => ({ edge, anchor: lineAnchor(nodeID, rect, edge, nodeRects) }));
+  const anchorsBySide = new Map<AnchorSide, { edge: Edge; anchor: Anchor }[]>();
+
+  for (const item of anchorsByEdge) {
+    const sideAnchors = anchorsBySide.get(item.anchor.side) ?? [];
+    sideAnchors.push(item);
+    anchorsBySide.set(item.anchor.side, sideAnchors);
+  }
+
+  for (const sideAnchors of anchorsBySide.values()) {
+    const spacedAnchors = spacedFaceAnchors(rect, sideAnchors.map(({ anchor }) => anchor));
+    sideAnchors.forEach((item, index) => {
+      item.anchor = spacedAnchors[index];
+    });
+  }
+
+  return anchorsByEdge.find(({ edge }) => edge.id === edgeID)?.anchor ?? lineAnchor(nodeID, rect, incidentEdges[0], nodeRects);
 }
 
 function smartBezierPath(sourceAnchor: Anchor, targetAnchor: Anchor): string {

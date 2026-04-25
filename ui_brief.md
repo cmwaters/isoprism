@@ -229,8 +229,8 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
 
 **Edges:**
 - Smart Bezier curves, 1–2px stroke, `MarkerType.ArrowClosed` triangle arrowhead.
-- Edges attach to fixed, evenly spaced points on the raw card body only; diff pills below changed nodes are excluded from edge geometry.
-- Anchors are clamped away from card corners. With four incident edges on a node, the anchors are the centre points of the top, right, bottom, and left card faces.
+- Edges attach to natural points on the raw card body only; diff pills below changed nodes are excluded from edge geometry.
+- Anchors are clamped away from card corners. Multiple anchors on the same card face are separated by at least 20px when the face has enough usable length.
 - Curves start perpendicular from the source face, then bend gently into the target face perpendicular to that side.
 - Default color is `#888888`; selected-node connections are `#333333`; unrelated connections dim to `#CCCCCC`.
 
