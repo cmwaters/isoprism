@@ -538,25 +538,26 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 |---|---|---|
 | `GraphCanvas` | `components/graph/graph-canvas.tsx` | React Flow canvas: pan, zoom, click |
 | `GraphNode` | `components/graph/graph-node.tsx` | Custom React Flow node: badge, name, summary |
-| `NodeDetailPanel` | `components/graph/node-detail-panel.tsx` | Side panel updating on node selection |
+| `NodeDetailPanel` | `components/graph/node-detail-panel.tsx` | Side panel updating on node selection; includes a top-left back control that returns to the PR overview and renders PR descriptions as GitHub-flavored Markdown |
 | `DiffBlock` | `components/graph/diff-block.tsx` | Unified diff with line highlighting |
 | `IndexingProgress` | `components/onboarding/indexing-progress.tsx` | Animated bar; polls `/status` |
 | `PRQueue` | `components/queue/pr-queue.tsx` | List of 5 PR cards |
 
 ### Graph Rendering
 
-React Flow (`@xyflow/react`) with `dagre` for hierarchical layout:
-- Changed nodes in the centre row
-- Caller nodes above (functions that call changed functions)
-- Callee nodes below (functions called by changed functions)
-- `node_type` from the API response drives visual styling (colour, border weight, glow)
-- `onNodeClick` updates `selectedNodeId` state; `NodeDetailPanel` reads from it
+React Flow (`@xyflow/react`) with a concentric ring layout:
+- Changed nodes anchor the centre; a few changed nodes with surrounding context are placed in a tight centre row
+- BFS over graph edges assigns surrounding caller/callee nodes to outer rings
+- Node `kind` drives the card colour; `node_type` drives central placement and changed-node diff pills
+- Edges use a custom smart Bezier renderer that connects the closest points on each card border and makes the curve leave and enter perpendicular to those borders
+- `onNodeClick` updates `selectedNodeId` state; `NodeDetailPanel` reads from it, and its back control clears the selection to return to the PR summary
 - Maximum 20 nodes rendered; excess nodes shown as a count notice
 
 ### Data Fetching
 
 - **PR Queue page**: Server Component; fetches queue from Go API on every request. Manual refresh via `router.refresh()`.
 - **PR Graph page**: Server Component fetches `/prs/{prID}/graph`; passes data as props to client-side `GraphCanvas`.
+- **PR description markdown**: `NodeDetailPanel` renders `GraphPR.body` with `react-markdown` and `remark-gfm`; HTML is not enabled, and links open in a new tab.
 - **Indexing status**: Client Component polls `GET /repos/{repoID}/status` every 2 seconds until `index_status = 'ready'`.
 
 ---

@@ -128,3 +128,119 @@
     @apply font-sans;
   }
 }
+
+@layer components {
+  .pr-description-markdown {
+    margin-bottom: 20px;
+    color: #555555;
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+
+  .pr-description-markdown > :first-child {
+    margin-top: 0;
+  }
+
+  .pr-description-markdown > :last-child {
+    margin-bottom: 0;
+  }
+
+  .pr-description-markdown p,
+  .pr-description-markdown ul,
+  .pr-description-markdown ol,
+  .pr-description-markdown blockquote,
+  .pr-description-markdown pre,
+  .pr-description-markdown table {
+    margin: 0 0 10px;
+  }
+
+  .pr-description-markdown h1,
+  .pr-description-markdown h2,
+  .pr-description-markdown h3,
+  .pr-description-markdown h4,
+  .pr-description-markdown h5,
+  .pr-description-markdown h6 {
+    margin: 14px 0 6px;
+    color: #222222;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .pr-description-markdown ul,
+  .pr-description-markdown ol {
+    padding-left: 18px;
+  }
+
+  .pr-description-markdown li {
+    margin: 3px 0;
+  }
+
+  .pr-description-markdown li > p {
+    margin: 0;
+  }
+
+  .pr-description-markdown a {
+    color: #6366F1;
+    text-decoration: none;
+  }
+
+  .pr-description-markdown a:hover {
+    text-decoration: underline;
+  }
+
+  .pr-description-markdown code {
+    border-radius: 4px;
+    background: #CFCFCF;
+    padding: 1px 4px;
+    color: #333333;
+    font-family: var(--font-mono), monospace;
+    font-size: 12px;
+  }
+
+  .pr-description-markdown pre {
+    overflow-x: auto;
+    border-radius: 6px;
+    background: #CFCFCF;
+    padding: 8px;
+  }
+
+  .pr-description-markdown pre code {
+    background: transparent;
+    padding: 0;
+    white-space: pre;
+  }
+
+  .pr-description-markdown blockquote {
+    border-left: 3px solid #C7C7C7;
+    padding-left: 10px;
+    color: #666666;
+  }
+
+  .pr-description-markdown table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  .pr-description-markdown th,
+  .pr-description-markdown td {
+    border: 1px solid #C7C7C7;
+    padding: 4px 6px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .pr-description-markdown th {
+    background: #D5D5D5;
+    color: #333333;
+    font-weight: 600;
+  }
+
+  .pr-description-markdown input[type="checkbox"] {
+    margin-right: 6px;
+    vertical-align: -1px;
+  }
+}

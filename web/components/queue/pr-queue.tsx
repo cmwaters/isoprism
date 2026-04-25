@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { QueuePR } from "@/lib/types";
+import { useEffect, useState } from "react";
 
 interface Props {
   prs: QueuePR[];
@@ -26,8 +27,7 @@ export default function PRQueue({ prs, repoID }: Props) {
 }
 
 function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: () => void }) {
-  const hoursOpen = Math.floor((Date.now() - new Date(pr.opened_at).getTime()) / 3_600_000);
-  const timeLabel = hoursOpen < 24 ? `${hoursOpen}h` : `${Math.floor(hoursOpen / 24)}d`;
+  const timeLabel = useOpenTimeLabel(pr.opened_at);
 
   const riskColor = pr.risk_label === "high" ? "#EF4444" : pr.risk_label === "low" ? "#22C55E" : "#F59E0B";
 
@@ -110,4 +110,16 @@ function Dot({ color }: { color: string }) {
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function useOpenTimeLabel(openedAt: string): string {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const hoursOpen = Math.max(0, Math.floor((nowMs - new Date(openedAt).getTime()) / 3_600_000));
+  return hoursOpen < 24 ? `${hoursOpen}h` : `${Math.floor(hoursOpen / 24)}d`;
 }

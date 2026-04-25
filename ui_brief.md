@@ -157,7 +157,7 @@ Top section (20px padding):
 3. 12px gap
 4. **Author chip** — small pill: `#F0F0F0` background, `#D4D4D4` border, 11px, author username
 5. 16px gap
-6. **Description section** — label "Description" in 11px uppercase `#AAAAAA`, then the PR body text (the PR description / first comment) rendered as plain pre-wrapped text, 13px `#555555`, line-height 1.6
+6. **Description section** — label "Description" in 11px uppercase `#AAAAAA`, then the PR body text (the PR description / first comment) rendered as rich GitHub-flavored Markdown, 13px `#555555`, line-height 1.6. Headings, links, lists, tables, checkboxes, blockquotes, and inline/fenced code use compact panel styling and wrap within the left panel.
 7. 16px gap
 8. **Changes section** — label "Changes" in 11px uppercase `#AAAAAA`, then a list of changed node rows:
     - Each row: package label (11px, fuchsia `#EF5DA8`) + function name (13px `#222222`) in a light `#F0F0F0` pill, 4px border-radius, 6px horizontal padding, clickable (selects the node)
@@ -172,8 +172,8 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
 
 **Left Panel — Node Detail (20px padding):**
 
-1. **← back arrow** — links back (clears selection, returns to Sub-view B)
-2. **File path** — `path/to/file.go` — 11px, `#AAAAAA`, 8px below arrow
+1. **← Back** — top-left control styled exactly like the PR overview back link; clears selection and returns to Sub-view B
+2. **File path** — `path/to/file.go` — 11px, `#AAAAAA`, 8px below the back control
 3. **Package label** — e.g. `types.MockPV` — 11px, `#EF5DA8`, 4px below file path
 4. **Function name** — 22px semibold, `#111111`, 4px below package label
 5. **Description** — 14px, `#555555`, line-height 1.6, 12px below name
@@ -228,8 +228,9 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
 **Handles:** All 4 sides (Top target, Left target, Right source, Bottom source), opacity 0. `ConnectionMode.Loose` enabled.
 
 **Edges:**
-- Bezier curves, 1.5px stroke, `MarkerType.ArrowClosed` triangle arrowhead.
-- Color matches the **source node's kind color**.
+- Smart Bezier curves, 1–2px stroke, `MarkerType.ArrowClosed` triangle arrowhead.
+- Each edge computes the closest pair of points on the source and target card borders, starts perpendicular from the source border, then curves gently into the target border perpendicular to that side.
+- Default color is `#888888`; selected-node connections are `#333333`; unrelated connections dim to `#CCCCCC`.
 
 **Zoom controls:** bottom-right corner. `+` / `−` / `⊡ fit` buttons, 36px each, white bg, `#E4E4E4` border, 6px border-radius, `#444444` icon text.
 
@@ -269,7 +270,7 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 | `PRCard` | Single PR row: title, summary, badges, chevron |
 | `GraphCanvas` | Concentric-ring graph canvas (pan/zoom/click), `#EBE9E9` bg |
 | `GraphNode` | Kind-colored card: package label, function name, params, return types. Diff pills rendered below (not inside) the card. |
-| `NodeDetailPanel` | Left panel with three states: placeholder (no PR), PR summary (PR open, no node), node detail (node selected) |
+| `NodeDetailPanel` | Left panel with three states: placeholder (no PR), PR summary (PR open, no node), node detail (node selected, with top-left back control returning to PR summary) |
 | `PRSummaryPanel` | PR title, author, +/- stats, AI summary bullets, test plan bullets, changes list |
 | `DiffPills` | Green +N / red -N pill badges rendered below a graph node |
 | `TopBar` | PR breadcrumb, title, and GitHub link (`#E1E1E1` background) |

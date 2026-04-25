@@ -2,7 +2,9 @@
 
 import { GraphEdge, GraphNode, GraphPR } from "@/lib/types";
 import DiffBlock from "./diff-block";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Props {
   node: GraphNode | null;
@@ -38,6 +40,10 @@ export default function NodeDetailPanel({ node, allNodes, edges, onSelectNode, r
           allNodes={allNodes}
           edges={edges}
           onSelectNode={onSelectNode}
+          onBackToOverview={() => {
+            setShowDiff(false);
+            onSelectNode("");
+          }}
           showDiff={showDiff}
           onToggleDiff={() => setShowDiff((v) => !v)}
         />
@@ -63,13 +69,7 @@ function PRSummaryPanel({
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      {/* Back link */}
-      <a
-        href={`/repos/${repoID}`}
-        style={{ fontSize: 13, color: "#888888", textDecoration: "none", marginBottom: 16, display: "inline-block" }}
-      >
-        ← Back
-      </a>
+      <BackControl href={`/repos/${repoID}`} />
 
       {/* PR number + title */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 4 }}>#{pr.number}</p>
@@ -105,8 +105,10 @@ function PRSummaryPanel({
           <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
             Description
           </p>
-          <div style={{ fontSize: 13, color: "#555555", lineHeight: 1.6, marginBottom: 20, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {pr.body}
+          <div className="pr-description-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {pr.body}
+            </ReactMarkdown>
           </div>
         </>
       )}
@@ -157,6 +159,7 @@ function NodeDetail({
   allNodes,
   edges,
   onSelectNode,
+  onBackToOverview,
   showDiff,
   onToggleDiff,
 }: {
@@ -164,6 +167,7 @@ function NodeDetail({
   allNodes: GraphNode[];
   edges: GraphEdge[];
   onSelectNode: (id: string) => void;
+  onBackToOverview: () => void;
   showDiff: boolean;
   onToggleDiff: () => void;
 }) {
@@ -171,6 +175,8 @@ function NodeDetail({
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+      <BackControl onClick={onBackToOverview} />
+
       {/* File path */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
         {node.file_path}
@@ -260,6 +266,43 @@ function NodeDetail({
   );
 }
 
+const backControlStyle: CSSProperties = {
+  fontSize: 13,
+  color: "#888888",
+  textDecoration: "none",
+  fontFamily: "inherit",
+  fontWeight: 400,
+  marginBottom: 16,
+  display: "inline-block",
+  background: "none",
+  border: "none",
+  padding: 0,
+  cursor: "pointer",
+  textAlign: "left",
+};
+
+function BackControl({
+  href,
+  onClick,
+}: {
+  href?: string;
+  onClick?: () => void;
+}) {
+  if (href) {
+    return (
+      <a href={href} style={backControlStyle}>
+        ← Back
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} style={backControlStyle} aria-label="Back to PR overview">
+      ← Back
+    </button>
+  );
+}
+
 function RelationSection({
   label,
   nodeIDs,
@@ -338,3 +381,11 @@ function calleesOf(nodeID: string, edges: GraphEdge[]): string[] {
 function callersOf(nodeID: string, edges: GraphEdge[]): string[] {
   return edges.filter((e) => e.callee_id === nodeID).map((e) => e.caller_id);
 }
+
+const markdownComponents: Components = {
+  a: ({ children, href }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+};

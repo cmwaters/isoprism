@@ -6,6 +6,8 @@ import {
   Node,
   Edge,
   Background,
+  BaseEdge,
+  EdgeProps,
   useNodesState,
 
   useReactFlow,
@@ -14,6 +16,7 @@ import {
   PanOnScrollMode,
   ConnectionMode,
   MarkerType,
+  useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { GraphResponse, GraphNode as APIGraphNode } from "@/lib/types";
@@ -21,6 +24,197 @@ import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel from "./node-detail-panel";
 
 const nodeTypes = { graphNode: GraphNodeComponent };
+const edgeTypes = { smartBezier: SmartBezierEdge };
+
+type Point = { x: number; y: number };
+type Rect = Point & { width: number; height: number };
+type Segment = { a: Point; b: Point; normal: Point };
+type MeasuredNode = {
+  internals: { positionAbsolute: Point };
+  measured: { width?: number; height?: number };
+  width?: number;
+  height?: number;
+};
+
+function nodeRect(node: MeasuredNode): Rect {
+  return {
+    x: node.internals.positionAbsolute.x,
+    y: node.internals.positionAbsolute.y,
+    width: node.measured.width ?? node.width ?? NODE_W,
+    height: node.measured.height ?? node.height ?? 120,
+  };
+}
+
+function rectCenter(rect: Rect): Point {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+
+function rectSegments(rect: Rect): Segment[] {
+  const x1 = rect.x;
+  const x2 = rect.x + rect.width;
+  const y1 = rect.y;
+  const y2 = rect.y + rect.height;
+  return [
+    { a: { x: x1, y: y1 }, b: { x: x2, y: y1 }, normal: { x: 0, y: -1 } },
+    { a: { x: x2, y: y1 }, b: { x: x2, y: y2 }, normal: { x: 1, y: 0 } },
+    { a: { x: x2, y: y2 }, b: { x: x1, y: y2 }, normal: { x: 0, y: 1 } },
+    { a: { x: x1, y: y2 }, b: { x: x1, y: y1 }, normal: { x: -1, y: 0 } },
+  ];
+}
+
+function closestPointOnSegment(point: Point, segment: Segment): Point {
+  const dx = segment.b.x - segment.a.x;
+  const dy = segment.b.y - segment.a.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) return segment.a;
+
+  const t = Math.max(0, Math.min(1, ((point.x - segment.a.x) * dx + (point.y - segment.a.y) * dy) / lengthSq));
+  return { x: segment.a.x + t * dx, y: segment.a.y + t * dy };
+}
+
+function distanceSq(a: Point, b: Point): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function isVertical(segment: Segment): boolean {
+  return segment.a.x === segment.b.x;
+}
+
+function rangeOverlap(a1: number, a2: number, b1: number, b2: number): [number, number] | null {
+  const start = Math.max(Math.min(a1, a2), Math.min(b1, b2));
+  const end = Math.min(Math.max(a1, a2), Math.max(b1, b2));
+  return start <= end ? [start, end] : null;
+}
+
+function closestPointsBetweenSegments(source: Segment, target: Segment): { source: Point; target: Point } {
+  const sourceVertical = isVertical(source);
+  const targetVertical = isVertical(target);
+
+  if (sourceVertical && targetVertical) {
+    const overlap = rangeOverlap(source.a.y, source.b.y, target.a.y, target.b.y);
+    if (overlap) {
+      const y = (overlap[0] + overlap[1]) / 2;
+      return { source: { x: source.a.x, y }, target: { x: target.a.x, y } };
+    }
+  }
+
+  if (!sourceVertical && !targetVertical) {
+    const overlap = rangeOverlap(source.a.x, source.b.x, target.a.x, target.b.x);
+    if (overlap) {
+      const x = (overlap[0] + overlap[1]) / 2;
+      return { source: { x, y: source.a.y }, target: { x, y: target.a.y } };
+    }
+  }
+
+  const vertical = sourceVertical ? source : target;
+  const horizontal = sourceVertical ? target : source;
+  const xOverlap = rangeOverlap(vertical.a.x, vertical.b.x, horizontal.a.x, horizontal.b.x);
+  const yOverlap = rangeOverlap(vertical.a.y, vertical.b.y, horizontal.a.y, horizontal.b.y);
+  if (xOverlap && yOverlap) {
+    const point = { x: vertical.a.x, y: horizontal.a.y };
+    return { source: point, target: point };
+  }
+
+  const candidates = [
+    { source: source.a, target: closestPointOnSegment(source.a, target) },
+    { source: source.b, target: closestPointOnSegment(source.b, target) },
+    { source: closestPointOnSegment(target.a, source), target: target.a },
+    { source: closestPointOnSegment(target.b, source), target: target.b },
+  ];
+
+  return candidates.reduce((best, candidate) => (
+    distanceSq(candidate.source, candidate.target) < distanceSq(best.source, best.target) ? candidate : best
+  ));
+}
+
+function unitVector(from: Point, to: Point): Point {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const distance = Math.hypot(dx, dy);
+  return distance === 0 ? { x: 1, y: 0 } : { x: dx / distance, y: dy / distance };
+}
+
+function closestBorderConnection(sourceRect: Rect, targetRect: Rect) {
+  const sourceCenter = rectCenter(sourceRect);
+  const targetCenter = rectCenter(targetRect);
+  const centerDirection = unitVector(sourceCenter, targetCenter);
+
+  let best:
+    | { source: Point; target: Point; sourceNormal: Point; targetNormal: Point; distance: number; alignment: number }
+    | null = null;
+
+  for (const sourceSegment of rectSegments(sourceRect)) {
+    for (const targetSegment of rectSegments(targetRect)) {
+      const points = closestPointsBetweenSegments(sourceSegment, targetSegment);
+      const distance = distanceSq(points.source, points.target);
+      const alignment =
+        sourceSegment.normal.x * centerDirection.x +
+        sourceSegment.normal.y * centerDirection.y -
+        targetSegment.normal.x * centerDirection.x -
+        targetSegment.normal.y * centerDirection.y;
+
+      if (!best || distance < best.distance - 0.01 || (Math.abs(distance - best.distance) <= 0.01 && alignment > best.alignment)) {
+        best = {
+          source: points.source,
+          target: points.target,
+          sourceNormal: sourceSegment.normal,
+          targetNormal: targetSegment.normal,
+          distance,
+          alignment,
+        };
+      }
+    }
+  }
+
+  return best!;
+}
+
+function smartBezierPath(connection: ReturnType<typeof closestBorderConnection>): string {
+  const distance = Math.sqrt(connection.distance);
+  const controlDistance = Math.max(36, Math.min(180, distance * 0.36));
+  const sourceControl = {
+    x: connection.source.x + connection.sourceNormal.x * controlDistance,
+    y: connection.source.y + connection.sourceNormal.y * controlDistance,
+  };
+  const targetControl = {
+    x: connection.target.x + connection.targetNormal.x * controlDistance,
+    y: connection.target.y + connection.targetNormal.y * controlDistance,
+  };
+
+  return `M ${connection.source.x},${connection.source.y} C ${sourceControl.x},${sourceControl.y} ${targetControl.x},${targetControl.y} ${connection.target.x},${connection.target.y}`;
+}
+
+function SmartBezierEdge({
+  id,
+  source,
+  target,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  markerEnd,
+  style,
+  interactionWidth,
+}: EdgeProps) {
+  const sourceNode = useStore((store) => store.nodeLookup.get(source));
+  const targetNode = useStore((store) => store.nodeLookup.get(target));
+
+  const path = sourceNode && targetNode
+    ? smartBezierPath(closestBorderConnection(nodeRect(sourceNode), nodeRect(targetNode)))
+    : `M ${sourceX},${sourceY} C ${sourceX},${sourceY} ${targetX},${targetY} ${targetX},${targetY}`;
+
+  return (
+    <BaseEdge
+      id={id}
+      path={path}
+      markerEnd={markerEnd}
+      style={style}
+      interactionWidth={interactionWidth}
+    />
+  );
+}
 
 // ── Card color by kind ────────────────────────────────────────────────────────
 export function cardColorByKind(kind: string): string {
@@ -135,7 +329,7 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
     id: `e${idx}`,
     source: e.caller_id,
     target: e.callee_id,
-    type: "default",
+    type: "smartBezier",
   })), [graph.edges]);
 
   const [nodes, , onNodesChange] = useNodesState(
@@ -197,6 +391,7 @@ function InnerCanvas({ graph, repoID }: { graph: GraphResponse; repoID: string }
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
