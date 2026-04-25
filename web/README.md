@@ -24,14 +24,15 @@ The PR page at `/repos/[repoID]/pr/[prID]` fetches `GET /api/v1/repos/{repoID}/p
 
 - A call graph of changed nodes plus nearby caller/callee context.
 - A left side panel that defaults to the semantic overview.
+- A side panel that reviewers can resize between bounded minimum and maximum widths.
 - Node cards with package/type labels, signatures, and added/removed/deleted pills.
 
 The side panel has two modes:
 
 - `Overview`: semantic PR or node summary, change explanation, diff stats, calls, and callers.
-- `Code`: a lazy-loaded source viewer for the selected function or struct. Changed nodes can toggle between plain code and unified diff. Context nodes show plain code when available.
+- `Code`: a lazy-loaded source viewer for the selected function or struct. Changed nodes automatically show the PR diff. Unchanged context nodes automatically show plain source.
 
-The `View Diff` and `Open code/diff view` controls switch the side panel into `Code` mode without changing the selected graph node.
+The overview/code icon controls switch the side panel mode without changing the selected graph node.
 
 ## API contract used by the code panel
 

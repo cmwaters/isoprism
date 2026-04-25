@@ -38,7 +38,6 @@ type MeasuredNode = {
   data?: { node?: APIGraphNode };
 };
 export type PanelMode = "overview" | "code";
-export type CodeViewMode = "plain" | "diff";
 
 const DIFF_PILLS_HEIGHT = 28;
 const CARD_CORNER_MARGIN = 20;
@@ -278,6 +277,9 @@ export function cardColorByKind(kind: string): string {
 const NODE_W = 280;
 const BASE_RADIUS = 380;
 const MIN_SPACING = 300;
+const PANEL_MIN_WIDTH = 260;
+const PANEL_MAX_WIDTH = 620;
+const PANEL_DEFAULT_WIDTH = 320;
 
 function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
   const changedIDs = new Set(graphNodes.filter((n) => n.node_type === "changed").map((n) => n.id));
@@ -360,7 +362,7 @@ function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: s
   const { fitView } = useReactFlow();
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("overview");
-  const [codeViewMode, setCodeViewMode] = useState<CodeViewMode>("plain");
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
 
   const initialNodes: Node[] = useMemo(() => graph.nodes.map((n) => ({
     id: n.id,
@@ -414,7 +416,10 @@ function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: s
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
     setPanelMode("overview");
-    setCodeViewMode("plain");
+  }, []);
+
+  const onResizePanel = useCallback((nextWidth: number) => {
+    setPanelWidth(Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, nextWidth)));
   }, []);
 
   const totalNodes = graph.nodes.length;
@@ -433,12 +438,13 @@ function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: s
         repoID={repoID}
         pr={graph.pr}
         token={token}
+        width={panelWidth}
+        minWidth={PANEL_MIN_WIDTH}
+        maxWidth={PANEL_MAX_WIDTH}
+        onResize={onResizePanel}
         mode={panelMode}
-        codeViewMode={codeViewMode}
         onModeChange={setPanelMode}
-        onCodeViewModeChange={setCodeViewMode}
-        onViewCode={(viewMode) => {
-          setCodeViewMode(viewMode);
+        onViewCode={() => {
           setPanelMode("code");
         }}
       />

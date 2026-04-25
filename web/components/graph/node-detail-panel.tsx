@@ -2,8 +2,9 @@
 
 import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
-import type { CodeViewMode, PanelMode } from "./graph-canvas";
-import { useEffect, useState, type CSSProperties } from "react";
+import type { PanelMode } from "./graph-canvas";
+import { ArrowLeft, BookOpenText, Code2 } from "lucide-react";
+import { useCallback, useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -15,11 +16,13 @@ interface Props {
   repoID: string;
   pr: GraphPR;
   token: string;
+  width: number;
+  minWidth: number;
+  maxWidth: number;
+  onResize: (width: number) => void;
   mode: PanelMode;
-  codeViewMode: CodeViewMode;
   onModeChange: (mode: PanelMode) => void;
-  onCodeViewModeChange: (mode: CodeViewMode) => void;
-  onViewCode: (mode: CodeViewMode) => void;
+  onViewCode: () => void;
 }
 
 export default function NodeDetailPanel({
@@ -30,29 +33,49 @@ export default function NodeDetailPanel({
   repoID,
   pr,
   token,
+  width,
+  minWidth,
+  maxWidth,
+  onResize,
   mode,
-  codeViewMode,
   onModeChange,
-  onCodeViewModeChange,
   onViewCode,
 }: Props) {
+  const startResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      onResize(startWidth + moveEvent.clientX - startX);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [onResize, width]);
+
   return (
     <div
       style={{
-        width: 280,
-        minWidth: 280,
-        maxWidth: 280,
+        width,
+        minWidth,
+        maxWidth,
         background: "#DCDCDC",
         borderRight: "1px solid #E4E4E4",
         height: "100vh",
-        overflowY: "auto",
         display: "flex",
         flexDirection: "column",
+        position: "relative",
       }}
     >
-      {!node || mode === "overview" ? (
-        !node ? (
-        <PRSummaryPanel pr={pr} allNodes={allNodes} repoID={repoID} onSelectNode={onSelectNode} />
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {!node || mode === "overview" ? (
+          !node ? (
+            <PRSummaryPanel pr={pr} allNodes={allNodes} repoID={repoID} onSelectNode={onSelectNode} />
         ) : (
         <NodeDetail
           node={node}
@@ -62,7 +85,6 @@ export default function NodeDetailPanel({
           onBackToOverview={() => {
             onSelectNode("");
             onModeChange("overview");
-            onCodeViewModeChange("plain");
           }}
           mode={mode}
           onModeChange={onModeChange}
@@ -75,16 +97,30 @@ export default function NodeDetailPanel({
           repoID={repoID}
           prID={pr.id}
           token={token}
-          viewMode={codeViewMode}
-          onViewModeChange={onCodeViewModeChange}
           onBackToOverview={() => onModeChange("overview")}
           onBackToPR={() => {
             onSelectNode("");
             onModeChange("overview");
-            onCodeViewModeChange("plain");
           }}
         />
-      )}
+        )}
+      </div>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize side panel"
+        title="Resize side panel"
+        onPointerDown={startResize}
+        style={{
+          position: "absolute",
+          top: 0,
+          right: -4,
+          bottom: 0,
+          width: 8,
+          cursor: "col-resize",
+          zIndex: 20,
+        }}
+      />
     </div>
   );
 }
@@ -106,7 +142,7 @@ function PRSummaryPanel({
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <BackControl href={`/repos/${repoID}`} />
+      <PanelToolbar backHref={`/repos/${repoID}`} />
 
       {/* PR number + title */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 4 }}>#{pr.number}</p>
@@ -208,14 +244,13 @@ function NodeDetail({
   onBackToOverview: () => void;
   mode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
-  onViewCode: (mode: CodeViewMode) => void;
+  onViewCode: () => void;
 }) {
   const pkgPrefix = pkgLabel(node);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <BackControl onClick={onBackToOverview} />
-      <ModeToggle mode={mode} onModeChange={onModeChange} canShowCode />
+      <PanelToolbar mode={mode} onModeChange={onModeChange} backOnClick={onBackToOverview} />
 
       {/* File path */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
@@ -233,11 +268,6 @@ function NodeDetail({
       <h2 style={{ fontSize: 22, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
         {node.name}
       </h2>
-
-      {/* Signature */}
-      <pre style={{ fontSize: 11, color: "#555555", background: "#CFCFCF", borderRadius: 4, padding: "6px 8px", overflow: "auto", marginBottom: 12, whiteSpace: "pre-wrap", wordBreak: "break-all", fontFamily: "'JetBrains Mono', monospace" }}>
-        {node.signature}
-      </pre>
 
       {/* Description */}
       {node.summary && (
@@ -273,17 +303,17 @@ function NodeDetail({
 
           {node.diff_hunk && (
             <button
-              onClick={() => onViewCode("diff")}
+              onClick={onViewCode}
               style={{ background: "none", border: "none", color: "#166534", fontSize: 12, cursor: "pointer", padding: 0, marginTop: 8 }}
             >
-              View Diff →
+              View code →
             </button>
           )}
         </div>
       )}
 
       <button
-        onClick={() => onViewCode(node.diff_hunk ? "diff" : "plain")}
+        onClick={onViewCode}
         style={{
           background: "#CFCFCF",
           border: "none",
@@ -296,7 +326,7 @@ function NodeDetail({
           textAlign: "left",
         }}
       >
-        {node.diff_hunk ? "Open code/diff view →" : "Open code view →"}
+        Open code view →
       </button>
 
       {/* Calls section */}
@@ -323,8 +353,6 @@ function CodePanel({
   repoID,
   prID,
   token,
-  viewMode,
-  onViewModeChange,
   onBackToOverview,
   onBackToPR,
 }: {
@@ -332,8 +360,6 @@ function CodePanel({
   repoID: string;
   prID: string;
   token: string;
-  viewMode: CodeViewMode;
-  onViewModeChange: (mode: CodeViewMode) => void;
   onBackToOverview: () => void;
   onBackToPR: () => void;
 }) {
@@ -365,13 +391,17 @@ function CodePanel({
   const loading = !codeForNode && !errorForNode;
   const canShowDiff = Boolean(node.diff_hunk || codeForNode?.diff_hunk);
   const plainSegment = codeForNode?.head ?? codeForNode?.base;
+  const shouldShowDiff = Boolean(node.change_type && canShowDiff);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <BackControl onClick={onBackToPR} />
-      <ModeToggle mode="code" onModeChange={(mode) => {
-        if (mode === "overview") onBackToOverview();
-      }} canShowCode />
+      <PanelToolbar
+        mode="code"
+        onModeChange={(nextMode) => {
+          if (nextMode === "overview") onBackToOverview();
+        }}
+        backOnClick={onBackToPR}
+      />
 
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
         {node.file_path}
@@ -385,8 +415,6 @@ function CodePanel({
         {node.name}
       </h2>
 
-      <CodeModeToggle viewMode={viewMode} onViewModeChange={onViewModeChange} canShowDiff={canShowDiff} />
-
       {loading && (
         <p style={{ color: "#777777", fontSize: 13, marginTop: 16 }}>Loading code…</p>
       )}
@@ -397,21 +425,40 @@ function CodePanel({
         </div>
       )}
 
-      {!loading && !errorForNode && viewMode === "diff" && canShowDiff && (
+      {!loading && !errorForNode && shouldShowDiff && (
         <UnifiedDiffViewer patch={codeForNode?.diff_hunk ?? node.diff_hunk ?? ""} />
       )}
 
-      {!loading && !errorForNode && viewMode === "diff" && !canShowDiff && (
-        <p style={{ color: "#777777", fontSize: 13, marginTop: 16 }}>No diff is available for this node.</p>
-      )}
-
-      {!loading && !errorForNode && viewMode === "plain" && plainSegment && (
+      {!loading && !errorForNode && !shouldShowDiff && plainSegment && (
         <SourceViewer segment={plainSegment} />
       )}
 
-      {!loading && !errorForNode && viewMode === "plain" && !plainSegment && codeForNode?.diff_hunk && (
+      {!loading && !errorForNode && !shouldShowDiff && !plainSegment && codeForNode?.diff_hunk && (
         <UnifiedDiffViewer patch={codeForNode.diff_hunk} />
       )}
+    </div>
+  );
+}
+
+function PanelToolbar({
+  mode,
+  onModeChange,
+  backHref,
+  backOnClick,
+}: {
+  mode?: PanelMode;
+  onModeChange?: (mode: PanelMode) => void;
+  backHref?: string;
+  backOnClick?: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+      {mode && onModeChange ? (
+        <ModeToggle mode={mode} onModeChange={onModeChange} />
+      ) : (
+        <span />
+      )}
+      <BackControl href={backHref} onClick={backOnClick} />
     </div>
   );
 }
@@ -419,76 +466,44 @@ function CodePanel({
 function ModeToggle({
   mode,
   onModeChange,
-  canShowCode,
 }: {
   mode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
-  canShowCode: boolean;
 }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginBottom: 16 }}>
-      {(["overview", "code"] as PanelMode[]).map((item) => {
-        const active = mode === item;
-        return (
-          <button
-            key={item}
-            type="button"
-            disabled={item === "code" && !canShowCode}
-            onClick={() => onModeChange(item)}
-            style={{
-              background: active ? "#111111" : "#CFCFCF",
-              border: "none",
-              borderRadius: 4,
-              color: active ? "#FFFFFF" : "#333333",
-              cursor: item === "code" && !canShowCode ? "not-allowed" : "pointer",
-              fontSize: 12,
-              padding: "7px 8px",
-              textTransform: "capitalize",
-            }}
-          >
-            {item}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+  const buttonStyle = (active: boolean): CSSProperties => ({
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    background: active ? "#111111" : "#CFCFCF",
+    border: "none",
+    borderRadius: 4,
+    color: active ? "#FFFFFF" : "#333333",
+    cursor: "pointer",
+    display: "inline-flex",
+    justifyContent: "center",
+    padding: 0,
+  });
 
-function CodeModeToggle({
-  viewMode,
-  onViewModeChange,
-  canShowDiff,
-}: {
-  viewMode: CodeViewMode;
-  onViewModeChange: (mode: CodeViewMode) => void;
-  canShowDiff: boolean;
-}) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginBottom: 12 }}>
-      {(["plain", "diff"] as CodeViewMode[]).map((item) => {
-        const active = viewMode === item;
-        const disabled = item === "diff" && !canShowDiff;
-        return (
-          <button
-            key={item}
-            type="button"
-            disabled={disabled}
-            onClick={() => onViewModeChange(item)}
-            style={{
-              background: active ? "#111111" : "#CFCFCF",
-              border: "none",
-              borderRadius: 4,
-              color: active ? "#FFFFFF" : "#333333",
-              cursor: disabled ? "not-allowed" : "pointer",
-              fontSize: 12,
-              padding: "7px 8px",
-              textTransform: "capitalize",
-            }}
-          >
-            {item}
-          </button>
-        );
-      })}
+    <div style={{ display: "inline-flex", gap: 4 }}>
+      <button
+        type="button"
+        aria-label="Show semantic overview"
+        title="Overview"
+        onClick={() => onModeChange("overview")}
+        style={buttonStyle(mode === "overview")}
+      >
+        <BookOpenText size={16} strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        aria-label="Show code"
+        title="Code"
+        onClick={() => onModeChange("code")}
+        style={buttonStyle(mode === "code")}
+      >
+        <Code2 size={16} strokeWidth={2} />
+      </button>
     </div>
   );
 }
@@ -557,18 +572,18 @@ function UnifiedDiffViewer({ patch }: { patch: string }) {
 }
 
 const backControlStyle: CSSProperties = {
-  fontSize: 13,
-  color: "#888888",
-  textDecoration: "none",
-  fontFamily: "inherit",
-  fontWeight: 400,
-  marginBottom: 16,
-  display: "inline-block",
   background: "none",
   border: "none",
+  borderRadius: 4,
+  color: "#555555",
   padding: 0,
   cursor: "pointer",
-  textAlign: "left",
+  width: 30,
+  height: 30,
+  alignItems: "center",
+  display: "inline-flex",
+  justifyContent: "center",
+  textDecoration: "none",
 };
 
 function BackControl({
@@ -580,15 +595,15 @@ function BackControl({
 }) {
   if (href) {
     return (
-      <a href={href} style={backControlStyle}>
-        ← Back
+      <a href={href} style={backControlStyle} aria-label="Back" title="Back">
+        <ArrowLeft size={17} strokeWidth={2} />
       </a>
     );
   }
 
   return (
-    <button type="button" onClick={onClick} style={backControlStyle} aria-label="Back to PR overview">
-      ← Back
+    <button type="button" onClick={onClick} style={backControlStyle} aria-label="Back" title="Back">
+      <ArrowLeft size={17} strokeWidth={2} />
     </button>
   );
 }
