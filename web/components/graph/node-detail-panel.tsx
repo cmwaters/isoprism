@@ -425,7 +425,11 @@ function CodePanel({
         </div>
       )}
 
-      {!loading && !errorForNode && shouldShowDiff && (
+      {!loading && !errorForNode && shouldShowDiff && codeForNode && (codeForNode.base || codeForNode.head) && (
+        <FullComponentDiffViewer base={codeForNode.base} head={codeForNode.head} />
+      )}
+
+      {!loading && !errorForNode && shouldShowDiff && (!codeForNode || (!codeForNode.base && !codeForNode.head)) && (
         <UnifiedDiffViewer patch={codeForNode?.diff_hunk ?? node.diff_hunk ?? ""} />
       )}
 
@@ -535,6 +539,113 @@ function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
       ))}
     </pre>
   );
+}
+
+type ComponentDiffLine = {
+  kind: "context" | "added" | "removed";
+  text: string;
+};
+
+function FullComponentDiffViewer({
+  base,
+  head,
+}: {
+  base?: NodeCodeSegment;
+  head?: NodeCodeSegment;
+}) {
+  const lines = buildFullComponentDiff(base?.source ?? "", head?.source ?? "");
+
+  return (
+    <div style={{
+      background: "#DCDCDC",
+      color: "#222222",
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 11,
+      lineHeight: 1.55,
+      margin: 0,
+      overflow: "visible",
+      padding: 0,
+    }}>
+      {lines.map((line, index) => {
+        const background = line.kind === "added"
+          ? "#A7E7A4"
+          : line.kind === "removed"
+            ? "#E58A8A"
+            : "transparent";
+        const prefix = line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " ";
+
+        return (
+          <div
+            key={index}
+            style={{
+              background,
+              display: "grid",
+              gridTemplateColumns: "16px minmax(0, 1fr)",
+              padding: "0 2px",
+            }}
+          >
+            <span style={{ userSelect: "none" }}>{prefix}</span>
+            <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {line.text || " "}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function buildFullComponentDiff(baseSource: string, headSource: string): ComponentDiffLine[] {
+  const baseLines = baseSource ? baseSource.split("\n") : [];
+  const headLines = headSource ? headSource.split("\n") : [];
+
+  if (baseLines.length === 0) {
+    return headLines.map((text) => ({ kind: "added", text }));
+  }
+  if (headLines.length === 0) {
+    return baseLines.map((text) => ({ kind: "removed", text }));
+  }
+
+  const dp: number[][] = Array.from({ length: baseLines.length + 1 }, () =>
+    Array(headLines.length + 1).fill(0)
+  );
+
+  for (let i = baseLines.length - 1; i >= 0; i--) {
+    for (let j = headLines.length - 1; j >= 0; j--) {
+      dp[i][j] = baseLines[i] === headLines[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  const out: ComponentDiffLine[] = [];
+  let i = 0;
+  let j = 0;
+
+  while (i < baseLines.length && j < headLines.length) {
+    if (baseLines[i] === headLines[j]) {
+      out.push({ kind: "context", text: headLines[j] });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      out.push({ kind: "removed", text: baseLines[i] });
+      i++;
+    } else {
+      out.push({ kind: "added", text: headLines[j] });
+      j++;
+    }
+  }
+
+  while (i < baseLines.length) {
+    out.push({ kind: "removed", text: baseLines[i] });
+    i++;
+  }
+  while (j < headLines.length) {
+    out.push({ kind: "added", text: headLines[j] });
+    j++;
+  }
+
+  return out;
 }
 
 function UnifiedDiffViewer({ patch }: { patch: string }) {
