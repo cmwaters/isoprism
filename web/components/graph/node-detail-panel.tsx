@@ -530,24 +530,25 @@ function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
 
   return (
     <pre style={{
-      background: "#F4F4F4",
-      border: "1px solid #CFCFCF",
-      borderRadius: 6,
+      background: "#DCDCDC",
+      border: "none",
+      borderRadius: 0,
       color: "#222222",
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: 11,
       lineHeight: 1.55,
       margin: 0,
-      overflow: "auto",
-      padding: "10px 0",
-      whiteSpace: "pre",
+      overflow: "visible",
+      padding: 0,
+      whiteSpace: "pre-wrap",
+      overflowWrap: "anywhere",
     }}>
       {lines.map((line, index) => (
         <span key={index} style={{ display: "grid", gridTemplateColumns: "42px 1fr", minWidth: 0 }}>
           <span style={{ color: "#999999", paddingRight: 10, textAlign: "right", userSelect: "none" }}>
             {segment.start_line + index}
           </span>
-          <span style={{ paddingRight: 10 }}>{line || " "}</span>
+          <span style={{ paddingRight: 10, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{line || " "}</span>
         </span>
       ))}
     </pre>
