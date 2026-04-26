@@ -19,7 +19,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphResponse, GraphNode as APIGraphNode } from "@/lib/types";
+import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse } from "@/lib/types";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel from "./node-detail-panel";
 
@@ -363,6 +363,7 @@ function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: s
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("overview");
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
+  const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
 
   const initialNodes: Node[] = useMemo(() => graph.nodes.map((n) => ({
     id: n.id,
@@ -421,6 +422,10 @@ function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: s
     setPanelWidth(Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, nextWidth)));
   }, []);
 
+  const onCacheNodeCode = useCallback((nodeID: string, code: NodeCodeResponse) => {
+    setNodeCodeCache((current) => current[nodeID] ? current : { ...current, [nodeID]: code });
+  }, []);
+
   const totalNodes = graph.nodes.length;
   const maxNodes = 20;
 
@@ -437,6 +442,8 @@ function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: s
         repoID={repoID}
         pr={graph.pr}
         token={token}
+        nodeCodeCache={nodeCodeCache}
+        onCacheNodeCode={onCacheNodeCode}
         width={panelWidth}
         minWidth={PANEL_MIN_WIDTH}
         maxWidth={PANEL_MAX_WIDTH}

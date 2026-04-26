@@ -16,6 +16,8 @@ interface Props {
   repoID: string;
   pr: GraphPR;
   token: string;
+  nodeCodeCache: Record<string, NodeCodeResponse>;
+  onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
   width: number;
   minWidth: number;
   maxWidth: number;
@@ -33,6 +35,8 @@ export default function NodeDetailPanel({
   repoID,
   pr,
   token,
+  nodeCodeCache,
+  onCacheNodeCode,
   width,
   minWidth,
   maxWidth,
@@ -97,6 +101,8 @@ export default function NodeDetailPanel({
           repoID={repoID}
           prID={pr.id}
           token={token}
+          cachedCode={nodeCodeCache[node.id]}
+          onCacheNodeCode={onCacheNodeCode}
           onBackToOverview={() => onModeChange("overview")}
           onBackToPR={() => {
             onSelectNode("");
@@ -353,6 +359,8 @@ function CodePanel({
   repoID,
   prID,
   token,
+  cachedCode,
+  onCacheNodeCode,
   onBackToOverview,
   onBackToPR,
 }: {
@@ -360,14 +368,19 @@ function CodePanel({
   repoID: string;
   prID: string;
   token: string;
+  cachedCode?: NodeCodeResponse;
+  onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
   onBackToOverview: () => void;
   onBackToPR: () => void;
 }) {
-  const [code, setCode] = useState<NodeCodeResponse | null>(null);
   const [error, setError] = useState<{ nodeID: string; message: string } | null>(null);
   const pkgPrefix = pkgLabel(node);
 
   useEffect(() => {
+    if (cachedCode?.node_id === node.id) {
+      return;
+    }
+
     let cancelled = false;
 
     apiFetch<NodeCodeResponse>(
@@ -375,7 +388,7 @@ function CodePanel({
       token
     )
       .then((response) => {
-        if (!cancelled) setCode(response);
+        if (!cancelled) onCacheNodeCode(node.id, response);
       })
       .catch((err: Error) => {
         if (!cancelled) setError({ nodeID: node.id, message: err.message });
@@ -384,9 +397,9 @@ function CodePanel({
     return () => {
       cancelled = true;
     };
-  }, [node.id, prID, repoID, token]);
+  }, [cachedCode?.node_id, node.id, onCacheNodeCode, prID, repoID, token]);
 
-  const codeForNode = code?.node_id === node.id ? code : null;
+  const codeForNode = cachedCode?.node_id === node.id ? cachedCode : null;
   const errorForNode = error?.nodeID === node.id ? error.message : null;
   const loading = !codeForNode && !errorForNode;
   const canShowDiff = Boolean(node.diff_hunk || codeForNode?.diff_hunk);
