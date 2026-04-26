@@ -408,7 +408,6 @@ function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: s
     (_, node) => {
       const apiNode = graph.nodes.find((n) => n.id === node.id) ?? null;
       setSelectedNode(apiNode);
-      setPanelMode("overview");
     },
     [graph.nodes]
   );

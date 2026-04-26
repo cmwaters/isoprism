@@ -453,12 +453,12 @@ function PanelToolbar({
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+      <BackControl href={backHref} onClick={backOnClick} />
       {mode && onModeChange ? (
         <ModeToggle mode={mode} onModeChange={onModeChange} />
       ) : (
         <span />
       )}
-      <BackControl href={backHref} onClick={backOnClick} />
     </div>
   );
 }
@@ -542,17 +542,18 @@ function UnifiedDiffViewer({ patch }: { patch: string }) {
 
   return (
     <pre style={{
-      background: "#F4F4F4",
-      border: "1px solid #CFCFCF",
-      borderRadius: 6,
+      background: "#DCDCDC",
+      border: "none",
+      borderRadius: 0,
       color: "#222222",
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: 11,
       lineHeight: 1.55,
       margin: 0,
-      overflow: "auto",
-      padding: "10px 0",
-      whiteSpace: "pre",
+      overflow: "visible",
+      padding: 0,
+      whiteSpace: "pre-wrap",
+      overflowWrap: "anywhere",
     }}>
       {lines.map((line, index) => {
         const added = line.startsWith("+") && !line.startsWith("+++");
@@ -562,7 +563,7 @@ function UnifiedDiffViewer({ patch }: { patch: string }) {
         const color = hunk ? "#4F46E5" : "#222222";
 
         return (
-          <span key={index} style={{ background, color, display: "block", padding: "0 10px" }}>
+          <span key={index} style={{ background, color, display: "block", padding: "0 2px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {line || " "}
           </span>
         );
@@ -578,12 +579,15 @@ const backControlStyle: CSSProperties = {
   color: "#555555",
   padding: 0,
   cursor: "pointer",
-  width: 30,
   height: 30,
   alignItems: "center",
   display: "inline-flex",
+  gap: 6,
   justifyContent: "center",
   textDecoration: "none",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 400,
 };
 
 function BackControl({
@@ -597,6 +601,7 @@ function BackControl({
     return (
       <a href={href} style={backControlStyle} aria-label="Back" title="Back">
         <ArrowLeft size={17} strokeWidth={2} />
+        <span>Back</span>
       </a>
     );
   }
@@ -604,6 +609,7 @@ function BackControl({
   return (
     <button type="button" onClick={onClick} style={backControlStyle} aria-label="Back" title="Back">
       <ArrowLeft size={17} strokeWidth={2} />
+      <span>Back</span>
     </button>
   );
 }
