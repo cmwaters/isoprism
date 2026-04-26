@@ -338,13 +338,11 @@ func extractComponentHunk(patch string, oldStart, oldEnd, newStart, newEnd int) 
 	oldRange := lineRange{start: oldStart, end: oldEnd}
 	newRange := lineRange{start: newStart, end: newEnd}
 	var out []string
-	var keptInCurrentHunk bool
 	oldLine, newLine := 0, 0
 
 	for _, line := range lines {
 		if strings.HasPrefix(line, "@@") {
 			oldLine, _, newLine, _ = parseHunkHeader(line)
-			keptInCurrentHunk = false
 			continue
 		}
 		if oldLine == 0 && newLine == 0 {
@@ -375,10 +373,6 @@ func extractComponentHunk(patch string, oldStart, oldEnd, newStart, newEnd int) 
 			continue
 		}
 
-		if !keptInCurrentHunk {
-			out = append(out, "@@ component @@")
-			keptInCurrentHunk = true
-		}
 		out = append(out, line)
 	}
 

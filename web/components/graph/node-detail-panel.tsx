@@ -556,6 +556,8 @@ function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
 
 type ComponentDiffLine = {
   kind: "context" | "added" | "removed";
+  oldLine?: number;
+  newLine?: number;
   text: string;
 };
 
@@ -566,7 +568,12 @@ function FullComponentDiffViewer({
   base?: NodeCodeSegment;
   head?: NodeCodeSegment;
 }) {
-  const lines = buildFullComponentDiff(base?.source ?? "", head?.source ?? "");
+  const lines = buildFullComponentDiff(
+    base?.source ?? "",
+    head?.source ?? "",
+    base?.start_line,
+    head?.start_line
+  );
 
   return (
     <div style={{
@@ -593,10 +600,13 @@ function FullComponentDiffViewer({
             style={{
               background,
               display: "grid",
-              gridTemplateColumns: "16px minmax(0, 1fr)",
+              gridTemplateColumns: "42px 16px minmax(0, 1fr)",
               padding: "0 2px",
             }}
           >
+            <span style={{ color: "#777777", paddingRight: 8, textAlign: "right", userSelect: "none" }}>
+              {displayLineNumber(line) ?? ""}
+            </span>
             <span style={{ userSelect: "none" }}>{prefix}</span>
             <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {line.text || " "}
@@ -608,15 +618,24 @@ function FullComponentDiffViewer({
   );
 }
 
-function buildFullComponentDiff(baseSource: string, headSource: string): ComponentDiffLine[] {
+function displayLineNumber(line: ComponentDiffLine): number | undefined {
+  return line.kind === "removed" ? line.oldLine : line.newLine;
+}
+
+function buildFullComponentDiff(
+  baseSource: string,
+  headSource: string,
+  baseStartLine = 1,
+  headStartLine = 1
+): ComponentDiffLine[] {
   const baseLines = baseSource ? baseSource.split("\n") : [];
   const headLines = headSource ? headSource.split("\n") : [];
 
   if (baseLines.length === 0) {
-    return headLines.map((text) => ({ kind: "added", text }));
+    return headLines.map((text, index) => ({ kind: "added", newLine: headStartLine + index, text }));
   }
   if (headLines.length === 0) {
-    return baseLines.map((text) => ({ kind: "removed", text }));
+    return baseLines.map((text, index) => ({ kind: "removed", oldLine: baseStartLine + index, text }));
   }
 
   const dp: number[][] = Array.from({ length: baseLines.length + 1 }, () =>
@@ -637,24 +656,29 @@ function buildFullComponentDiff(baseSource: string, headSource: string): Compone
 
   while (i < baseLines.length && j < headLines.length) {
     if (baseLines[i] === headLines[j]) {
-      out.push({ kind: "context", text: headLines[j] });
+      out.push({
+        kind: "context",
+        oldLine: baseStartLine + i,
+        newLine: headStartLine + j,
+        text: headLines[j],
+      });
       i++;
       j++;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      out.push({ kind: "removed", text: baseLines[i] });
+      out.push({ kind: "removed", oldLine: baseStartLine + i, text: baseLines[i] });
       i++;
     } else {
-      out.push({ kind: "added", text: headLines[j] });
+      out.push({ kind: "added", newLine: headStartLine + j, text: headLines[j] });
       j++;
     }
   }
 
   while (i < baseLines.length) {
-    out.push({ kind: "removed", text: baseLines[i] });
+    out.push({ kind: "removed", oldLine: baseStartLine + i, text: baseLines[i] });
     i++;
   }
   while (j < headLines.length) {
-    out.push({ kind: "added", text: headLines[j] });
+    out.push({ kind: "added", newLine: headStartLine + j, text: headLines[j] });
     j++;
   }
 
