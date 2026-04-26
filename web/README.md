@@ -30,7 +30,7 @@ The PR page at `/repos/[repoID]/pr/[prID]` fetches `GET /api/v1/repos/{repoID}/p
 The side panel has two modes:
 
 - `Overview`: semantic PR or node summary, change explanation, diff stats, calls, and callers.
-- `Code`: a lazy-loaded source viewer for the selected function or struct. Changed nodes automatically show the PR diff. Unchanged context nodes automatically show plain source.
+- `Code`: a lazy-loaded source viewer for the selected function or struct. Changed nodes automatically show only that component's PR diff. Unchanged context nodes automatically show plain source.
 
 The overview/code icon controls switch the side panel mode without changing the selected graph node.
 

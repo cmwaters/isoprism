@@ -121,17 +121,23 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			}
 
 			changeType := "added"
-			if baseNode, exists := baseNodesByName[n.FullName]; exists {
-				if baseNode.BodyHash == n.BodyHash {
+			var baseNode *parser.Node
+			if candidate, exists := baseNodesByName[n.FullName]; exists {
+				if candidate.BodyHash == n.BodyHash {
 					continue // unchanged
 				}
 				changeType = "modified"
+				baseNode = &candidate
 			}
 
+			oldStart, oldEnd := 0, 0
+			if baseNode != nil {
+				oldStart, oldEnd = baseNode.LineStart, baseNode.LineEnd
+			}
 			changed = append(changed, changedNode{
 				node:       n,
 				changeType: changeType,
-				diffHunk:   extractFunctionHunk(file.Patch, n.LineStart, n.LineEnd),
+				diffHunk:   extractComponentHunk(file.Patch, oldStart, oldEnd, n.LineStart, n.LineEnd),
 			})
 		}
 
@@ -155,6 +161,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 						changed = append(changed, changedNode{
 							node:       baseNode,
 							changeType: "deleted",
+							diffHunk:   extractComponentHunk(file.Patch, baseNode.LineStart, baseNode.LineEnd, 0, 0),
 						})
 					}
 				}
@@ -318,68 +325,100 @@ func nullIfZero(n int) interface{} {
 	return n
 }
 
-// extractFunctionHunk returns only the unified-diff hunks from patch that
-// overlap with [lineStart, lineEnd] in the new (head) file.
-func extractFunctionHunk(patch string, lineStart, lineEnd int) string {
+// extractComponentHunk returns only the diff lines that belong to one parsed
+// component. oldStart/oldEnd address the base file; newStart/newEnd address the
+// head file. Added components pass only the new range, deleted components pass
+// only the old range.
+func extractComponentHunk(patch string, oldStart, oldEnd, newStart, newEnd int) string {
 	if patch == "" {
 		return ""
 	}
 	lines := strings.Split(patch, "\n")
 
-	// Split patch into per-hunk slices; each starts with a @@ header.
-	type hunk struct {
-		header   string
-		newStart int
-		newEnd   int
-		lines    []string
-	}
-	var hunks []hunk
-	var cur *hunk
+	oldRange := lineRange{start: oldStart, end: oldEnd}
+	newRange := lineRange{start: newStart, end: newEnd}
+	var out []string
+	var keptInCurrentHunk bool
+	oldLine, newLine := 0, 0
+
 	for _, line := range lines {
 		if strings.HasPrefix(line, "@@") {
-			if cur != nil {
-				hunks = append(hunks, *cur)
-			}
-			ns, nc := parseHunkHeader(line)
-			cur = &hunk{header: line, newStart: ns, newEnd: ns + nc - 1}
-		} else if cur != nil {
-			cur.lines = append(cur.lines, line)
-			if !strings.HasPrefix(line, "-") {
-				// context and added lines advance the new-file counter
-			}
+			oldLine, _, newLine, _ = parseHunkHeader(line)
+			keptInCurrentHunk = false
+			continue
 		}
-	}
-	if cur != nil {
-		hunks = append(hunks, *cur)
+		if oldLine == 0 && newLine == 0 {
+			continue
+		}
+
+		oldCurrent, newCurrent := 0, 0
+		kind := byte(' ')
+		if line != "" {
+			kind = line[0]
+		}
+
+		switch kind {
+		case '+':
+			newCurrent = newLine
+			newLine++
+		case '-':
+			oldCurrent = oldLine
+			oldLine++
+		default:
+			oldCurrent = oldLine
+			newCurrent = newLine
+			oldLine++
+			newLine++
+		}
+
+		if !oldRange.contains(oldCurrent) && !newRange.contains(newCurrent) {
+			continue
+		}
+
+		if !keptInCurrentHunk {
+			out = append(out, "@@ component @@")
+			keptInCurrentHunk = true
+		}
+		out = append(out, line)
 	}
 
-	var out []string
-	for _, h := range hunks {
-		if h.newStart <= lineEnd && h.newEnd >= lineStart {
-			out = append(out, h.header)
-			out = append(out, h.lines...)
-		}
-	}
 	return strings.Join(out, "\n")
 }
 
-func parseHunkHeader(header string) (newStart, newCount int) {
+type lineRange struct {
+	start int
+	end   int
+}
+
+func (r lineRange) contains(line int) bool {
+	return line > 0 && r.start > 0 && r.end >= r.start && line >= r.start && line <= r.end
+}
+
+func parseHunkHeader(header string) (oldStart, oldCount, newStart, newCount int) {
 	// Format: @@ -a,b +c,d @@ optional context
+	minusIdx := strings.Index(header, "-")
 	plusIdx := strings.Index(header, "+")
-	if plusIdx < 0 {
-		return 0, 1
+	if minusIdx < 0 || plusIdx < 0 {
+		return 0, 1, 0, 1
 	}
+	oldStart, oldCount = parseHunkRange(header[minusIdx+1 : plusIdx])
 	rest := header[plusIdx+1:]
 	end := strings.IndexAny(rest, " @")
 	if end > 0 {
 		rest = rest[:end]
 	}
+	newStart, newCount = parseHunkRange(rest)
+	return
+}
+
+func parseHunkRange(rest string) (start, count int) {
+	rest = strings.TrimSpace(rest)
 	if ci := strings.Index(rest, ","); ci >= 0 {
-		newStart, _ = strconv.Atoi(rest[:ci])
-		newCount, _ = strconv.Atoi(rest[ci+1:])
+		start, _ = strconv.Atoi(rest[:ci])
+		count, _ = strconv.Atoi(rest[ci+1:])
 	} else {
-		newStart, _ = strconv.Atoi(rest)
-		newCount = 1
+		start, _ = strconv.Atoi(rest)
+		count = 1
 	}
 	return
 }
