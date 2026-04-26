@@ -105,7 +105,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 				return
 			}
 			nodes := parser.Parse(content, entry.Path)
-			if len(nodes) > 0 {
+			if len(nodes) > 0 || parser.IsTestFile(entry.Path) {
 				results <- fileResult{nodes: nodes, path: entry.Path, content: content}
 			}
 		}()
@@ -120,7 +120,11 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	var allNodes []parser.Node
 	fileContents := map[string][]byte{} // filePath → full source
 	for fr := range results {
-		allNodes = append(allNodes, fr.nodes...)
+		for _, n := range fr.nodes {
+			if !n.IsTestCode {
+				allNodes = append(allNodes, n)
+			}
+		}
 		fileContents[fr.path] = fr.content
 	}
 	log.Printf("RepoInit: parsed %d nodes", len(allNodes))
@@ -172,6 +176,8 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 		}
 	}
 	log.Printf("RepoInit: extracted call edges for %d files", len(fileContents))
+
+	insertTestReferences(ctx, db, repoID, headSHA, fileContents, nodeByName, nodeIDs)
 
 	// AI enrichment: generate summaries for all nodes
 	if enricher != nil && len(allNodes) > 0 {

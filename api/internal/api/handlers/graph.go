@@ -308,8 +308,48 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		return id
 	}
 
+	if len(idList) > 0 {
+		testRows, err := h.DB.Query(ctx, `
+			select target_node_id, test_name, test_full_name, test_file_path, test_line_start, test_line_end
+			from code_test_references
+			where repo_id=$1
+			  and target_node_id = any($2::uuid[])
+			  and (($3 <> '' and commit_sha = $3) or ($4 <> '' and commit_sha = $4))
+			order by test_file_path, test_line_start, test_name
+		`, repoID, idList, mainCommitSHA, headCommit)
+		if err == nil {
+			defer testRows.Close()
+			seenTests := map[string]bool{}
+			for testRows.Next() {
+				var targetID string
+				var t models.GraphNodeTest
+				if err := testRows.Scan(&targetID, &t.Name, &t.FullName, &t.FilePath, &t.LineStart, &t.LineEnd); err != nil {
+					continue
+				}
+				responseNodeID := remapID(targetID)
+				n, ok := finalNodeMap[responseNodeID]
+				if !ok {
+					continue
+				}
+				key := responseNodeID + "|" + t.FullName + "|" + t.FilePath
+				if seenTests[key] {
+					continue
+				}
+				seenTests[key] = true
+				n.Tests = append(n.Tests, t)
+				finalNodeMap[responseNodeID] = n
+			}
+			testRows.Close()
+		} else {
+			log.Printf("GetGraph: test references query: %v", err)
+		}
+	}
+
 	nodes := make([]models.GraphNode, 0, len(finalNodeMap))
 	for _, n := range finalNodeMap {
+		if n.Tests == nil {
+			n.Tests = []models.GraphNodeTest{}
+		}
 		nodes = append(nodes, n)
 	}
 

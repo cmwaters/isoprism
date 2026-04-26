@@ -26,10 +26,11 @@ The PR page at `/repos/[repoID]/pr/[prID]` fetches `GET /api/v1/repos/{repoID}/p
 - A left side panel that defaults to the semantic overview.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
 - Node cards with package/type labels, signatures, and added/removed/deleted pills.
+- Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
 
 The side panel has two modes:
 
-- `Overview`: semantic PR or node summary, change explanation, diff stats, calls, and callers.
+- `Overview`: semantic PR or node summary, change explanation, diff stats, calls, callers, and tests.
 - `Code`: a lazy-loaded source viewer for the selected function or struct. Changed nodes automatically show the full component with changed lines highlighted. Unchanged context nodes automatically show plain source.
 
 The overview/code icon controls switch the side panel mode without changing the selected graph node.
@@ -83,4 +84,4 @@ POST /debug/repos/{repoID}/reindex
 POST /debug/prs/{prID}/reprocess
 ```
 
-Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes` and `code_edges` from main branch HEAD. `reprocess` rebuilds `pr_node_changes` and PR call edges for one PR.
+Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes`, `code_edges`, and `code_test_references` from main branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, and changed-file test references for one PR.

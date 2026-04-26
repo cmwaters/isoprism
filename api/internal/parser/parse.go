@@ -16,16 +16,18 @@ import (
 
 // Node represents one extracted code element (function, method, type, etc.).
 type Node struct {
-	Name      string
-	FullName  string // e.g. "MyStruct.MyMethod" or bare "myFunc"
-	FilePath  string
-	LineStart int
-	LineEnd   int
-	Signature string
-	Language  string
-	Kind      string // function | method | type
-	BodyHash  string
-	Body      string // raw source text of the node body (for AI enrichment)
+	Name             string
+	FullName         string // e.g. "MyStruct.MyMethod" or bare "myFunc"
+	FilePath         string
+	LineStart        int
+	LineEnd          int
+	Signature        string
+	Language         string
+	Kind             string // function | method | type
+	BodyHash         string
+	Body             string // raw source text of the node body (for AI enrichment)
+	IsTestCode       bool
+	IsTestEntrypoint bool
 }
 
 // Parse extracts code nodes from the given source bytes.
@@ -60,6 +62,26 @@ func IsSupportedFile(path string) bool {
 	return languageFor(path) != ""
 }
 
+// IsTestFile returns true for supported language test file naming conventions.
+func IsTestFile(path string) bool {
+	normalized := strings.ReplaceAll(strings.ToLower(path), "\\", "/")
+	base := filepath.Base(normalized)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+
+	switch languageFor(path) {
+	case "go":
+		return strings.HasSuffix(base, "_test.go")
+	case "typescript", "javascript":
+		if strings.Contains(normalized, "/__tests__/") {
+			return true
+		}
+		return strings.HasSuffix(stem, ".test") || strings.HasSuffix(stem, ".spec")
+	default:
+		return false
+	}
+}
+
 func bodyHash(src []byte) string {
 	h := sha256.Sum256(src)
 	return fmt.Sprintf("%x", h)[:16]
@@ -74,6 +96,8 @@ func parseGo(src []byte, filePath string) []Node {
 		return nil
 	}
 
+	isTestFile := IsTestFile(filePath)
+	isTestPackage := f.Name != nil && strings.HasSuffix(f.Name.Name, "_test")
 	srcStr := string(src)
 	lines := strings.Split(srcStr, "\n")
 
@@ -92,14 +116,20 @@ func parseGo(src []byte, filePath string) []Node {
 			// Extract raw body text
 			startLine := start.Line - 1
 			endLine := end.Line - 1
-			if startLine < 0 { startLine = 0 }
-			if endLine >= len(lines) { endLine = len(lines) - 1 }
+			if startLine < 0 {
+				startLine = 0
+			}
+			if endLine >= len(lines) {
+				endLine = len(lines) - 1
+			}
 			bodyLines := lines[startLine : endLine+1]
 			body := strings.Join(bodyLines, "\n")
 
 			name := d.Name.Name
 			fullName := name
 			kind := "function"
+			isTestEntrypoint := strings.HasPrefix(name, "Test")
+			isTestCode := isTestFile || isTestPackage || isTestEntrypoint
 
 			if d.Recv != nil && len(d.Recv.List) > 0 {
 				recv := d.Recv.List[0]
@@ -113,16 +143,18 @@ func parseGo(src []byte, filePath string) []Node {
 			sig := buildGoSignature(d)
 
 			nodes = append(nodes, Node{
-				Name:      name,
-				FullName:  fullName,
-				FilePath:  filePath,
-				LineStart: start.Line,
-				LineEnd:   end.Line,
-				Signature: sig,
-				Language:  "go",
-				Kind:      kind,
-				BodyHash:  bodyHash([]byte(body)),
-				Body:      body,
+				Name:             name,
+				FullName:         fullName,
+				FilePath:         filePath,
+				LineStart:        start.Line,
+				LineEnd:          end.Line,
+				Signature:        sig,
+				Language:         "go",
+				Kind:             kind,
+				BodyHash:         bodyHash([]byte(body)),
+				Body:             body,
+				IsTestCode:       isTestCode,
+				IsTestEntrypoint: isTestEntrypoint,
 			})
 
 		case *ast.GenDecl:
@@ -139,8 +171,12 @@ func parseGo(src []byte, filePath string) []Node {
 
 				startLine := start.Line - 1
 				endLine := end.Line - 1
-				if startLine < 0 { startLine = 0 }
-				if endLine >= len(lines) { endLine = len(lines) - 1 }
+				if startLine < 0 {
+					startLine = 0
+				}
+				if endLine >= len(lines) {
+					endLine = len(lines) - 1
+				}
 				bodyLines := lines[startLine : endLine+1]
 				body := strings.Join(bodyLines, "\n")
 
@@ -152,17 +188,19 @@ func parseGo(src []byte, filePath string) []Node {
 					kind = "interface"
 				}
 
+				isTestCode := isTestFile || isTestPackage
 				nodes = append(nodes, Node{
-					Name:      ts.Name.Name,
-					FullName:  ts.Name.Name,
-					FilePath:  filePath,
-					LineStart: start.Line,
-					LineEnd:   end.Line,
-					Signature: "type " + ts.Name.Name,
-					Language:  "go",
-					Kind:      kind,
-					BodyHash:  bodyHash([]byte(body)),
-					Body:      body,
+					Name:       ts.Name.Name,
+					FullName:   ts.Name.Name,
+					FilePath:   filePath,
+					LineStart:  start.Line,
+					LineEnd:    end.Line,
+					Signature:  "type " + ts.Name.Name,
+					Language:   "go",
+					Kind:       kind,
+					BodyHash:   bodyHash([]byte(body)),
+					Body:       body,
+					IsTestCode: isTestCode,
 				})
 			}
 		}
@@ -194,7 +232,9 @@ func buildGoSignature(fn *ast.FuncDecl) string {
 	if fn.Recv != nil && len(fn.Recv.List) > 0 {
 		sb.WriteString("(")
 		for i, f := range fn.Recv.List {
-			if i > 0 { sb.WriteString(", ") }
+			if i > 0 {
+				sb.WriteString(", ")
+			}
 			if len(f.Names) > 0 {
 				sb.WriteString(f.Names[0].Name)
 				sb.WriteString(" ")
@@ -207,9 +247,13 @@ func buildGoSignature(fn *ast.FuncDecl) string {
 	sb.WriteString("(")
 	if fn.Type.Params != nil {
 		for i, f := range fn.Type.Params.List {
-			if i > 0 { sb.WriteString(", ") }
+			if i > 0 {
+				sb.WriteString(", ")
+			}
 			names := make([]string, len(f.Names))
-			for j, n := range f.Names { names[j] = n.Name }
+			for j, n := range f.Names {
+				names[j] = n.Name
+			}
 			if len(names) > 0 {
 				sb.WriteString(strings.Join(names, ", "))
 				sb.WriteString(" ")
@@ -226,7 +270,9 @@ func buildGoSignature(fn *ast.FuncDecl) string {
 		} else {
 			sb.WriteString(" (")
 			for i, f := range results {
-				if i > 0 { sb.WriteString(", ") }
+				if i > 0 {
+					sb.WriteString(", ")
+				}
 				sb.WriteString(exprToString(f.Type))
 			}
 			sb.WriteString(")")
@@ -251,36 +297,44 @@ func parseTS(src []byte, filePath, lang string) []Node {
 	lines := strings.Split(srcStr, "\n")
 	var nodes []Node
 	seen := map[string]bool{}
+	isTestFile := IsTestFile(filePath)
 
 	for _, pat := range tsFuncPatterns {
 		matches := pat.FindAllStringSubmatchIndex(srcStr, -1)
 		for _, m := range matches {
-			if len(m) < 4 { continue }
+			if len(m) < 4 {
+				continue
+			}
 			nameStart, nameEnd := m[2], m[3]
 			name := srcStr[nameStart:nameEnd]
 
-			if seen[name] { continue }
+			if seen[name] {
+				continue
+			}
 			seen[name] = true
 
 			// Find the line number
 			startByte := m[0]
 			lineNum := strings.Count(srcStr[:startByte], "\n") + 1
 			lineEnd := lineNum + 10
-			if lineEnd >= len(lines) { lineEnd = len(lines) }
+			if lineEnd >= len(lines) {
+				lineEnd = len(lines)
+			}
 
 			body := strings.Join(lines[lineNum-1:lineEnd], "\n")
 
 			nodes = append(nodes, Node{
-				Name:      name,
-				FullName:  name,
-				FilePath:  filePath,
-				LineStart: lineNum,
-				LineEnd:   lineEnd,
-				Signature: name + "(...)",
-				Language:  lang,
-				Kind:      "function",
-				BodyHash:  bodyHash([]byte(body)),
-				Body:      body,
+				Name:       name,
+				FullName:   name,
+				FilePath:   filePath,
+				LineStart:  lineNum,
+				LineEnd:    lineEnd,
+				Signature:  name + "(...)",
+				Language:   lang,
+				Kind:       "function",
+				BodyHash:   bodyHash([]byte(body)),
+				Body:       body,
+				IsTestCode: isTestFile,
 			})
 		}
 	}

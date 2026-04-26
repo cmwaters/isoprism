@@ -75,6 +75,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	}
 
 	var changed []changedNode
+	changedFileContents := map[string][]byte{}
 
 	for _, file := range changedFiles {
 		if !parser.IsSupportedFile(file.Filename) {
@@ -87,6 +88,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			log.Printf("OpenPR: fetch file %s: %v", file.Filename, err)
 			continue
 		}
+		changedFileContents[file.Filename] = content
 
 		headNodes := parser.Parse(content, file.Filename)
 
@@ -98,12 +100,18 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			baseContent, err := ghClient.GetFileContent(ctx, owner, repo, basePath, baseRef)
 			if err == nil {
 				for _, n := range parser.Parse(baseContent, basePath) {
+					if n.IsTestCode {
+						continue
+					}
 					baseNodesByName[n.FullName] = n
 				}
 			}
 		}
 
 		for _, n := range headNodes {
+			if n.IsTestCode {
+				continue
+			}
 			// Insert head node (or update if body changed)
 			var nodeID string
 			err := db.QueryRow(ctx, `
@@ -266,6 +274,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		}
 	}
 	// Include all known nodes at this SHA for cross-file resolution
+	refNodeIDs := make(map[string]string)
 	knownRows, _ := db.Query(ctx, `select full_name from code_nodes where repo_id=$1 and commit_sha=$2`, repoID, headSHA)
 	if knownRows != nil {
 		for knownRows.Next() {
@@ -274,6 +283,22 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			nodeByName[fn] = true
 		}
 		knownRows.Close()
+	}
+	refRows, _ := db.Query(ctx, `
+		select full_name, id from code_nodes
+		where repo_id=$1 and commit_sha in ($2, $3)
+		order by case when commit_sha=$2 then 0 else 1 end
+	`, repoID, headSHA, baseCommit)
+	if refRows != nil {
+		for refRows.Next() {
+			var fn, id string
+			refRows.Scan(&fn, &id)
+			if _, exists := refNodeIDs[fn]; !exists {
+				refNodeIDs[fn] = id
+			}
+			nodeByName[fn] = true
+		}
+		refRows.Close()
 	}
 
 	// Group changed nodes by file so we fetch each file's content once
@@ -305,6 +330,8 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			}
 		}
 	}
+
+	insertTestReferences(ctx, db, repoID, headSHA, changedFileContents, nodeByName, refNodeIDs)
 
 	// Mark ready
 	db.Exec(ctx, `update pull_requests set graph_status='ready' where id=$1`, prID)

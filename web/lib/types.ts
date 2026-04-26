@@ -71,6 +71,15 @@ export interface GraphNode {
   change_type?: "added" | "modified" | "deleted";
   lines_added: number;
   lines_removed: number;
+  tests: GraphNodeTest[];
+}
+
+export interface GraphNodeTest {
+  name: string;
+  full_name: string;
+  file_path: string;
+  line_start: number;
+  line_end: number;
 }
 
 export interface GraphEdge {

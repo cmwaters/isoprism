@@ -49,7 +49,7 @@ The prototype delivers exactly one flow:
 | Auth | Supabase Auth (GitHub OAuth) | Supabase |
 | AI | Anthropic Claude (`claude-sonnet-4-6`) | Anthropic API |
 | GitHub Integration | GitHub App (webhooks + REST API v3) | — |
-| Code Parsing | tree-sitter (`go-tree-sitter`) | In-process |
+| Code Parsing | Go AST + lightweight TypeScript/JavaScript parser | In-process |
 | Graph Rendering | React Flow (`@xyflow/react`) | Frontend |
 
 ### System Diagram
@@ -72,7 +72,7 @@ The prototype delivers exactly one flow:
                         │  │  Event Handlers                     │ │
                         │  │  RepoInit | OpenPR | MergePR        │ │
                         │  │                                     │ │
-                        │  │  tree-sitter → call graph →         │ │
+                        │  │  parser → call graph →              │ │
                         │  │  Claude enrichment                  │ │
                         │  └──────────────────┬─────────────────┘ │
                         └──────────────────────┼──────────────────┘
@@ -81,7 +81,7 @@ The prototype delivers exactly one flow:
                         │           Supabase (Postgres 15)         │
                         │   repositories | pull_requests |         │
                         │   code_nodes | code_edges |              │
-                        │   pr_node_changes                        │
+                        │   code_test_references | pr_node_changes │
                         └──────────────────────▲──────────────────┘
                                                │ webhooks
                         ┌──────────────────────┴──────────────────┐
@@ -180,7 +180,7 @@ code_nodes
   line_start       int
   line_end         int
   signature        text              -- full signature string
-  language         text              -- 'go' | 'typescript' | 'rust' | 'python'
+  language         text              -- 'go' | 'typescript' | 'javascript'
   kind             text              -- 'function' | 'method' | 'type' | 'struct' | 'interface'
   body_hash        text              -- SHA-256 of the node body; used for change detection
   summary          text              -- AI: what this node does (2 sentences)
@@ -196,6 +196,21 @@ code_edges
   callee_id        uuid FK → code_nodes
   created_at       timestamptz
   UNIQUE (repo_id, commit_sha, caller_id, callee_id)
+
+-- Test references at a given commit. Test code is not inserted into
+-- code_nodes/code_edges; these rows attach test entrypoints to production nodes.
+code_test_references
+  id               uuid PK
+  repo_id          uuid FK → repositories
+  commit_sha       text
+  test_name        text
+  test_full_name   text
+  test_file_path   text
+  test_line_start  int
+  test_line_end    int
+  target_node_id   uuid FK → code_nodes
+  created_at       timestamptz
+  UNIQUE (repo_id, commit_sha, test_full_name, test_file_path, target_node_id)
 
 -- ────────────────────────────────────────────
 -- PR delta: what changed and AI change summaries
@@ -238,6 +253,8 @@ pr_analyses
 
 **Separate base graph and PR delta.** `code_nodes` + `code_edges` are the base graph, built during `RepoInit` and kept current by `MergePR`. `pr_node_changes` is the PR-specific overlay, built during `OpenPR`.
 
+**Tests are metadata, not graph nodes.** Test code is excluded from `code_nodes` and `code_edges`. `code_test_references` records which test entrypoints exercise each production node so the UI can show tests in the node detail panel without cluttering the graph.
+
 ---
 
 ## 4. GitHub App Integration
@@ -246,7 +263,7 @@ pr_analyses
 
 | Permission | Access | Reason |
 |---|---|---|
-| Contents | Read | Fetch file contents for tree-sitter parsing |
+| Contents | Read | Fetch file contents for parsing |
 | Pull requests | Read | Fetch PR diffs and metadata |
 | Metadata | Read | Repo info |
 
@@ -294,12 +311,13 @@ The backend is defined around three events. All other logic flows from them.
 
 1. Fetch the current HEAD commit SHA of `main` via `GET /repos/{owner}/{repo}/git/ref/heads/main`
 2. Fetch the full file tree at that SHA via `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1`
-3. Filter to supported source files (`.go`, `.ts`, `.tsx`, `.js`, `.rs`, `.py`)
-4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse with tree-sitter to extract all `code_nodes` (functions, methods, types)
-5. For each parsed node, build call/reference edges by resolving identifiers in function bodies against the full node set → insert `code_edges`
-6. Generate AI summaries for all nodes in a single batched Claude call (see §Parsing below)
-7. Persist all `code_nodes` and `code_edges` with `commit_sha = HEAD`
-8. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'`
+3. Filter to supported source files (`.go`, `.ts`, `.tsx`, `.js`, `.jsx`)
+4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse it to extract functions, methods, and types.
+5. Exclude test code from `code_nodes`/`code_edges`, then build production call/reference edges by resolving identifiers in function bodies against the production node set → insert `code_edges`.
+6. Extract test entrypoints and store the production nodes they exercise in `code_test_references`.
+7. Generate AI summaries for all production nodes in a single batched Claude call (see §Parsing below)
+8. Persist all `code_nodes`, `code_edges`, and `code_test_references` with `commit_sha = HEAD`
+9. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'`
 
 Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` (returns `index_status`) every 2 seconds until `ready` or `failed`.
 
@@ -315,10 +333,10 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 
 1. **Check cache:** Look up the PR's stored `head_commit_sha`. If the incoming webhook's `head_sha` matches → already processed, skip.
 2. **Fetch diff:** `GET /repos/{owner}/{repo}/compare/{base_commit}...{head_sha}` — returns a list of changed files with their unified diffs.
-3. **Parse head commit:** For each changed file at `head_sha`, fetch content and parse with tree-sitter. Insert new `code_nodes` at `commit_sha = head_sha` if not already present. Reuse existing `summary` where `body_hash` is unchanged.
+3. **Parse head commit:** For each changed file at `head_sha`, fetch content and parse it. Insert new production `code_nodes` at `commit_sha = head_sha` if not already present. Reuse existing `summary` where `body_hash` is unchanged.
 4. **Identify changed nodes:** Compare `body_hash` for each node between `base_commit_sha` and `head_sha`. Nodes with a differing hash are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`.
 5. **Generate change summaries:** For all `modified` and `added` nodes, call Claude with the diff hunk and new function body to generate `change_summary`. Batch into a single API call.
-6. **Persist:** Insert `pr_node_changes` rows. Insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`).
+6. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`).
 7. **Update PR:** Set `pull_requests.head_commit_sha = head_sha` and `graph_status = 'ready'`.
 
 ---
@@ -340,36 +358,21 @@ This keeps the base graph current without re-indexing the entire repo on every m
 
 ---
 
-### Parsing with tree-sitter
+### Parsing
 
-All code parsing uses `github.com/smacker/go-tree-sitter` — a single Go dependency that wraps the tree-sitter C library with language grammars for Go, TypeScript, Rust, and Python.
+The current parser supports Go, TypeScript, and JavaScript.
 
-**Language dispatch:**
+| Language | Parser | Extracted production nodes | Test code handling |
+|---|---|---|---|
+| Go | Standard `go/parser` + `go/ast` | functions, methods, type specs, structs, interfaces | Excludes `*_test.go`, packages ending `_test`, and functions beginning `Test`; indexes `Test*` references to production nodes |
+| TypeScript | Lightweight regex parser | function declarations, exported const arrow functions, class methods | Excludes `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`, and `__tests__/`; indexes `test(...)` / `it(...)` references |
+| JavaScript | Lightweight regex parser | function declarations, exported const arrow functions, class methods | Excludes `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx`, and `__tests__/`; indexes `test(...)` / `it(...)` references |
 
-```go
-func grammarForLanguage(lang string) *sitter.Language {
-    switch lang {
-    case "go":         return golang.GetLanguage()
-    case "typescript": return typescript.GetLanguage()
-    case "rust":       return rust.GetLanguage()
-    case "python":     return python.GetLanguage()
-    }
-    return nil
-}
-```
+Rust and Python are not currently indexed.
 
-**Per-language tree-sitter queries** extract function/method/type nodes:
+**Call graph extraction:** After extracting production node boundaries, function bodies are walked for calls and resolved against the full production node set for the same commit. Unresolvable names (stdlib, external packages, or ambiguous methods) are discarded.
 
-| Language | Query pattern |
-|---|---|
-| Go | `(function_declaration)`, `(method_declaration)`, `(type_spec)` |
-| TypeScript | `(function_declaration)`, `(method_definition)`, `(arrow_function)`, `(interface_declaration)`, `(type_alias_declaration)` |
-| Rust | `(function_item)`, `(impl_item)`, `(struct_item)`, `(trait_item)` |
-| Python | `(function_definition)`, `(class_definition)` |
-
-The same tree-sitter walk is used for both full-file indexing (RepoInit) and changed-file parsing (OpenPR). There are no language-specific code paths beyond the query strings above.
-
-**Call graph extraction:** After extracting node boundaries, each function body is walked for `call_expression` (TS/Python), `call_expr` (Rust), or `call_expression` / `selector_expression` (Go) nodes. Resolved callee names are matched against the full node set for the same commit. Unresolvable names (stdlib, external packages) are discarded.
+**Test reference extraction:** Test files are parsed separately from the production graph. Test functions/cases never become `code_nodes`; instead, each test entrypoint that reaches a production node writes a `code_test_references` row. The graph API attaches those rows to each returned production node so the detail panel can show callers, callees, and tests without rendering tests as graph nodes.
 
 ---
 
@@ -393,8 +396,8 @@ api/
       open_pr.go           OpenPR handler
       merge_pr.go          MergePR handler
     parser/
-      parse.go             tree-sitter dispatch + node extraction
-      callgraph.go         call edge resolution
+      parse.go             parser dispatch + node extraction
+      callgraph.go         call edge and test-reference resolution
     ai/
       enricher.go          Claude batched enrichment
     github/
@@ -537,7 +540,7 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 | Component | Location | Notes |
 |---|---|---|
 | `GraphCanvas` | `components/graph/graph-canvas.tsx` | React Flow canvas: pan, zoom, click |
-| `GraphNode` | `components/graph/graph-node.tsx` | Custom React Flow node: badge, name, summary |
+| `GraphNode` | `components/graph/graph-node.tsx` | Custom React Flow node: badge, name, signature divider, parameters, return types |
 | `NodeDetailPanel` | `components/graph/node-detail-panel.tsx` | Side panel updating on node selection; includes a top-left back control that returns to the PR overview and renders PR descriptions as GitHub-flavored Markdown |
 | `DiffBlock` | `components/graph/diff-block.tsx` | Unified diff with line highlighting |
 | `IndexingProgress` | `components/onboarding/indexing-progress.tsx` | Animated bar; polls `/status` |
@@ -630,12 +633,12 @@ Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No 
 
 ---
 
-### Phase 2 — tree-sitter Parsing *(~1.5 days)*
+### Phase 2 — Parsing *(~1.5 days)*
 
-1. Add `github.com/smacker/go-tree-sitter` dependency; add language grammars (Go, TypeScript, Rust, Python) to `go.mod`
-2. Implement `parser.Parse(content []byte, language string) []CodeNode` — runs tree-sitter query, returns node boundaries + signatures
-3. Implement `parser.ExtractCallEdges(content []byte, language string, nodeSet map[string]uuid) []CallEdge` — walks call expressions, resolves against nodeSet
-4. Write unit tests for each language grammar with fixture source files
+1. Implement Go parsing with `go/parser` + `go/ast`; implement lightweight TypeScript/JavaScript parsing for function declarations, exported const arrow functions, and class methods.
+2. Implement `parser.Parse(content []byte, filePath string) []CodeNode` — returns node boundaries + signatures and flags test code.
+3. Implement `parser.ExtractCallEdges(content []byte, filePath string, nodeSet map[string]uuid) []CallEdge` — walks call expressions, resolves against nodeSet
+4. Implement `parser.ExtractTestReferences(content []byte, filePath string, nodeSet map[string]uuid) []TestReference` for Go, TypeScript, and JavaScript tests.
 5. Implement `parser.BodyHash(content []byte, start, end int) string` — SHA-256 of the function body bytes
 
 ---
@@ -712,7 +715,7 @@ Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No 
 
 1. Run the full flow against 5–10 real PRs from at least two different repos and languages
 2. Check: graph size reasonable (≤20 nodes), summaries accurate, change summaries specific, call edges not overloaded with false positives
-3. Adjust tree-sitter call graph resolution if false positive rate is high (e.g. add file-scoped name filtering)
+3. Adjust parser call graph resolution if false positive rate is high (e.g. add file-scoped name filtering)
 4. Adjust AI prompt if summaries are too vague or too verbose
 
 ---
@@ -722,7 +725,7 @@ Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Railway over Fly.io | Railway | Simpler deploy config; no fly.toml; Railway detects Dockerfile automatically |
-| tree-sitter for all languages | `go-tree-sitter` | Single dependency, uniform API, production-quality grammars. No per-language special cases. |
+| Current parser scope | Go + TypeScript + JavaScript | Matches the implemented parser. Rust and Python should be documented only when production parsing exists. |
 | `node_type` computed at query time | Not stored | It is a PR-relative property, not a property of a node. Storing it would couple the base graph to PR state. |
 | `code_nodes` keyed by `(repo, commit_sha, full_name, file_path)` | Snapshot per commit | Allows change detection by `body_hash` comparison without storing diffs. Summaries are reused across commits when body is unchanged. |
 | One-hop graph depth | Depth 1 from changed nodes | Deeper traversal produces unreadable graphs. One hop gives immediate structural context. |
@@ -750,4 +753,5 @@ Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No 
 | v0.4 | 2026-03-25 | GitHub App reinstall flow; onboarding redirect fixes |
 | v0.5 | 2026-03-26 | Queue refresh; `setup_action=request`; `installation_repositories` webhook |
 | v0.6 | 2026-04-21 | Pivot to graph validation prototype; graph pipeline; function nodes; AI enrichment |
-| v0.7 | 2026-04-21 | Railway; clean schema; tree-sitter single dependency; three-event backend model (RepoInit/OpenPR/MergePR); `code_nodes` keyed by commit SHA; `node_type` derived at query time |
+| v0.7 | 2026-04-21 | Railway; clean schema; graph parser pipeline; three-event backend model (RepoInit/OpenPR/MergePR); `code_nodes` keyed by commit SHA; `node_type` derived at query time |
+| v0.8 | 2026-04-26 | Test code excluded from production graph; `code_test_references` records tests that exercise production nodes; parser docs reflect Go/TypeScript/JavaScript implementation |

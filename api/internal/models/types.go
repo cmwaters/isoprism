@@ -148,8 +148,17 @@ type GraphNode struct {
 	DiffHunk      *string `json:"diff_hunk"`
 	ChangeType    *string `json:"change_type"` // added | modified | deleted | nil for unchanged
 	// Diff stats (only for changed nodes)
-	LinesAdded   int `json:"lines_added"`
-	LinesRemoved int `json:"lines_removed"`
+	LinesAdded   int             `json:"lines_added"`
+	LinesRemoved int             `json:"lines_removed"`
+	Tests        []GraphNodeTest `json:"tests"`
+}
+
+type GraphNodeTest struct {
+	Name      string `json:"name"`
+	FullName  string `json:"full_name"`
+	FilePath  string `json:"file_path"`
+	LineStart int    `json:"line_start"`
+	LineEnd   int    `json:"line_end"`
 }
 
 type GraphEdge struct {

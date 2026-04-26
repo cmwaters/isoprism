@@ -350,6 +350,8 @@ function NodeDetail({
         allNodes={allNodes}
         onSelectNode={onSelectNode}
       />
+
+      <TestSection tests={node.tests ?? []} />
     </div>
   );
 }
@@ -817,6 +819,34 @@ function RelationSection({
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function TestSection({ tests }: { tests: GraphNode["tests"] }) {
+  if (tests.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+        Tests
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {tests.map((test) => (
+          <div
+            key={`${test.file_path}:${test.line_start}:${test.full_name}`}
+            style={{
+              padding: "4px 0",
+              textAlign: "left",
+            }}
+          >
+            <div style={{ fontSize: 13, color: "#222222" }}>{test.name}</div>
+            <div style={{ fontSize: 11, color: "#888888", marginTop: 2, wordBreak: "break-all" }}>
+              {test.file_path}:{test.line_start}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
