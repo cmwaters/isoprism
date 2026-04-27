@@ -23,8 +23,8 @@ import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse } from "@/li
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel from "./node-detail-panel";
 
-const nodeTypes = { graphNode: GraphNodeComponent };
-const edgeTypes = { smartBezier: SmartBezierEdge };
+export const nodeTypes = { graphNode: GraphNodeComponent };
+export const edgeTypes = { smartBezier: SmartBezierEdge };
 
 type Point = { x: number; y: number };
 type Rect = Point & { width: number; height: number };
@@ -281,8 +281,12 @@ const PANEL_MIN_WIDTH = 260;
 const PANEL_MAX_WIDTH = 620;
 const PANEL_DEFAULT_WIDTH = 320;
 
-function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
-  const changedIDs = new Set(graphNodes.filter((n) => n.node_type === "changed").map((n) => n.id));
+export function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
+  const centerIDs = new Set(
+    graphNodes
+      .filter((n) => n.node_type === "changed" || n.node_type === "entrypoint")
+      .map((n) => n.id)
+  );
 
   const neighbors = new Map<string, string[]>();
   nodes.forEach((n) => neighbors.set(n.id, []));
@@ -294,8 +298,8 @@ function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode
   const levels = new Map<string, number>();
   const queue: string[] = [];
 
-  if (changedIDs.size > 0) {
-    changedIDs.forEach((id) => { levels.set(id, 0); queue.push(id); });
+  if (centerIDs.size > 0) {
+    centerIDs.forEach((id) => { levels.set(id, 0); queue.push(id); });
   } else {
     nodes.forEach((n) => { levels.set(n.id, 0); queue.push(n.id); });
   }

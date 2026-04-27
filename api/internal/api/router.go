@@ -147,6 +147,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 			r.Post("/index", indexRepoHandler(db, appClient, enricher))
 			r.Get("/status", repoHandler.GetRepoStatus)
 			r.Get("/queue", queueHandler.GetQueue)
+			r.Get("/graph", graphHandler.GetRepoGraph)
 			r.Get("/prs/{prID}/graph", graphHandler.GetGraph)
 			r.Get("/prs/{prID}/nodes/{nodeID}/code", graphHandler.GetNodeCode)
 		})

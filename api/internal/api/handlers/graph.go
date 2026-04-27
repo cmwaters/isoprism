@@ -17,6 +17,114 @@ type GraphHandler struct {
 	AppClient *github.AppClient
 }
 
+// GET /api/v1/repos/{repoID}/graph
+func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
+	repoID := chi.URLParam(r, "repoID")
+	userID := r.Header.Get("X-User-ID")
+	ctx := r.Context()
+
+	var repo models.Repository
+	err := h.DB.QueryRow(ctx, `
+		select id, user_id, installation_id, github_repo_id, full_name,
+		       default_branch, main_commit_sha, index_status, is_active, created_at
+		from repositories
+		where id=$1 and user_id=$2
+	`, repoID, userID).Scan(
+		&repo.ID, &repo.UserID, &repo.InstallationID, &repo.GitHubRepoID,
+		&repo.FullName, &repo.DefaultBranch, &repo.MainCommitSHA,
+		&repo.IndexStatus, &repo.IsActive, &repo.CreatedAt,
+	)
+	if err != nil {
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+	if repo.MainCommitSHA == nil || *repo.MainCommitSHA == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(models.RepoGraphResponse{
+			Repo:  repo,
+			Nodes: []models.GraphNode{},
+			Edges: []models.GraphEdge{},
+		})
+		return
+	}
+
+	nodeRows, err := h.DB.Query(ctx, `
+		select id, name, full_name, file_path, line_start, line_end,
+		       signature, language, kind, coalesce(summary,'')
+		from code_nodes
+		where repo_id=$1 and commit_sha=$2
+		order by file_path, line_start
+		limit 150
+	`, repoID, *repo.MainCommitSHA)
+	if err != nil {
+		log.Printf("GetRepoGraph: node query: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	defer nodeRows.Close()
+
+	nodes := make([]models.GraphNode, 0)
+	nodeIDs := make([]string, 0)
+	nodeSet := map[string]bool{}
+	for nodeRows.Next() {
+		var n models.GraphNode
+		var summary string
+		if err := nodeRows.Scan(
+			&n.ID, &n.Name, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+			&n.Signature, &n.Language, &n.Kind, &summary,
+		); err != nil {
+			continue
+		}
+		if summary != "" {
+			n.Summary = &summary
+		}
+		if n.Name == "main" || n.FullName == "main" {
+			n.NodeType = "entrypoint"
+		} else {
+			n.NodeType = "context"
+		}
+		n.Tests = []models.GraphNodeTest{}
+		nodes = append(nodes, n)
+		nodeIDs = append(nodeIDs, n.ID)
+		nodeSet[n.ID] = true
+	}
+	nodeRows.Close()
+
+	edges := make([]models.GraphEdge, 0)
+	if len(nodeIDs) > 0 {
+		edgeRows, err := h.DB.Query(ctx, `
+			select caller_id, callee_id
+			from code_edges
+			where repo_id=$1 and commit_sha=$2
+			  and caller_id = any($3::uuid[])
+			  and callee_id = any($3::uuid[])
+		`, repoID, *repo.MainCommitSHA, nodeIDs)
+		if err != nil {
+			log.Printf("GetRepoGraph: edge query: %v", err)
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		defer edgeRows.Close()
+		for edgeRows.Next() {
+			var e models.GraphEdge
+			if err := edgeRows.Scan(&e.CallerID, &e.CalleeID); err != nil {
+				continue
+			}
+			if nodeSet[e.CallerID] && nodeSet[e.CalleeID] {
+				edges = append(edges, e)
+			}
+		}
+		edgeRows.Close()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models.RepoGraphResponse{
+		Repo:  repo,
+		Nodes: nodes,
+		Edges: edges,
+	})
+}
+
 // GET /api/v1/repos/{repoID}/prs/{prID}/graph
 func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	repoID := chi.URLParam(r, "repoID")

@@ -172,6 +172,12 @@ type GraphResponse struct {
 	Edges []GraphEdge `json:"edges"`
 }
 
+type RepoGraphResponse struct {
+	Repo  Repository  `json:"repo"`
+	Nodes []GraphNode `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
+}
+
 type GraphPR struct {
 	ID            string `json:"id"`
 	Number        int    `json:"number"`

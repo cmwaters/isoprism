@@ -64,7 +64,7 @@ export interface GraphNode {
   signature: string;
   language: string;
   kind: string;
-  node_type: "changed" | "caller" | "callee";
+  node_type: "changed" | "caller" | "callee" | "entrypoint" | "context";
   summary?: string;
   change_summary?: string;
   diff_hunk?: string;
@@ -100,6 +100,12 @@ export interface GraphPR {
 
 export interface GraphResponse {
   pr: GraphPR;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface RepoGraphResponse {
+  repo: Repository;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
