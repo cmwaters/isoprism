@@ -59,6 +59,11 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 
 	// Mark running
 	db.Exec(ctx, `update pull_requests set graph_status='running' where id=$1`, prID)
+	if _, err := db.Exec(ctx, `delete from pr_node_changes where pull_request_id=$1`, prID); err != nil {
+		log.Printf("OpenPR: failed to clear stale node changes for pr %s: %v", prID, err)
+		db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
+		return
+	}
 
 	// Fetch changed files
 	changedFiles, err := ghClient.CompareCommits(ctx, owner, repo, baseCommit, headSHA)
