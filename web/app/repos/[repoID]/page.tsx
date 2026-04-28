@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { apiFetch } from "@/lib/api";
-import { QueueResponse, RepoGraphResponse, Repository } from "@/lib/types";
-import RepoGraphCanvas from "@/components/graph/repo-graph-canvas";
+import { Repository } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +20,6 @@ export default async function RepoQueuePage({ params }: Props) {
   if (!token) redirect("/login");
 
   let repo: Repository | null = null;
-  let queue: QueueResponse = { prs: [] };
-  let graph: RepoGraphResponse | null = null;
 
   try {
     repo = await apiFetch<Repository>(`/api/v1/repos/${repoID}`, token);
@@ -30,21 +27,5 @@ export default async function RepoQueuePage({ params }: Props) {
     redirect("/");
   }
 
-  try {
-    queue = await apiFetch<QueueResponse>(`/api/v1/repos/${repoID}/queue`, token);
-  } catch {
-    // queue may be empty if indexing just finished
-  }
-
-  try {
-    graph = await apiFetch<RepoGraphResponse>(`/api/v1/repos/${repoID}/graph`, token);
-  } catch {
-    graph = {
-      repo,
-      nodes: [],
-      edges: [],
-    };
-  }
-
-  return <RepoGraphCanvas graph={graph} prs={queue.prs} repoID={repoID} />;
+  redirect(`/${repo.full_name}`);
 }

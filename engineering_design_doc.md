@@ -285,7 +285,7 @@ All webhooks verified with `X-Hub-Signature-256` HMAC before processing.
 | `setup_action` | Behaviour |
 |---|---|
 | `install` | Creates installation + repository records; redirects to `/onboarding/repos` |
-| `update` | Re-syncs repo list; redirects to queue |
+| `update` | Re-syncs repo list; redirects to `/onboarding/repos` |
 | `request` | User lacks permission; redirects to `/request-sent` |
 
 ### Token Management
@@ -429,7 +429,11 @@ GET    /api/v1/repos/{repoID}                             repo detail + index_st
 POST   /api/v1/repos/{repoID}/index                       trigger RepoInit
 GET    /api/v1/repos/{repoID}/status                      {index_status, pr_count, ready_count}
 GET    /api/v1/repos/{repoID}/queue                       top 5 PRs by urgency
+GET    /api/v1/repos/{repoID}/graph                       repo graph from main HEAD
+GET    /api/v1/repos/{repoID}/nodes/{nodeID}/code         lazy repo node source
 GET    /api/v1/repos/{repoID}/prs/{prID}/graph            PR graph (nodes + edges + deltas)
+GET    /api/v1/repos/{repoID}/prs/number/{number}/graph   PR graph by GitHub PR number
+GET    /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code lazy PR node source/diff
 ```
 
 ### `GET /repos/{repoID}/queue` Response
@@ -530,9 +534,11 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 /auth/callback                   Supabase auth callback
 /onboarding                      GitHub App install (first-time)
 /onboarding/repos                Repo selection → triggers RepoInit
-/                                Root: auth/status redirect to repo queue or onboarding
-/repos/[repoID]                  PR Queue (top 5 PRs)
-/repos/[repoID]/pr/[prID]        PR Graph View
+/                                Root: auth/status redirect to repo queue, repo selection, or login
+/{owner}/{repo}                  PR Queue (top 5 PRs) and repo graph
+/{owner}/{repo}/pull/[number]    PR Graph View
+/repos/[repoID]                  Legacy repo-ID route; redirects/falls back to canonical repo view
+/repos/[repoID]/pr/[prID]        Legacy PR-ID route; redirects/falls back to canonical PR view
 /settings                        Repo management, delete account
 ```
 
@@ -560,7 +566,8 @@ React Flow (`@xyflow/react`) with a concentric ring layout:
 ### Data Fetching
 
 - **PR Queue page**: Server Component; fetches queue from Go API on every request. Manual refresh via `router.refresh()`.
-- **PR Graph page**: Server Component fetches `/prs/{prID}/graph`; passes data as props to client-side `GraphCanvas`.
+- **Repo/PR Graph page**: Server Components resolve GitHub-shaped URLs to the internal repo ID, fetch repo or PR graph data as needed, and pass it to the shared client-side `GraphCanvas`.
+- **Lazy code loading**: The side panel fetches repo source from `/nodes/{nodeID}/code` or PR source/diff data from `/prs/{prID}/nodes/{nodeID}/code` only when the user opens code mode, then caches each node response in the mounted graph view.
 - **PR description markdown**: `NodeDetailPanel` renders `GraphPR.body` with `react-markdown` and `remark-gfm`; HTML is not enabled, and links open in a new tab.
 - **Indexing status**: Client Component polls `GET /repos/{repoID}/status` every 2 seconds until `index_status = 'ready'`.
 
@@ -573,10 +580,11 @@ React Flow (`@xyflow/react`) with a concentric ring layout:
 1. `/login` → Supabase Auth GitHub OAuth
 2. GitHub → `/auth/callback` → Supabase session
 3. `/` and `/auth/callback` both call `GET /api/v1/auth/status?user_id=…`
-4. API checks whether the user has a ready repo or an installed-but-unindexed repo:
-   - **Ready repo**: redirect to `/repos/{repoID}`
+4. API checks whether the user has a ready repo, installed-but-unindexed repo, or no connected repos:
+   - **Ready repo**: redirect to `/{owner}/{repo}`
    - **Installed but not indexed**: redirect to `/onboarding/repos`
    - **No match**: redirect to `/onboarding`
+5. Root entry treats `/onboarding` from auth status as `/login`, so a direct visit to `isoprism.com` is always login-first. The OAuth callback keeps the `/onboarding` redirect, because that is the point where Isoprism knows the GitHub user has not connected the app/repo permissions yet.
 
 ### Isolation
 

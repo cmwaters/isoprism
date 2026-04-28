@@ -18,9 +18,18 @@ npm run lint
 npm run build
 ```
 
-## PR graph view
+## Auth routing
 
-The PR page at `/repos/[repoID]/pr/[prID]` fetches `GET /api/v1/repos/{repoID}/prs/{prID}/graph` and renders:
+The root route is login-first: unauthenticated visitors go to `/login`, and signed-in visitors only skip login when `GET /api/v1/auth/status?user_id=...` returns a ready repo (`/{owner}/{repo}`) or an installed-but-unindexed repo (`/onboarding/repos`). If auth status returns `/onboarding`, root maps that to `/login`; the OAuth callback keeps `/onboarding` so newly signed-in GitHub users without a connected Isoprism repo are prompted to install the GitHub App and grant repo permissions.
+
+## Repository and PR graph view
+
+The primary graph routes mirror GitHub paths:
+
+- `/{owner}/{repo}` fetches `GET /api/v1/repos/{repoID}/graph` plus `GET /api/v1/repos/{repoID}/queue`.
+- `/{owner}/{repo}/pull/{number}` fetches `GET /api/v1/repos/{repoID}/prs/number/{number}/graph`.
+
+Both routes render the same `GraphCanvas` and side panel:
 
 - A call graph of changed nodes plus nearby caller/callee context.
 - A left side panel that defaults to the semantic overview.
@@ -30,14 +39,20 @@ The PR page at `/repos/[repoID]/pr/[prID]` fetches `GET /api/v1/repos/{repoID}/p
 
 The side panel has two modes:
 
-- `Overview`: semantic PR or node summary, change explanation, diff stats, calls, callers, and tests.
-- `Code`: a lazy-loaded source viewer for the selected function or struct. Changed nodes automatically show the full component with changed lines highlighted. Unchanged context nodes automatically show plain source.
+- `Overview`: repo, PR, or node summary, calls, callers, and tests. PR context additionally shows change explanations and diff stats.
+- `Code`: a lazy-loaded source viewer for the selected function or struct. PR changed nodes automatically show the full component with changed lines highlighted. Repo nodes and unchanged context nodes show plain source.
 
 The overview/code icon controls switch the side panel mode without changing the selected graph node.
 
 ## API contract used by the code panel
 
-The code panel lazily fetches:
+The code panel lazily fetches repo source when there is no PR context:
+
+```http
+GET /api/v1/repos/{repoID}/nodes/{nodeID}/code
+```
+
+It fetches PR-aware source and diff data when reviewing a PR:
 
 ```http
 GET /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code

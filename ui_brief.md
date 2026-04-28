@@ -212,7 +212,7 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
 - **Package label** — 11px, `#EF5DA8` (fuchsia), top of card. Format: `pkg` for functions; `pkg.ReceiverType` for methods.
 - **Function name** — 13px semibold, `#111111`.
 - **Parameters** — 11px per line: param name in `#444444`, type in `#0088FF` (blue).
-- **Full-width divider** (darken card color by ~13%) — separates params from returns.
+- **Full-width divider** (darken card color by ~13%) — sits below the function name and above the input arguments and return types.
 - **Return types** — 11px per line, `#FF383C` (red).
 - No diff content inside the card.
 
@@ -250,7 +250,8 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 
 | Action | Result |
 |---|---|
-| Click PR card | Navigate to PR Graph View (Sub-view B) |
+| Visit `/{owner}/{repo}` | Show repo graph, node detail panel, and ranked PR list |
+| Click PR card | Navigate to `/{owner}/{repo}/pull/{number}` and show PR change summaries in the same graph shell |
 | Click graph node | Open node detail panel (Sub-view C) |
 | Click ← in node detail | Clear selection, return to Sub-view B |
 | Click node chip in "Calls" / "Called by" | Select that node |
@@ -258,6 +259,7 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 | Click "View on GitHub →" | Open GitHub PR URL in new tab |
 | Click back breadcrumb | Return to PR Queue |
 | Zoom controls | Zoom graph canvas in/out or fit to screen |
+| Visit `/` without a ready repo | Show Login; after GitHub OAuth, send unconnected users to GitHub App install |
 
 ---
 

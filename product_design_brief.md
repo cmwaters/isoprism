@@ -39,6 +39,8 @@ The prototype has exactly three screens. Every design and engineering decision s
 
 The user lands on the site and signs in with GitHub. No email, no password, no form. One button.
 
+Direct visits to `isoprism.com` are login-first. If the GitHub OAuth callback shows the signed-in user has not connected Isoprism yet, the user is then sent to install the GitHub App and grant repository permissions.
+
 ---
 
 ### Screen 2 — Repo Selection
@@ -60,7 +62,7 @@ Each PR in the list shows:
 - Number of functions affected
 - A one-line summary of what the PR does
 
-The user clicks a PR to enter the graph view.
+The user views a repository at the same path GitHub uses (`/{owner}/{repo}`), with the PR list and repository graph on one page. Clicking a PR keeps the GitHub URL shape (`/{owner}/{repo}/pull/{number}`) and adds PR-specific change summaries to the same graph review interface.
 
 ---
 

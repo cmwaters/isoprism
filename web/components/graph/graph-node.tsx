@@ -186,6 +186,9 @@ function GraphNodeComponent({ data, selected }: Props) {
           {node.name}
         </div>
 
+        {/* Signature divider — sits between the function name and signature details */}
+        {hasSignature && <Divider color={dividerColor} />}
+
         {/* Parameters — one per line */}
         {params.length > 0 && (
           <div>
@@ -198,14 +201,13 @@ function GraphNodeComponent({ data, selected }: Props) {
           </div>
         )}
 
-        {/* Return types — full-width divider + one per line */}
+        {/* Return types — one per line */}
         {returns.length > 0 && (
-          <>
-            <Divider color={dividerColor} />
+          <div style={{ marginTop: params.length > 0 ? 4 : 0 }}>
             {returns.map((r, i) => (
               <div key={i} style={{ fontSize: 11, color: "#FF383C", lineHeight: 1.5 }}>{r}</div>
             ))}
-          </>
+          </div>
         )}
       </div>
 

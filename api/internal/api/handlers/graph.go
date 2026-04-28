@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -117,12 +118,79 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		edgeRows.Close()
 	}
 
+	if len(nodeIDs) > 0 {
+		testRows, err := h.DB.Query(ctx, `
+			select target_node_id, test_name, test_full_name, test_file_path, test_line_start, test_line_end
+			from code_test_references
+			where repo_id=$1
+			  and commit_sha=$2
+			  and target_node_id = any($3::uuid[])
+			order by test_file_path, test_line_start, test_name
+		`, repoID, *repo.MainCommitSHA, nodeIDs)
+		if err == nil {
+			defer testRows.Close()
+			nodeIndex := map[string]int{}
+			for i := range nodes {
+				nodeIndex[nodes[i].ID] = i
+			}
+			seenTests := map[string]bool{}
+			for testRows.Next() {
+				var targetID string
+				var t models.GraphNodeTest
+				if err := testRows.Scan(&targetID, &t.Name, &t.FullName, &t.FilePath, &t.LineStart, &t.LineEnd); err != nil {
+					continue
+				}
+				i, ok := nodeIndex[targetID]
+				if !ok {
+					continue
+				}
+				key := targetID + "|" + t.FullName + "|" + t.FilePath
+				if seenTests[key] {
+					continue
+				}
+				seenTests[key] = true
+				nodes[i].Tests = append(nodes[i].Tests, t)
+			}
+			testRows.Close()
+		} else {
+			log.Printf("GetRepoGraph: test references query: %v", err)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.RepoGraphResponse{
 		Repo:  repo,
 		Nodes: nodes,
 		Edges: edges,
 	})
+}
+
+// GET /api/v1/repos/{repoID}/prs/number/{number}/graph
+func (h *GraphHandler) GetGraphByNumber(w http.ResponseWriter, r *http.Request) {
+	repoID := chi.URLParam(r, "repoID")
+	number, err := strconv.Atoi(chi.URLParam(r, "number"))
+	if err != nil {
+		http.Error(w, "invalid pr number", http.StatusBadRequest)
+		return
+	}
+
+	userID := r.Header.Get("X-User-ID")
+	ctx := r.Context()
+
+	var prID string
+	err = h.DB.QueryRow(ctx, `
+		select pr.id
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		where pr.repo_id=$1 and pr.number=$2 and r.user_id=$3
+	`, repoID, number, userID).Scan(&prID)
+	if err != nil {
+		http.Error(w, "pr not found", http.StatusNotFound)
+		return
+	}
+
+	chi.RouteContext(r.Context()).URLParams.Add("prID", prID)
+	h.GetGraph(w, r)
 }
 
 // GET /api/v1/repos/{repoID}/prs/{prID}/graph
@@ -516,6 +584,85 @@ func countDiffLines(patch string) (added, removed int) {
 		}
 	}
 	return
+}
+
+// GET /api/v1/repos/{repoID}/nodes/{nodeID}/code
+func (h *GraphHandler) GetRepoNodeCode(w http.ResponseWriter, r *http.Request) {
+	repoID := chi.URLParam(r, "repoID")
+	nodeID := chi.URLParam(r, "nodeID")
+	userID := r.Header.Get("X-User-ID")
+	ctx := r.Context()
+
+	type nodeMeta struct {
+		id        string
+		filePath  string
+		language  string
+		lineStart int
+		lineEnd   int
+	}
+
+	var fullName string
+	var installationID int64
+	var mainCommit string
+	err := h.DB.QueryRow(ctx, `
+		select r.full_name, gi.installation_id, coalesce(r.main_commit_sha, '')
+		from repositories r
+		join github_installations gi on gi.id = r.installation_id
+		where r.id=$1 and r.user_id=$2
+	`, repoID, userID).Scan(&fullName, &installationID, &mainCommit)
+	if err != nil {
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+
+	var selected nodeMeta
+	err = h.DB.QueryRow(ctx, `
+		select id, file_path, language, line_start, line_end
+		from code_nodes
+		where id=$1 and repo_id=$2
+	`, nodeID, repoID).Scan(&selected.id, &selected.filePath, &selected.language, &selected.lineStart, &selected.lineEnd)
+	if err != nil {
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
+
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) != 2 {
+		http.Error(w, "invalid repo name", http.StatusInternalServerError)
+		return
+	}
+
+	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		log.Printf("GetRepoNodeCode: github client: %v", err)
+		http.Error(w, "github client error", http.StatusInternalServerError)
+		return
+	}
+
+	var head *models.NodeCodeSegment
+	if mainCommit != "" {
+		content, err := ghClient.GetFileContent(ctx, parts[0], parts[1], selected.filePath, mainCommit)
+		if err != nil {
+			log.Printf("GetRepoNodeCode: fetch %s@%s: %v", selected.filePath, mainCommit, err)
+		} else {
+			head = &models.NodeCodeSegment{
+				CommitSHA: mainCommit,
+				StartLine: selected.lineStart,
+				EndLine:   selected.lineEnd,
+				Source:    sliceSourceLines(string(content), selected.lineStart, selected.lineEnd),
+			}
+		}
+	}
+
+	response := models.NodeCodeResponse{
+		NodeID:   nodeID,
+		FilePath: selected.filePath,
+		Language: selected.language,
+		Head:     head,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // GET /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code

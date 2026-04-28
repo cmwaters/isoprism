@@ -24,7 +24,7 @@ func (h *RepoHandler) GetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if userID == "" {
-		json.NewEncoder(w).Encode(map[string]string{"redirect": "/onboarding"})
+		json.NewEncoder(w).Encode(map[string]string{"redirect": "/login"})
 		return
 	}
 
@@ -33,14 +33,14 @@ func (h *RepoHandler) GetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	ensureUserExists(ctx, h.DB, userID)
 
 	// Check for a ready repo
-	var repoID string
+	var fullName string
 	err := h.DB.QueryRow(ctx, `
-		select id from repositories
+		select full_name from repositories
 		where user_id = $1 and index_status = 'ready' and is_active = true
 		order by created_at desc limit 1
-	`, userID).Scan(&repoID)
+	`, userID).Scan(&fullName)
 	if err == nil {
-		json.NewEncoder(w).Encode(map[string]string{"redirect": "/repos/" + repoID})
+		json.NewEncoder(w).Encode(map[string]string{"redirect": "/" + fullName})
 		return
 	}
 

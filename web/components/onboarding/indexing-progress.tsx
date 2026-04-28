@@ -54,7 +54,7 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
           clearInterval(progInterval);
           if (intervalRef.current) clearInterval(intervalRef.current);
           if (msgIntervalRef.current) clearInterval(msgIntervalRef.current);
-          setTimeout(() => router.push(`/repos/${repoID}`), 400);
+          setTimeout(() => router.push(`/${repoName}`), 400);
         } else if (status.index_status === "failed") {
           setFailed(true);
           clearInterval(progInterval);

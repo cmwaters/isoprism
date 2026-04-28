@@ -10,23 +10,24 @@ export default async function RootPage() {
   if (!user) redirect("/login");
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+  let redirectPath = "/login";
 
-  // Use the same redirect helper as the auth callback so returning users
-  // land on the right screen even if the client-side repo fetch would fail.
+  // Direct site visits are login-first. The auth callback is the place where
+  // a signed-in user with no connected repos is sent to GitHub App install.
   try {
     const res = await fetch(`${apiUrl}/api/v1/auth/status?user_id=${user.id}`, {
       cache: "no-store",
     });
 
     if (res.ok) {
-      const { redirect: redirectPath } = await res.json();
-      if (typeof redirectPath === "string" && redirectPath.length > 0) {
-        redirect(redirectPath);
+      const { redirect } = await res.json();
+      if (typeof redirect === "string" && redirect.length > 0) {
+        redirectPath = redirect === "/onboarding" ? "/login" : redirect;
       }
     }
   } catch {
-    // Fall through to the onboarding screen below.
+    // Fall through to the login screen below.
   }
 
-  redirect("/onboarding");
+  redirect(redirectPath);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment } from "@/lib/types";
+import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, QueuePR, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import type { PanelMode } from "./graph-canvas";
 import { ArrowLeft, BookOpenText, Code2 } from "lucide-react";
@@ -14,7 +14,9 @@ interface Props {
   edges: GraphEdge[];
   onSelectNode: (id: string) => void;
   repoID: string;
-  pr: GraphPR;
+  repo: Repository;
+  pr?: GraphPR;
+  prs?: QueuePR[];
   token: string;
   nodeCodeCache: Record<string, NodeCodeResponse>;
   onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
@@ -33,7 +35,9 @@ export default function NodeDetailPanel({
   edges,
   onSelectNode,
   repoID,
+  repo,
   pr,
+  prs,
   token,
   nodeCodeCache,
   onCacheNodeCode,
@@ -79,7 +83,11 @@ export default function NodeDetailPanel({
       <div style={{ flex: 1, overflowY: "auto" }}>
         {!node || mode === "overview" ? (
           !node ? (
-            <PRSummaryPanel pr={pr} allNodes={allNodes} repoID={repoID} onSelectNode={onSelectNode} />
+            pr ? (
+              <PRSummaryPanel pr={pr} repo={repo} allNodes={allNodes} onSelectNode={onSelectNode} />
+            ) : (
+              <RepoSummaryPanel repo={repo} prs={prs ?? []} allNodes={allNodes} repoID={repoID} onSelectNode={onSelectNode} />
+            )
         ) : (
         <NodeDetail
           node={node}
@@ -99,7 +107,7 @@ export default function NodeDetailPanel({
         <CodePanel
           node={node}
           repoID={repoID}
-          prID={pr.id}
+          prID={pr?.id}
           token={token}
           cachedCode={nodeCodeCache[node.id]}
           onCacheNodeCode={onCacheNodeCode}
@@ -131,15 +139,107 @@ export default function NodeDetailPanel({
   );
 }
 
-function PRSummaryPanel({
-  pr,
+function RepoSummaryPanel({
+  repo,
+  prs,
   allNodes,
   repoID,
   onSelectNode,
 }: {
-  pr: GraphPR;
+  repo: Repository;
+  prs: QueuePR[];
   allNodes: GraphNode[];
   repoID: string;
+  onSelectNode: (id: string) => void;
+}) {
+  const entryNodes = allNodes.filter((n) => n.node_type === "entrypoint");
+  const visibleNodes = entryNodes.length > 0 ? entryNodes : allNodes.slice(0, 12);
+
+  return (
+    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+      <p style={{ color: "#888888", fontSize: 12, margin: "0 0 6px 0", wordBreak: "break-all" }}>
+        {repo.full_name}
+      </p>
+      <h1 style={{ color: "#111111", fontSize: 18, fontWeight: 600, margin: "0 0 8px 0" }}>
+        Repository graph
+      </h1>
+      <p style={{ color: "#666666", fontSize: 13, lineHeight: 1.5, margin: "0 0 18px 0" }}>
+        Browse indexed nodes, calls, and tests from {repo.default_branch}.
+      </p>
+
+      {prs.length > 0 && (
+        <>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            Pull requests
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+            {prs.map((pr) => (
+              <a
+                key={pr.id}
+                href={`/${repo.full_name}/pull/${pr.number}`}
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid #D4D4D4",
+                  borderRadius: 6,
+                  color: "#111111",
+                  display: "block",
+                  padding: 12,
+                  textDecoration: "none",
+                }}
+              >
+                <span style={{ color: "#AAAAAA", fontSize: 12, marginRight: 6 }}>#{pr.number}</span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{pr.title}</span>
+                {pr.summary && (
+                  <span style={{ color: "#666666", display: "block", fontSize: 12, lineHeight: 1.45, marginTop: 6 }}>
+                    {pr.summary}
+                  </span>
+                )}
+              </a>
+            ))}
+          </div>
+        </>
+      )}
+
+      {visibleNodes.length > 0 && (
+        <>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            Nodes
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {visibleNodes.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => onSelectNode(n.id)}
+                style={{
+                  background: "#F0F0F0", border: "none", borderRadius: 4,
+                  padding: "4px 8px", cursor: "pointer", textAlign: "left",
+                }}
+              >
+                <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {prs.length === 0 && allNodes.length === 0 && (
+        <div style={{ color: "#888888", fontSize: 13, textAlign: "center", padding: "48px 0" }}>
+          No graph data yet.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PRSummaryPanel({
+  pr,
+  repo,
+  allNodes,
+  onSelectNode,
+}: {
+  pr: GraphPR;
+  repo: Repository;
+  allNodes: GraphNode[];
   onSelectNode: (id: string) => void;
 }) {
   const changedNodes = allNodes.filter((n) => n.node_type === "changed");
@@ -148,7 +248,7 @@ function PRSummaryPanel({
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <PanelToolbar backHref={`/repos/${repoID}`} />
+      <PanelToolbar backHref={`/${repo.full_name}`} />
 
       {/* PR number + title */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 4 }}>#{pr.number}</p>
@@ -368,7 +468,7 @@ function CodePanel({
 }: {
   node: GraphNode;
   repoID: string;
-  prID: string;
+  prID?: string;
   token: string;
   cachedCode?: NodeCodeResponse;
   onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
@@ -385,10 +485,11 @@ function CodePanel({
 
     let cancelled = false;
 
-    apiFetch<NodeCodeResponse>(
-      `/api/v1/repos/${repoID}/prs/${prID}/nodes/${node.id}/code`,
-      token
-    )
+    const path = prID
+      ? `/api/v1/repos/${repoID}/prs/${prID}/nodes/${node.id}/code`
+      : `/api/v1/repos/${repoID}/nodes/${node.id}/code`;
+
+    apiFetch<NodeCodeResponse>(path, token)
       .then((response) => {
         if (!cancelled) onCacheNodeCode(node.id, response);
       })

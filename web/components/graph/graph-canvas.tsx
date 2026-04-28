@@ -19,7 +19,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse } from "@/lib/types";
+import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel from "./node-detail-panel";
 
@@ -362,7 +362,25 @@ export function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGr
 }
 
 // ── Inner canvas ──────────────────────────────────────────────────────────────
-function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: string; token: string }) {
+type UnifiedGraph = GraphResponse | RepoGraphResponse;
+
+function isPRGraph(graph: UnifiedGraph): graph is GraphResponse {
+  return "pr" in graph;
+}
+
+function InnerCanvas({
+  graph,
+  repoID,
+  token,
+  repo,
+  prs = [],
+}: {
+  graph: UnifiedGraph;
+  repoID: string;
+  token: string;
+  repo?: Repository;
+  prs?: QueuePR[];
+}) {
   const { fitView } = useReactFlow();
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("overview");
@@ -444,7 +462,9 @@ function InnerCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: s
           setSelectedNode(n);
         }}
         repoID={repoID}
-        pr={graph.pr}
+        repo={repo ?? (isPRGraph(graph) ? fallbackRepo(repoID) : graph.repo)}
+        pr={isPRGraph(graph) ? graph.pr : undefined}
+        prs={prs}
         token={token}
         nodeCodeCache={nodeCodeCache}
         onCacheNodeCode={onCacheNodeCode}
@@ -535,10 +555,36 @@ function ZoomControls({ onFit }: { onFit: () => void }) {
   );
 }
 
-export default function GraphCanvas({ graph, repoID, token }: { graph: GraphResponse; repoID: string; token: string }) {
+export default function GraphCanvas({
+  graph,
+  repoID,
+  token,
+  repo,
+  prs,
+}: {
+  graph: UnifiedGraph;
+  repoID: string;
+  token: string;
+  repo?: Repository;
+  prs?: QueuePR[];
+}) {
   return (
     <ReactFlowProvider>
-      <InnerCanvas graph={graph} repoID={repoID} token={token} />
+      <InnerCanvas graph={graph} repoID={repoID} token={token} repo={repo} prs={prs} />
     </ReactFlowProvider>
   );
+}
+
+function fallbackRepo(repoID: string): Repository {
+  return {
+    id: repoID,
+    user_id: "",
+    installation_id: "",
+    github_repo_id: 0,
+    full_name: "",
+    default_branch: "main",
+    index_status: "ready",
+    is_active: true,
+    created_at: "",
+  };
 }
