@@ -13,8 +13,8 @@ This is a single-person prototype. Use only `main` and `preview` branches:
 
 - Can you make sure that all documentation is updated to reflect changes in the code. I should be able to use the documentation as a reliable source of the truth
 - Run development locally before relying on hosted deployments:
-  - API: from `api/`, run `PORT=8000 go run ./cmd/api`
-  - Web: from `web/`, run `NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev`
+  - API: from `api/`, run `go run ./cmd/api` (defaults to `http://localhost:8080`)
+  - Web: from `web/`, run `NEXT_PUBLIC_API_URL=http://localhost:8080 npm run dev`
   - Open the local web app at `http://localhost:3000`
 - After local verification passes, commit and push changes to `preview`
 - Use the hosted deployment at https://isoprism.com only for final verification after `preview` has been merged into `main`
