@@ -35,7 +35,7 @@ The primary review route mirrors the GitHub repository path:
 The repo route renders one persistent `GraphCanvas` and side panel:
 
 - A repo graph for the whole indexed system.
-- A ranked PR list in the repo overview panel.
+- A ranked PR list in the repo overview panel. Each PR card shows the author and changed-function diff count.
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.

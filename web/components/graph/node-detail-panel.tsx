@@ -164,21 +164,20 @@ function RepoSummaryPanel({
   loadingPRNumber?: number | null;
   onSelectPR: (prNumber: number) => void;
 }) {
+  const { owner, name } = splitRepoFullName(repo.full_name);
+
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
       <p style={{ color: "#888888", fontSize: 12, margin: "0 0 6px 0", wordBreak: "break-all" }}>
-        {repo.full_name}
+        {owner}
       </p>
       <h1 style={{ color: "#111111", fontSize: 18, fontWeight: 600, margin: "0 0 8px 0" }}>
-        Repository graph
+        {name}
       </h1>
-      <p style={{ color: "#666666", fontSize: 13, lineHeight: 1.5, margin: "0 0 18px 0" }}>
-        Browse indexed nodes, calls, and tests from {repo.default_branch}.
-      </p>
 
       {prs.length > 0 && (
         <>
-          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, marginTop: 20 }}>
             Pull requests
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
@@ -208,6 +207,16 @@ function RepoSummaryPanel({
                     Loading graph...
                   </span>
                 )}
+                <span style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  {pr.author_login && (
+                    <span style={repoPRBadgeStyle}>
+                      {pr.author_login}
+                    </span>
+                  )}
+                  <span style={repoPRBadgeStyle}>
+                    {pr.nodes_changed} {pr.nodes_changed === 1 ? "function" : "functions"} changed
+                  </span>
+                </span>
                 {pr.summary && (
                   <span style={{ color: "#666666", display: "block", fontSize: 12, lineHeight: 1.45, marginTop: 6 }}>
                     {pr.summary}
@@ -227,6 +236,22 @@ function RepoSummaryPanel({
     </div>
   );
 }
+
+function splitRepoFullName(fullName: string): { owner: string; name: string } {
+  const [owner, name] = fullName.split("/");
+  return { owner: owner || fullName, name: name || fullName };
+}
+
+const repoPRBadgeStyle: CSSProperties = {
+  background: "#F0F0F0",
+  border: "1px solid #D4D4D4",
+  borderRadius: 4,
+  color: "#666666",
+  display: "inline-flex",
+  fontSize: 11,
+  lineHeight: 1.3,
+  padding: "2px 6px",
+};
 
 function PRSummaryPanel({
   pr,
