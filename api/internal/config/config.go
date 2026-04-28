@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -19,7 +20,8 @@ type Config struct {
 	AnthropicAPIKey string
 	OpenAIAPIKey    string
 
-	FrontendURL string
+	FrontendURL  string
+	FrontendURLs []string
 }
 
 func Load() (*Config, error) {
@@ -33,9 +35,25 @@ func Load() (*Config, error) {
 		GitHubClientSecret:     mustGetEnv("GITHUB_CLIENT_SECRET"),
 		AnthropicAPIKey:        getEnv("ANTHROPIC_API_KEY", ""),
 		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", ""),
-		FrontendURL:            getEnv("FRONTEND_URL", "http://localhost:3000"),
+		FrontendURL:            getEnv("FRONTEND_URL", "https://isoprism.com"),
 	}
+	cfg.FrontendURLs = frontendURLs(cfg.FrontendURL)
 	return cfg, nil
+}
+
+func frontendURLs(defaultURL string) []string {
+	raw := getEnv("FRONTEND_URLS", defaultURL+",http://localhost:3000")
+	seen := make(map[string]bool)
+	var urls []string
+	for _, value := range strings.Split(raw, ",") {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		urls = append(urls, value)
+	}
+	return urls
 }
 
 func getEnv(key, fallback string) string {

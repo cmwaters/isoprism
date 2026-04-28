@@ -598,9 +598,13 @@ React Flow (`@xyflow/react`) with a concentric ring layout:
 | Service | Platform | Notes |
 |---|---|---|
 | Next.js frontend | Vercel | Auto-deploys from `main`; root set to `/web` |
-| Go API | Railway | Dockerfile in `/api`; single service, 512 MB RAM sufficient |
+| Go API | Railway | Deployed production API at `https://api.isoprism.com`; single service, 512 MB RAM sufficient |
 | Postgres + Auth | Supabase | Managed; free tier sufficient |
-| GitHub App | GitHub | Webhook URL → Railway service URL |
+| GitHub App | GitHub | Single production app; webhook URL → `https://api.isoprism.com/webhooks/github` |
+
+Frontend-only development happens on `preview` with the web app running at `http://localhost:3000` and `NEXT_PUBLIC_API_URL=https://api.isoprism.com`. API changes are production changes and are made on `main` so Railway deploys them before frontend work depends on them.
+
+The GitHub App install flow uses one production app. The web app encodes the current frontend origin in the GitHub install `state`, and the API redirects back to that origin only when it is listed in `FRONTEND_URLS`. Keep Railway configured with `FRONTEND_URL=https://isoprism.com` and `FRONTEND_URLS=https://isoprism.com,http://localhost:3000`.
 
 ### Environment Variables
 
@@ -613,6 +617,7 @@ GITHUB_APP_PRIVATE_KEY       PEM; literal \n sequences normalised on load
 GITHUB_WEBHOOK_SECRET
 ANTHROPIC_API_KEY
 FRONTEND_URL
+FRONTEND_URLS                    Comma-separated allowed frontend origins
 ```
 
 **Next.js (Vercel)**

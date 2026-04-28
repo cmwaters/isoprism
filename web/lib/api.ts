@@ -2,7 +2,8 @@
  * Thin wrapper around the Go API. All requests attach the Supabase session token.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "https://api.isoprism.com";
 
 export async function apiFetch<T>(
   path: string,

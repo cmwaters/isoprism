@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { API_URL } from "@/lib/api";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -17,22 +18,19 @@ export async function GET(request: NextRequest) {
 
       // Otherwise, ask the shared auth-status helper where to send the user.
       const userId = data.session.user.id;
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
-      if (apiUrl) {
-        try {
-          const statusRes = await fetch(
-            `${apiUrl}/api/v1/auth/status?user_id=${userId}`
-          );
-          if (statusRes.ok) {
-            const { redirect } = await statusRes.json();
-            if (redirect) {
-              return NextResponse.redirect(`${origin}${redirect}`);
-            }
+      try {
+        const statusRes = await fetch(
+          `${API_URL}/api/v1/auth/status?user_id=${userId}`
+        );
+        if (statusRes.ok) {
+          const { redirect } = await statusRes.json();
+          if (redirect) {
+            return NextResponse.redirect(`${origin}${redirect}`);
           }
-        } catch {
-          // Fall through to default
         }
+      } catch {
+        // Fall through to default
       }
 
       return NextResponse.redirect(`${origin}/onboarding`);

@@ -4,23 +4,24 @@
 
 | Layer    | Service   | Project / URL                        |
 |----------|-----------|--------------------------------------|
-| Frontend | Vercel    | `isoprism` → https://isoprism.dev |
-| Backend  | Railway   | `isoprism` → https://api.isoprism.dev |
+| Frontend | Vercel    | `isoprism` → https://isoprism.com |
+| Backend  | Railway   | `isoprism` → https://api.isoprism.com |
 | Database | Supabase  | `Isoprism` (ref: `ixgwhpigkkxpmllzlulc`) |
+| GitHub App | GitHub | Single production app used by local web, API, and production web |
 
-All three are deployed to production only — no staging environment yet.
+The API and GitHub App are production-only. Frontend iteration happens locally on `preview` while pointing at the deployed Railway API.
 
 ---
 
 ## Vercel (Frontend)
 
 **Project:** `isoprism` in the `cmwaters-projects` team
-**Production URL:** https://isoprism.dev
+**Production URL:** https://isoprism.com
 **Source:** `web/` subdirectory of the `isoprism` GitHub repo
 **Root directory** (set in Vercel dashboard): `web/`
 
 ### Deploy workflow
-Pushes to `main` on GitHub auto-deploy to production via the Vercel GitHub integration. No manual deploy step needed.
+Pushes to `main` on GitHub auto-deploy to production via the Vercel GitHub integration. Develop frontend changes locally on `preview`; merge `preview` into `main` only when the UI is ready to ship.
 
 ### CLI
 
@@ -47,11 +48,28 @@ cd web && vercel --prod
 
 **Project:** `isoprism`
 **Service:** `isoprism`
-**Production URL:** https://api.isoprism.dev
+**Production URL:** https://api.isoprism.com
 **Source:** `api/` subdirectory, built via `railway.toml`
 
 ### Deploy workflow
-Pushes to `main` on GitHub auto-deploy via Railway's GitHub integration.
+Pushes to `main` on GitHub auto-deploy via Railway's GitHub integration. API changes are production changes and should be made on `main`.
+
+### GitHub App
+
+Use one production GitHub App for both local frontend development and production. The app webhook URL points at the Railway API:
+
+```text
+https://api.isoprism.com/webhooks/github
+```
+
+When developing the web app locally, the install link sends the current frontend origin through GitHub's `state` parameter. The Railway API only redirects back to origins listed in `FRONTEND_URLS`, so one production GitHub App can serve both `https://isoprism.com` and `http://localhost:3000`.
+
+Recommended Railway values:
+
+```text
+FRONTEND_URL=https://isoprism.com
+FRONTEND_URLS=https://isoprism.com,http://localhost:3000
+```
 
 ### CLI
 
@@ -132,7 +150,9 @@ supabase db dump --linked | grep -E "pr_check_runs|pr_review_threads|pr_review_r
 | `GITHUB_APP_ID` | Railway service env | Go API → GitHub App |
 | `GITHUB_APP_PRIVATE_KEY` | Railway service env | Go API → GitHub App |
 | `GITHUB_WEBHOOK_SECRET` | Railway service env | Go API → webhook validation |
+| `FRONTEND_URL` | Railway service env | Go API → default OAuth/install redirect |
+| `FRONTEND_URLS` | Railway service env | Go API → allowed CORS origins and allowed install redirect origins |
 | `NEXT_PUBLIC_SUPABASE_URL` | Vercel project env | Next.js |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel project env | Next.js |
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel project env | Next.js server (if needed) |
-| `NEXT_PUBLIC_API_URL` | Vercel project env | Next.js → Go API |
+| `NEXT_PUBLIC_API_URL` | Vercel project env and local shell | Next.js → Go API; defaults to `https://api.isoprism.com` |

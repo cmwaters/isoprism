@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,6 +20,7 @@ type GitHubHandler struct {
 	AppClient     *github.AppClient
 	WebhookSecret string
 	FrontendURL   string
+	FrontendURLs  []string
 	Enricher      *ai.Enricher
 }
 
@@ -165,11 +168,11 @@ func (h *GitHubHandler) handleInstallationReposEvent(ctx context.Context, body [
 func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	installationIDStr := r.URL.Query().Get("installation_id")
-	userID := r.URL.Query().Get("state") // Supabase user UUID passed as state
+	userID, redirectBaseURL := h.parseInstallState(r.URL.Query().Get("state"))
 	setupAction := r.URL.Query().Get("setup_action")
 
 	if setupAction == "request" {
-		http.Redirect(w, r, h.FrontendURL+"/request-sent", http.StatusFound)
+		http.Redirect(w, r, redirectBaseURL+"/request-sent", http.StatusFound)
 		return
 	}
 
@@ -235,10 +238,45 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 	}
 
 	if setupAction == "update" {
-		http.Redirect(w, r, h.FrontendURL+"/onboarding/repos", http.StatusFound)
+		http.Redirect(w, r, redirectBaseURL+"/onboarding/repos", http.StatusFound)
 	} else {
-		http.Redirect(w, r, h.FrontendURL+"/onboarding/repos", http.StatusFound)
+		http.Redirect(w, r, redirectBaseURL+"/onboarding/repos", http.StatusFound)
 	}
+}
+
+type installState struct {
+	UserID      string `json:"user_id"`
+	FrontendURL string `json:"frontend_url"`
+}
+
+func (h *GitHubHandler) parseInstallState(raw string) (string, string) {
+	redirectBaseURL := h.FrontendURL
+	if raw == "" {
+		return "", redirectBaseURL
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return raw, redirectBaseURL
+	}
+
+	var state installState
+	if err := json.Unmarshal(decoded, &state); err != nil {
+		return raw, redirectBaseURL
+	}
+	if h.isAllowedFrontendURL(state.FrontendURL) {
+		redirectBaseURL = state.FrontendURL
+	}
+	return state.UserID, redirectBaseURL
+}
+
+func (h *GitHubHandler) isAllowedFrontendURL(frontendURL string) bool {
+	for _, allowed := range h.FrontendURLs {
+		if frontendURL == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func splitRepoName(fullName string) []string {

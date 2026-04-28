@@ -28,7 +28,15 @@ export default function OnboardingPage() {
       return;
     }
 
-    window.location.href = `https://github.com/apps/${appName}/installations/new?state=${userID}`;
+    const state = btoa(JSON.stringify({
+      user_id: userID,
+      frontend_url: window.location.origin,
+    }))
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replaceAll("=", "");
+
+    window.location.href = `https://github.com/apps/${appName}/installations/new?state=${state}`;
   }
 
   return (

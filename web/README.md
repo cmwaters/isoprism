@@ -6,10 +6,14 @@ Isoprism is a PR review interface that turns code changes into a semantic call g
 
 ```bash
 npm install
-npm run dev
+NEXT_PUBLIC_API_URL=https://api.isoprism.com npm run dev
 ```
 
-The web app runs on [http://localhost:3000](http://localhost:3000). It talks to the Go API at `NEXT_PUBLIC_API_URL`, defaulting to `http://localhost:8080`.
+The web app runs on [http://localhost:3000](http://localhost:3000). It talks to the Railway Go API at `NEXT_PUBLIC_API_URL`, defaulting to `https://api.isoprism.com`.
+
+Local frontend development uses the single production GitHub App and the deployed API. GitHub App installs started from localhost redirect back to localhost through the encoded install `state`, as long as the Railway API includes `http://localhost:3000` in `FRONTEND_URLS`.
+
+If an API change is required, make that change on `main`, deploy it to Railway, then continue frontend iteration on `preview`.
 
 Useful checks:
 

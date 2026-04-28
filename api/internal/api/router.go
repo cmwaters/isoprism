@@ -25,7 +25,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{cfg.FrontendURL},
+		AllowedOrigins:   cfg.FrontendURLs,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -38,6 +38,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		AppClient:     appClient,
 		WebhookSecret: cfg.GitHubWebhookSecret,
 		FrontendURL:   cfg.FrontendURL,
+		FrontendURLs:  cfg.FrontendURLs,
 		Enricher:      enricher,
 	}
 	repoHandler := &handlers.RepoHandler{DB: db}

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { API_URL } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -9,13 +10,12 @@ export default async function RootPage() {
 
   if (!user) redirect("/login");
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
   let redirectPath = "/login";
 
   // Direct site visits are login-first. The auth callback is the place where
   // a signed-in user with no connected repos is sent to GitHub App install.
   try {
-    const res = await fetch(`${apiUrl}/api/v1/auth/status?user_id=${user.id}`, {
+    const res = await fetch(`${API_URL}/api/v1/auth/status?user_id=${user.id}`, {
       cache: "no-store",
     });
 
