@@ -86,7 +86,7 @@ export default function NodeDetailPanel({
             pr ? (
               <PRSummaryPanel pr={pr} repo={repo} allNodes={allNodes} onSelectNode={onSelectNode} />
             ) : (
-              <RepoSummaryPanel repo={repo} prs={prs ?? []} allNodes={allNodes} repoID={repoID} onSelectNode={onSelectNode} />
+              <RepoSummaryPanel repo={repo} prs={prs ?? []} allNodes={allNodes} />
             )
         ) : (
         <NodeDetail
@@ -143,18 +143,11 @@ function RepoSummaryPanel({
   repo,
   prs,
   allNodes,
-  repoID,
-  onSelectNode,
 }: {
   repo: Repository;
   prs: QueuePR[];
   allNodes: GraphNode[];
-  repoID: string;
-  onSelectNode: (id: string) => void;
 }) {
-  const entryNodes = allNodes.filter((n) => n.node_type === "entrypoint");
-  const visibleNodes = entryNodes.length > 0 ? entryNodes : allNodes.slice(0, 12);
-
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
       <p style={{ color: "#888888", fontSize: 12, margin: "0 0 6px 0", wordBreak: "break-all" }}>
@@ -195,28 +188,6 @@ function RepoSummaryPanel({
                   </span>
                 )}
               </a>
-            ))}
-          </div>
-        </>
-      )}
-
-      {visibleNodes.length > 0 && (
-        <>
-          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-            Nodes
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {visibleNodes.map((n) => (
-              <button
-                key={n.id}
-                onClick={() => onSelectNode(n.id)}
-                style={{
-                  background: "#F0F0F0", border: "none", borderRadius: 4,
-                  padding: "4px 8px", cursor: "pointer", textAlign: "left",
-                }}
-              >
-                <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
-              </button>
             ))}
           </div>
         </>

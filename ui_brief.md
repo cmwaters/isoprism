@@ -274,7 +274,7 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 | `PRCard` | Single PR row: title, summary, badges, chevron |
 | `GraphCanvas` | Concentric-ring graph canvas (pan/zoom/click), `#EBE9E9` bg |
 | `GraphNode` | Kind-colored card: package label, function name, params, return types. Diff pills rendered below (not inside) the card. |
-| `NodeDetailPanel` | Left panel with three states: placeholder (no PR), PR summary (PR open, no node), node detail (node selected, with top-left back control returning to PR summary) |
+| `NodeDetailPanel` | Left panel with repo summary, PR summary, node detail, and code states. Repo summary shows repository context and ranked PRs; nodes are selected from the graph canvas. |
 | `PRSummaryPanel` | PR title, author, +/- stats, AI summary bullets, test plan bullets, changes list |
 | `DiffPills` | Green +N / red -N pill badges rendered below a graph node |
 | `TopBar` | PR breadcrumb, title, and GitHub link (`#E1E1E1` background) |
