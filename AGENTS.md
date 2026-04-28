@@ -2,15 +2,22 @@
 
 This is a single-person prototype. Use only `main` and `preview` branches:
 
-- Commit directly to `main` — no feature branches, no PRs
-- `preview` mirrors `main` (fast-forward only); sync it by merging `main` into `preview` and pushing both
+- Develop on `preview` — no feature branches, no PRs
+- Commit and push in-progress work to `preview`
+- Merge `preview` into `main` only when the details are finalised and the change is ready for production deployment
+- Keep `main` production-ready; do not use it for iterative development
 - Never create new branches or open pull requests
 - Don't worry about backwards compatibility or legacy code
 
 # Development flow
 
 - Can you make sure that all documentation is updated to reflect changes in the code. I should be able to use the documentation as a reliable source of the truth
-- After local verification passes, commit and push the changes to `main` so delivery can be verified through the deployment at https://isoprism.com
+- Run development locally before relying on hosted deployments:
+  - API: from `api/`, run `PORT=8000 go run ./cmd/api`
+  - Web: from `web/`, run `NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev`
+  - Open the local web app at `http://localhost:3000`
+- After local verification passes, commit and push changes to `preview`
+- Use the hosted deployment at https://isoprism.com only for final verification after `preview` has been merged into `main`
 
 # Debug tooling
 
