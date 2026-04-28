@@ -22,20 +22,23 @@ npm run build
 
 The root route is login-first: unauthenticated visitors go to `/login`, and signed-in visitors only skip login when `GET /api/v1/auth/status?user_id=...` returns a ready repo (`/{owner}/{repo}`) or an installed-but-unindexed repo (`/onboarding/repos`). If auth status returns `/onboarding`, root maps that to `/login`; the OAuth callback keeps `/onboarding` so newly signed-in GitHub users without a connected Isoprism repo are prompted to install the GitHub App and grant repo permissions.
 
-## Repository and PR graph view
+## Repository Graph View
 
-The primary graph routes mirror GitHub paths:
+The primary review route mirrors the GitHub repository path:
 
 - `/{owner}/{repo}` fetches `GET /api/v1/repos/{repoID}/graph` plus `GET /api/v1/repos/{repoID}/queue`.
-- `/{owner}/{repo}/pull/{number}` fetches `GET /api/v1/repos/{repoID}/prs/number/{number}/graph`.
 
-Both routes render the same `GraphCanvas` and side panel:
+The repo route renders one persistent `GraphCanvas` and side panel:
 
-- A call graph of changed nodes plus nearby caller/callee context.
-- A left side panel that defaults to the semantic overview.
+- A repo graph for the whole indexed system.
+- A ranked PR list in the repo overview panel.
+- In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
+- A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
 - Node cards with package/type labels, signatures, and added/removed/deleted pills.
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
+
+PR review does not have a separate route or page.
 
 The side panel has two modes:
 

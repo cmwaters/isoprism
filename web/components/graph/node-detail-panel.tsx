@@ -17,6 +17,9 @@ interface Props {
   repo: Repository;
   pr?: GraphPR;
   prs?: QueuePR[];
+  loadingPRNumber?: number | null;
+  onSelectPR: (prNumber: number) => void;
+  onBackToRepo: () => void;
   token: string;
   nodeCodeCache: Record<string, NodeCodeResponse>;
   onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
@@ -38,6 +41,9 @@ export default function NodeDetailPanel({
   repo,
   pr,
   prs,
+  loadingPRNumber,
+  onSelectPR,
+  onBackToRepo,
   token,
   nodeCodeCache,
   onCacheNodeCode,
@@ -84,9 +90,15 @@ export default function NodeDetailPanel({
         {!node || mode === "overview" ? (
           !node ? (
             pr ? (
-              <PRSummaryPanel pr={pr} repo={repo} allNodes={allNodes} onSelectNode={onSelectNode} />
+              <PRSummaryPanel pr={pr} allNodes={allNodes} onSelectNode={onSelectNode} onBackToRepo={onBackToRepo} />
             ) : (
-              <RepoSummaryPanel repo={repo} prs={prs ?? []} allNodes={allNodes} />
+              <RepoSummaryPanel
+                repo={repo}
+                prs={prs ?? []}
+                allNodes={allNodes}
+                loadingPRNumber={loadingPRNumber}
+                onSelectPR={onSelectPR}
+              />
             )
         ) : (
         <NodeDetail
@@ -143,10 +155,14 @@ function RepoSummaryPanel({
   repo,
   prs,
   allNodes,
+  loadingPRNumber,
+  onSelectPR,
 }: {
   repo: Repository;
   prs: QueuePR[];
   allNodes: GraphNode[];
+  loadingPRNumber?: number | null;
+  onSelectPR: (prNumber: number) => void;
 }) {
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
@@ -167,27 +183,37 @@ function RepoSummaryPanel({
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
             {prs.map((pr) => (
-              <a
+              <button
                 key={pr.id}
-                href={`/${repo.full_name}/pull/${pr.number}`}
+                type="button"
+                onClick={() => onSelectPR(pr.number)}
+                disabled={loadingPRNumber === pr.number}
                 style={{
                   background: "#FFFFFF",
                   border: "1px solid #D4D4D4",
                   borderRadius: 6,
                   color: "#111111",
                   display: "block",
+                  cursor: loadingPRNumber === pr.number ? "wait" : "pointer",
+                  fontFamily: "inherit",
                   padding: 12,
-                  textDecoration: "none",
+                  textAlign: "left",
+                  width: "100%",
                 }}
               >
                 <span style={{ color: "#AAAAAA", fontSize: 12, marginRight: 6 }}>#{pr.number}</span>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{pr.title}</span>
+                {loadingPRNumber === pr.number && (
+                  <span style={{ color: "#888888", display: "block", fontSize: 12, marginTop: 6 }}>
+                    Loading graph...
+                  </span>
+                )}
                 {pr.summary && (
                   <span style={{ color: "#666666", display: "block", fontSize: 12, lineHeight: 1.45, marginTop: 6 }}>
                     {pr.summary}
                   </span>
                 )}
-              </a>
+              </button>
             ))}
           </div>
         </>
@@ -204,14 +230,14 @@ function RepoSummaryPanel({
 
 function PRSummaryPanel({
   pr,
-  repo,
   allNodes,
   onSelectNode,
+  onBackToRepo,
 }: {
   pr: GraphPR;
-  repo: Repository;
   allNodes: GraphNode[];
   onSelectNode: (id: string) => void;
+  onBackToRepo: () => void;
 }) {
   const changedNodes = allNodes.filter((n) => n.node_type === "changed");
   const totalAdded = changedNodes.reduce((s, n) => s + (n.lines_added || 0), 0);
@@ -219,7 +245,7 @@ function PRSummaryPanel({
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <PanelToolbar backHref={`/${repo.full_name}`} />
+      <PanelToolbar backOnClick={onBackToRepo} />
 
       {/* PR number + title */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 4 }}>#{pr.number}</p>

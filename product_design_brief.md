@@ -62,15 +62,15 @@ Each PR in the list shows:
 - Number of functions affected
 - A one-line summary of what the PR does
 
-The user views a repository at the same path GitHub uses (`/{owner}/{repo}`), with the PR list and repository graph on one page. Clicking a PR keeps the GitHub URL shape (`/{owner}/{repo}/pull/{number}`) and adds PR-specific change summaries to the same graph review interface.
+The user views a repository at the same path GitHub uses (`/{owner}/{repo}`), with the PR list and repository graph on one page. Clicking a PR keeps the user on that same URL, swaps the graph in place, and adds PR-specific change summaries to the same review interface.
 
 ---
 
-### Screen 4 — PR Graph View
+### Screen 4 — Graph Workspace
 
 This is the core of the prototype.
 
-The screen shows an **interactive graph** where each node is a **function** in the call path affected by the PR. The graph reveals not just what files changed, but which functions changed, what those functions do, and how they connect.
+The screen shows an **interactive graph** where each node is a **function** in the repository or in the call path affected by the selected PR. The graph reveals not just what files changed, but which functions changed, what those functions do, and how they connect. Repo browsing and PR review happen in the same mounted workspace at `/{owner}/{repo}`.
 
 **Each node contains:**
 - Function name
@@ -89,7 +89,7 @@ The user can:
 - Pan and zoom the graph freely
 - Click any node to expand it into a focused detail panel showing the full function body diff alongside the summary
 - Navigate between nodes using keyboard arrows or by clicking edges
-- Return to the queue from a breadcrumb at the top
+- Switch between the whole-system repo graph and PR-specific diff graph without changing pages
 
 ---
 

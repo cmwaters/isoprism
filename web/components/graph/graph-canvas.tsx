@@ -20,6 +20,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
+import { apiFetch } from "@/lib/api";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel from "./node-detail-panel";
 
@@ -382,27 +383,30 @@ function InnerCanvas({
   prs?: QueuePR[];
 }) {
   const { fitView } = useReactFlow();
+  const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
+  const [prGraphCache, setPRGraphCache] = useState<Record<number, GraphResponse>>({});
+  const [loadingPRNumber, setLoadingPRNumber] = useState<number | null>(null);
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("overview");
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
 
-  const initialNodes: Node[] = useMemo(() => graph.nodes.map((n) => ({
+  const initialNodes: Node[] = useMemo(() => activeGraph.nodes.map((n) => ({
     id: n.id,
     type: "graphNode",
     data: { node: n },
     position: { x: 0, y: 0 },
-  })), [graph.nodes]);
+  })), [activeGraph.nodes]);
 
-  const baseEdges: Edge[] = useMemo(() => graph.edges.map((e, idx) => ({
+  const baseEdges: Edge[] = useMemo(() => activeGraph.edges.map((e, idx) => ({
     id: `e${idx}`,
     source: e.caller_id,
     target: e.callee_id,
     type: "smartBezier",
-  })), [graph.edges]);
+  })), [activeGraph.edges]);
 
-  const [nodes, , onNodesChange] = useNodesState(
-    concentricLayout(initialNodes, baseEdges, graph.nodes)
+  const [nodes, setNodes, onNodesChange] = useNodesState(
+    concentricLayout(initialNodes, baseEdges, activeGraph.nodes)
   );
 
   // Recompute edge styles whenever selection changes
@@ -424,15 +428,22 @@ function InnerCanvas({
   const onEdgesChange = useCallback(() => {}, []);
 
   useEffect(() => {
+    setActiveGraph(graph);
+  }, [graph]);
+
+  useEffect(() => {
+    setNodes(concentricLayout(initialNodes, baseEdges, activeGraph.nodes));
+    setSelectedNode(null);
+    setPanelMode("overview");
     setTimeout(() => fitView({ padding: 0.15 }), 50);
-  }, [fitView]);
+  }, [activeGraph, baseEdges, fitView, initialNodes, setNodes]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
-      const apiNode = graph.nodes.find((n) => n.id === node.id) ?? null;
+      const apiNode = activeGraph.nodes.find((n) => n.id === node.id) ?? null;
       setSelectedNode(apiNode);
     },
-    [graph.nodes]
+    [activeGraph.nodes]
   );
 
   const onPaneClick = useCallback(() => {
@@ -448,23 +459,47 @@ function InnerCanvas({
     setNodeCodeCache((current) => current[nodeID] ? current : { ...current, [nodeID]: code });
   }, []);
 
-  const totalNodes = graph.nodes.length;
+  const onSelectPR = useCallback(async (prNumber: number) => {
+    const cached = prGraphCache[prNumber];
+    if (cached) {
+      setActiveGraph(cached);
+      return;
+    }
+
+    setLoadingPRNumber(prNumber);
+    try {
+      const prGraph = await apiFetch<GraphResponse>(`/api/v1/repos/${repoID}/prs/number/${prNumber}/graph`, token);
+      setPRGraphCache((current) => ({ ...current, [prNumber]: prGraph }));
+      setActiveGraph(prGraph);
+    } finally {
+      setLoadingPRNumber(null);
+    }
+  }, [prGraphCache, repoID, token]);
+
+  const onBackToRepo = useCallback(() => {
+    setActiveGraph(graph);
+  }, [graph]);
+
+  const totalNodes = activeGraph.nodes.length;
   const maxNodes = 20;
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw" }}>
       <NodeDetailPanel
         node={selectedNode}
-        allNodes={graph.nodes}
-        edges={graph.edges}
+        allNodes={activeGraph.nodes}
+        edges={activeGraph.edges}
         onSelectNode={(id) => {
-          const n = graph.nodes.find((n) => n.id === id) ?? null;
+          const n = activeGraph.nodes.find((n) => n.id === id) ?? null;
           setSelectedNode(n);
         }}
         repoID={repoID}
-        repo={repo ?? (isPRGraph(graph) ? fallbackRepo(repoID) : graph.repo)}
-        pr={isPRGraph(graph) ? graph.pr : undefined}
+        repo={repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo)}
+        pr={isPRGraph(activeGraph) ? activeGraph.pr : undefined}
         prs={prs}
+        loadingPRNumber={loadingPRNumber}
+        onSelectPR={onSelectPR}
+        onBackToRepo={onBackToRepo}
         token={token}
         nodeCodeCache={nodeCodeCache}
         onCacheNodeCode={onCacheNodeCode}

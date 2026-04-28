@@ -535,10 +535,9 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 /onboarding                      GitHub App install (first-time)
 /onboarding/repos                Repo selection → triggers RepoInit
 /                                Root: auth/status redirect to repo queue, repo selection, or login
-/{owner}/{repo}                  PR Queue (top 5 PRs) and repo graph
-/{owner}/{repo}/pull/[number]    PR Graph View
+/{owner}/{repo}                  Single repo/PR graph workspace with in-place PR switching
 /repos/[repoID]                  Legacy repo-ID route; redirects/falls back to canonical repo view
-/repos/[repoID]/pr/[prID]        Legacy PR-ID route; redirects/falls back to canonical PR view
+/repos/[repoID]/pr/[prID]        Legacy PR-ID route; redirects to the repo workspace
 /settings                        Repo management, delete account
 ```
 
@@ -566,7 +565,7 @@ React Flow (`@xyflow/react`) with a concentric ring layout:
 ### Data Fetching
 
 - **PR Queue page**: Server Component; fetches queue from Go API on every request. Manual refresh via `router.refresh()`.
-- **Repo/PR Graph page**: Server Components resolve GitHub-shaped URLs to the internal repo ID, fetch repo or PR graph data as needed, and pass it to the shared client-side `GraphCanvas`.
+- **Repo/PR Graph page**: The GitHub-shaped repo URL resolves to the internal repo ID, fetches the repo graph and PR queue, and passes them to the shared client-side `GraphCanvas`. Clicking a PR fetches `/prs/number/{number}/graph` in place and caches it for quick switching while the browser URL remains `/{owner}/{repo}`.
 - **Lazy code loading**: The side panel fetches repo source from `/nodes/{nodeID}/code` or PR source/diff data from `/prs/{prID}/nodes/{nodeID}/code` only when the user opens code mode, then caches each node response in the mounted graph view.
 - **PR description markdown**: `NodeDetailPanel` renders `GraphPR.body` with `react-markdown` and `remark-gfm`; HTML is not enabled, and links open in a new tab.
 - **Indexing status**: Client Component polls `GET /repos/{repoID}/status` every 2 seconds until `index_status = 'ready'`.

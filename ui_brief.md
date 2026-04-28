@@ -122,9 +122,9 @@
 
 ---
 
-## Screen 5 — PR Graph View
+## Screen 5 — Graph Workspace
 
-This is the primary screen. It has three distinct sub-views depending on context.
+This is the primary screen at `/{owner}/{repo}`. It has distinct sub-views depending on whether the user is browsing the repo graph, reviewing a selected PR graph, or inspecting a node.
 
 ```
 ┌──────────────────┬───────────────────────────────────────┐
@@ -139,7 +139,7 @@ This is the primary screen. It has three distinct sub-views depending on context
 
 ![RepoView](RepoView.png)
 
-Left panel shows "Select a node to inspect it." placeholder. Canvas shows the static graph for the repo's main branch — all nodes plain (no diff state).
+Left panel shows repository context and ranked PRs. Canvas shows the static graph for the repo's main branch — all nodes plain (no diff state). Clicking a PR loads and caches that PR graph in this same page without changing the browser URL.
 
 ---
 
@@ -251,7 +251,7 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 | Action | Result |
 |---|---|
 | Visit `/{owner}/{repo}` | Show repo graph, node detail panel, and ranked PR list |
-| Click PR card | Navigate to `/{owner}/{repo}/pull/{number}` and show PR change summaries in the same graph shell |
+| Click PR card | Stay on `/{owner}/{repo}`, load/cache the PR graph in place, and show PR change summaries in the same graph shell |
 | Click graph node | Open node detail panel (Sub-view C) |
 | Click ← in node detail | Clear selection, return to Sub-view B |
 | Click node chip in "Calls" / "Called by" | Select that node |

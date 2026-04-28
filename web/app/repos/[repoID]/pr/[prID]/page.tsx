@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { apiFetch } from "@/lib/api";
-import { GraphResponse, Repository } from "@/lib/types";
+import { Repository } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default async function PRGraphPage({ params }: Props) {
-  const { repoID, prID } = await params;
+  const { repoID } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -20,13 +20,11 @@ export default async function PRGraphPage({ params }: Props) {
   if (!token) redirect("/login");
 
   let repo: Repository;
-  let graph: GraphResponse;
   try {
     repo = await apiFetch<Repository>(`/api/v1/repos/${repoID}`, token);
-    graph = await apiFetch<GraphResponse>(`/api/v1/repos/${repoID}/prs/${prID}/graph`, token);
   } catch {
     redirect(`/repos/${repoID}`);
   }
 
-  redirect(`/${repo!.full_name}/pull/${graph!.pr.number}`);
+  redirect(`/${repo!.full_name}`);
 }
