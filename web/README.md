@@ -70,8 +70,9 @@ interface NodeCodeResponse {
 Expected behavior:
 
 - `modified`: may include both `base` and `head`, plus `diff_hunk`.
-- `added`: includes `head` when source can be fetched, plus `diff_hunk`.
-- `deleted`: includes `base` when source can be fetched, plus `diff_hunk`.
+- `added`: includes `head` when source can be fetched, plus a synthetic `diff_hunk` where every line of the new component is marked as added.
+- `deleted`: includes `base` when source can be fetched, plus a synthetic `diff_hunk` where every line of the removed component is marked as deleted.
+- `modified`: uses a component-scoped slice of the GitHub patch; added/deleted component stats are counted from the synthetic component hunks so moved/copied body lines are not undercounted as unchanged context.
 - Caller/callee context nodes are not PR changes; they show the head version when available.
 - If GitHub source fetching fails, the UI still uses `diff_hunk` from graph processing when present.
 

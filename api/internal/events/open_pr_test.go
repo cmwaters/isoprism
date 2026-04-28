@@ -54,3 +54,46 @@ func TestExtractComponentHunkSupportsDeletedComponent(t *testing.T) {
 		t.Fatalf("deleted component stats = +%d -%d, want +0 -4\n%s", added, removed, got)
 	}
 }
+
+func TestComponentDiffHunkTreatsAddedComponentBodyAsAdded(t *testing.T) {
+	patch := strings.Join([]string{
+		"@@ -10,7 +10,10 @@",
+		"+func registerHandlers(mux *http.ServeMux, s *store) {",
+		" \tmux.HandleFunc(\"POST /shorten\", func(w http.ResponseWriter, r *http.Request) {",
+		" \t\twriteJSON(w)",
+		" \t})",
+		"+}",
+	}, "\n")
+	body := strings.Join([]string{
+		"func registerHandlers(mux *http.ServeMux, s *store) {",
+		"\tmux.HandleFunc(\"POST /shorten\", func(w http.ResponseWriter, r *http.Request) {",
+		"\t\twriteJSON(w)",
+		"\t})",
+		"}",
+	}, "\n")
+
+	got := componentDiffHunk("added", patch, body, 0, 0, 55, 59)
+	added, removed := countDiffLines(got)
+
+	if added != 5 || removed != 0 {
+		t.Fatalf("added component stats = +%d -%d, want +5 -0\n%s", added, removed, got)
+	}
+	if strings.Contains(got, "\n ") {
+		t.Fatalf("added component diff should not keep context lines:\n%s", got)
+	}
+}
+
+func TestComponentDiffHunkTreatsDeletedComponentBodyAsRemoved(t *testing.T) {
+	body := strings.Join([]string{
+		"func Removed() {",
+		"\tcleanup()",
+		"}",
+	}, "\n")
+
+	got := componentDiffHunk("deleted", "", body, 30, 32, 0, 0)
+	added, removed := countDiffLines(got)
+
+	if added != 0 || removed != 3 {
+		t.Fatalf("deleted component stats = +%d -%d, want +0 -3\n%s", added, removed, got)
+	}
+}

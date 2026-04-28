@@ -335,9 +335,10 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 2. **Fetch diff:** `GET /repos/{owner}/{repo}/compare/{base_commit}...{head_sha}` — returns a list of changed files with their unified diffs.
 3. **Parse head commit:** For each changed file at `head_sha`, fetch content and parse it. Insert new production `code_nodes` at `commit_sha = head_sha` if not already present. Reuse existing `summary` where `body_hash` is unchanged.
 4. **Identify changed nodes:** Compare `body_hash` for each node between `base_commit_sha` and `head_sha`. Nodes with a differing hash are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`.
-5. **Generate change summaries:** For all `modified` and `added` nodes, call Claude with the diff hunk and new function body to generate `change_summary`. Batch into a single API call.
-6. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`).
-7. **Update PR:** Set `pull_requests.head_commit_sha = head_sha` and `graph_status = 'ready'`.
+5. **Build component diffs:** `modified` nodes keep a component-scoped slice of the GitHub patch. `added` and `deleted` nodes use synthetic component hunks where every source line is marked `+` or `-`, so semantic node stats count the whole new/removed component even when Git's file diff treats moved/copied body lines as unchanged context.
+6. **Generate change summaries:** For all `modified` and `added` nodes, call Claude with the diff hunk and new function body to generate `change_summary`. Batch into a single API call.
+7. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`).
+8. **Update PR:** Set `pull_requests.head_commit_sha = head_sha` and `graph_status = 'ready'`.
 
 ---
 

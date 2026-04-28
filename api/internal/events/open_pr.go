@@ -150,7 +150,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			changed = append(changed, changedNode{
 				node:       n,
 				changeType: changeType,
-				diffHunk:   extractComponentHunk(file.Patch, oldStart, oldEnd, n.LineStart, n.LineEnd),
+				diffHunk:   componentDiffHunk(changeType, file.Patch, n.Body, oldStart, oldEnd, n.LineStart, n.LineEnd),
 			})
 		}
 
@@ -174,7 +174,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 						changed = append(changed, changedNode{
 							node:       baseNode,
 							changeType: "deleted",
-							diffHunk:   extractComponentHunk(file.Patch, baseNode.LineStart, baseNode.LineEnd, 0, 0),
+							diffHunk:   componentDiffHunk("deleted", file.Patch, baseNode.Body, baseNode.LineStart, baseNode.LineEnd, 0, 0),
 						})
 					}
 				}
@@ -355,6 +355,33 @@ func nullIfZero(n int) interface{} {
 		return nil
 	}
 	return n
+}
+
+// componentDiffHunk returns the diff shown for a parsed component. Modified
+// components use the GitHub patch filtered to the component range. Added and
+// deleted components synthesize a full component hunk so semantic node stats
+// count the whole new/removed component, even when Git's file diff treats moved
+// body lines as unchanged context.
+func componentDiffHunk(changeType, patch, body string, oldStart, oldEnd, newStart, newEnd int) string {
+	switch changeType {
+	case "added":
+		return prefixSourceLines(body, '+')
+	case "deleted":
+		return prefixSourceLines(body, '-')
+	default:
+		return extractComponentHunk(patch, oldStart, oldEnd, newStart, newEnd)
+	}
+}
+
+func prefixSourceLines(source string, prefix byte) string {
+	if source == "" {
+		return ""
+	}
+	lines := strings.Split(source, "\n")
+	for i, line := range lines {
+		lines[i] = string(prefix) + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // extractComponentHunk returns only the diff lines that belong to one parsed
