@@ -147,15 +147,41 @@ func (h *GitHubHandler) handleInstallationReposEvent(ctx context.Context, body [
 	var userID string
 	h.DB.QueryRow(ctx, `select user_id from repositories where installation_id=$1 limit 1`, dbInstallationID).Scan(&userID)
 
+	var ghClient *github.Client
+	if userID != "" && len(payload.RepositoriesAdded) > 0 {
+		ghClient, err = h.AppClient.ClientForInstallation(ctx, payload.Installation.ID)
+		if err != nil {
+			log.Printf("webhook: installation_repositories: get GitHub client: %v", err)
+		}
+	}
+
 	for _, repo := range payload.RepositoriesAdded {
 		if userID == "" {
 			continue
 		}
+		defaultBranch := repo.DefaultBranch
+		if defaultBranch == "" && ghClient != nil {
+			if owner, name, ok := strings.Cut(repo.FullName, "/"); ok {
+				ghRepo, err := ghClient.GetRepository(ctx, owner, name)
+				if err != nil {
+					log.Printf("webhook: installation_repositories: fetch repo metadata for %s: %v", repo.FullName, err)
+				} else {
+					defaultBranch = ghRepo.DefaultBranch
+				}
+			}
+		}
+		if defaultBranch == "" {
+			log.Printf("webhook: installation_repositories: missing default branch for %s", repo.FullName)
+			continue
+		}
 		_, _ = h.DB.Exec(ctx, `
-			insert into repositories (user_id, installation_id, github_repo_id, full_name, is_active)
-			values ($1,$2,$3,$4,true)
-			on conflict (user_id, github_repo_id) do update set full_name=excluded.full_name, is_active=true
-		`, userID, dbInstallationID, repo.ID, repo.FullName)
+			insert into repositories (user_id, installation_id, github_repo_id, full_name, default_branch, is_active)
+			values ($1,$2,$3,$4,$5,true)
+			on conflict (user_id, github_repo_id) do update set
+				full_name      = excluded.full_name,
+				default_branch = excluded.default_branch,
+				is_active      = true
+		`, userID, dbInstallationID, repo.ID, repo.FullName, defaultBranch)
 	}
 	for _, repo := range payload.RepositoriesRemoved {
 		_, _ = h.DB.Exec(ctx, `update repositories set is_active=false where installation_id=$1 and github_repo_id=$2`, dbInstallationID, repo.ID)

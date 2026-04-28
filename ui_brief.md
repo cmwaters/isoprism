@@ -139,7 +139,7 @@ This is the primary screen at `/{owner}/{repo}`. It has distinct sub-views depen
 
 ![RepoView](RepoView.png)
 
-Left panel shows repository context and ranked PRs. Canvas shows the static graph for the repo's main branch — all nodes plain (no diff state). Clicking a PR loads and caches that PR graph in this same page without changing the browser URL.
+Left panel shows repository context and ranked PRs. Canvas shows the static graph for the repo's default branch — all nodes plain (no diff state). Clicking a PR loads and caches that PR graph in this same page without changing the browser URL.
 
 ---
 

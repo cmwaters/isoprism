@@ -132,8 +132,8 @@ repositories
   installation_id     uuid FK → github_installations
   github_repo_id      bigint
   full_name           text            -- e.g. "acme/backend"
-  default_branch      text DEFAULT 'main'
-  main_commit_sha     text            -- HEAD of main as of last RepoInit or MergePR
+  default_branch      text DEFAULT 'main' -- persisted from GitHub metadata
+  main_commit_sha     text            -- HEAD of default branch as of last RepoInit or MergePR
   index_status        text DEFAULT 'pending'  -- 'pending' | 'running' | 'ready' | 'failed'
   is_active           boolean DEFAULT true
   created_at          timestamptz
@@ -274,7 +274,7 @@ pr_analyses
 | `pull_request` | opened, synchronize | `OpenPR` |
 | `pull_request` | closed (merged) | `MergePR` |
 | `installation` | deleted | Cleanup |
-| `installation_repositories` | added, removed | Repo sync |
+| `installation_repositories` | added, removed | Repo sync; stores the GitHub default branch for added repos |
 
 All webhooks verified with `X-Hub-Signature-256` HMAC before processing.
 
@@ -305,11 +305,11 @@ The backend is defined around three events. All other logic flows from them.
 
 **Trigger:** `POST /api/v1/repos/{repoID}/index` (called by frontend after repo selection)
 
-**Purpose:** Build the base code graph for the repository from the current HEAD of `main`.
+**Purpose:** Build the base code graph for the repository from the current HEAD of its GitHub default branch.
 
 **Steps:**
 
-1. Fetch the current HEAD commit SHA of `main` via `GET /repos/{owner}/{repo}/git/ref/heads/main`
+1. Fetch the current HEAD commit SHA of `repositories.default_branch` via `GET /repos/{owner}/{repo}/git/ref/heads/{default_branch}`
 2. Fetch the full file tree at that SHA via `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1`
 3. Filter to supported source files (`.go`, `.ts`, `.tsx`, `.js`, `.jsx`)
 4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse it to extract functions, methods, and types.

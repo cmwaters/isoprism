@@ -107,4 +107,4 @@ POST /debug/repos/{repoID}/reindex
 POST /debug/prs/{prID}/reprocess
 ```
 
-Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes`, `code_edges`, and `code_test_references` from main branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, and changed-file test references for one PR.
+Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes`, `code_edges`, and `code_test_references` from the repository default branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, and changed-file test references for one PR.

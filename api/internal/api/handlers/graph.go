@@ -284,8 +284,8 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		fnRows.Close()
 	}
 
-	// Find equivalent node IDs at the main branch commit (for edge lookups).
-	// code_edges are stored with main-branch node IDs during repo_init.
+	// Find equivalent node IDs at the indexed default branch commit (for edge lookups).
+	// code_edges are stored with default-branch node IDs during repo_init.
 	mainIDByFullName := map[string]string{}
 	fullNameByMainID := map[string]string{}
 	var mainChangedIDs []string
@@ -307,7 +307,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build lookup IDs: prefer main-branch IDs (so edges resolve), fall back to PR head IDs
+	// Build lookup IDs: prefer default-branch IDs (so edges resolve), fall back to PR head IDs
 	lookupIDs := make([]string, 0, len(mainChangedIDs)+len(changedIDs))
 	lookupIDs = append(lookupIDs, mainChangedIDs...)
 	// Also include PR-head IDs to catch edges built during open_pr
@@ -320,7 +320,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query call edges touching any of the lookup IDs (no commit_sha filter — edges
-	// may exist at either main SHA or PR head SHA depending on when they were built)
+	// may exist at either default-branch SHA or PR head SHA depending on when they were built)
 	type edgeRow struct{ callerID, calleeID string }
 	var allEdges []edgeRow
 	callerSet := map[string]bool{}
@@ -341,7 +341,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 				allEdges = append(allEdges, e)
 
 				// Determine caller/callee relative to changed nodes.
-				// An ID is "changed" if it's a main-branch equivalent of a changed node
+				// An ID is "changed" if it's a default-branch equivalent of a changed node
 				// or directly a PR-head changed node.
 				isChanged := func(id string) bool {
 					if _, ok := changedSet[id]; ok {
@@ -374,7 +374,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	for _, id := range changedIDs {
 		includedIDs[id] = true
 	}
-	// Also include main-branch changed IDs so we can resolve context edges
+	// Also include default-branch changed IDs so we can resolve context edges
 	for _, id := range mainChangedIDs {
 		includedIDs[id] = true
 	}
@@ -422,7 +422,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		nodeMap[n.ID] = n
 	}
 
-	// Tag node types. For nodes that appear in both PR-head and main-branch forms,
+	// Tag node types. For nodes that appear in both PR-head and default-branch forms,
 	// prefer the PR-head version (it has change info).
 	finalNodeMap := map[string]models.GraphNode{} // keyed by the ID we'll use in the response
 
@@ -446,7 +446,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		finalNodeMap[id] = n
 	}
 
-	// Build a lookup: main-branch ID → PR-head changed node ID (for edge remapping)
+	// Build a lookup: default-branch ID -> PR-head changed node ID (for edge remapping)
 	mainIDToPRID := map[string]string{}
 	for prID2, fn := range changedIDToFullName {
 		if mainID, ok := mainIDByFullName[fn]; ok {
@@ -456,7 +456,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// Second pass: add context nodes (caller/callee) that aren't already included
 	for id := range includedIDs {
-		// Skip if it's a main-branch equivalent of a changed node
+		// Skip if it's a default-branch equivalent of a changed node
 		if prEquiv, ok := mainIDToPRID[id]; ok {
 			_ = prEquiv
 			continue
@@ -476,7 +476,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		finalNodeMap[id] = n
 	}
 
-	// Remap edges: replace main-branch changed node IDs with their PR-head IDs
+	// Remap edges: replace default-branch changed node IDs with their PR-head IDs
 	remapID := func(id string) string {
 		if prEquiv, ok := mainIDToPRID[id]; ok {
 			return prEquiv

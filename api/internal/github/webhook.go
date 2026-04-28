@@ -46,8 +46,8 @@ func ReadAndVerify(r *http.Request, secret string) ([]byte, error) {
 // ---- Webhook payloads ----
 
 type WebhookPRPayload struct {
-	Action      string       `json:"action"`
-	Number      int          `json:"number"`
+	Action      string        `json:"action"`
+	Number      int           `json:"number"`
 	PullRequest GHPullRequest `json:"pull_request"`
 	Repository  struct {
 		ID       int64  `json:"id"`
@@ -69,8 +69,9 @@ type WebhookInstallationPayload struct {
 		} `json:"account"`
 	} `json:"installation"`
 	Repositories []struct {
-		ID       int64  `json:"id"`
-		FullName string `json:"full_name"`
+		ID            int64  `json:"id"`
+		FullName      string `json:"full_name"`
+		DefaultBranch string `json:"default_branch"`
 	} `json:"repositories"`
 }
 
@@ -80,9 +81,10 @@ type WebhookInstallationReposPayload struct {
 		ID int64 `json:"id"`
 	} `json:"installation"`
 	RepositoriesAdded []struct {
-		ID       int64  `json:"id"`
-		FullName string `json:"full_name"`
-		Name     string `json:"name"`
+		ID            int64  `json:"id"`
+		FullName      string `json:"full_name"`
+		Name          string `json:"name"`
+		DefaultBranch string `json:"default_branch"`
 	} `json:"repositories_added"`
 	RepositoriesRemoved []struct {
 		ID       int64  `json:"id"`
@@ -120,7 +122,7 @@ type WebhookPRReviewPayload struct {
 	Action string `json:"action"` // "submitted" | "dismissed" | "edited"
 	Review struct {
 		ID       int64  `json:"id"`
-		State    string `json:"state"`    // "approved" | "changes_requested" | "commented" | "dismissed"
+		State    string `json:"state"`     // "approved" | "changes_requested" | "commented" | "dismissed"
 		CommitID string `json:"commit_id"` // SHA at which the review was submitted
 		User     struct {
 			Login     string `json:"login"`

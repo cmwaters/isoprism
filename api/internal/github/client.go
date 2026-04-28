@@ -99,14 +99,14 @@ type GHPullRequest struct {
 		Ref string `json:"ref"`
 		SHA string `json:"sha"`
 	} `json:"base"`
-	Additions    int        `json:"additions"`
-	Deletions    int        `json:"deletions"`
-	ChangedFiles int        `json:"changed_files"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	ClosedAt     *time.Time `json:"closed_at"`
-	MergedAt     *time.Time `json:"merged_at"`
-	MergeCommitSHA *string  `json:"merge_commit_sha"`
+	Additions      int        `json:"additions"`
+	Deletions      int        `json:"deletions"`
+	ChangedFiles   int        `json:"changed_files"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	ClosedAt       *time.Time `json:"closed_at"`
+	MergedAt       *time.Time `json:"merged_at"`
+	MergeCommitSHA *string    `json:"merge_commit_sha"`
 }
 
 // GHTreeEntry is one file entry in the git tree.
@@ -135,6 +135,14 @@ func (c *Client) ListInstallationRepos(ctx context.Context) ([]InstallationRepo,
 		return nil, err
 	}
 	return result.Repositories, nil
+}
+
+func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*InstallationRepo, error) {
+	var result InstallationRepo
+	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s", owner, repo), &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]GHPullRequest, error) {
@@ -177,8 +185,8 @@ func (c *Client) GetBranchSHA(ctx context.Context, owner, repo, branch string) (
 // GetTree returns the full file tree at a given commit SHA.
 func (c *Client) GetTree(ctx context.Context, owner, repo, sha string) ([]GHTreeEntry, error) {
 	var result struct {
-		Tree     []GHTreeEntry `json:"tree"`
-		Truncated bool         `json:"truncated"`
+		Tree      []GHTreeEntry `json:"tree"`
+		Truncated bool          `json:"truncated"`
 	}
 	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/git/trees/%s?recursive=1", owner, repo, sha), &result); err != nil {
 		return nil, err
