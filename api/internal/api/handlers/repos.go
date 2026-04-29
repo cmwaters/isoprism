@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/isoprism/api/internal/models"
@@ -141,12 +143,120 @@ func (h *RepoHandler) GetRepoStatus(w http.ResponseWriter, r *http.Request) {
 		from pull_requests where repo_id = $1
 	`, repoID).Scan(&prCount, &readyCount)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"index_status": indexStatus,
 		"pr_count":     prCount,
 		"ready_count":  readyCount,
-	})
+	}
+
+	var job struct {
+		CommitSHA  string
+		Status     string
+		Phase      string
+		Message    sql.NullString
+		FilesTotal int
+		FilesDone  int
+		NodesTotal int
+		NodesDone  int
+		EdgesTotal int
+		EdgesDone  int
+		StartedAt  sql.NullTime
+		UpdatedAt  time.Time
+		Error      sql.NullString
+	}
+	err = h.DB.QueryRow(ctx, `
+		select commit_sha, status, phase, message,
+		       files_total, files_done, nodes_total, nodes_done, edges_total, edges_done,
+		       started_at, updated_at, error
+		from indexing_jobs
+		where repo_id=$1
+		order by created_at desc
+		limit 1
+	`, repoID).Scan(
+		&job.CommitSHA, &job.Status, &job.Phase, &job.Message,
+		&job.FilesTotal, &job.FilesDone, &job.NodesTotal, &job.NodesDone, &job.EdgesTotal, &job.EdgesDone,
+		&job.StartedAt, &job.UpdatedAt, &job.Error,
+	)
+	if err == nil {
+		percent := indexPercent(job.Status, job.Phase, job.FilesTotal, job.FilesDone, job.NodesTotal, job.NodesDone, job.EdgesTotal, job.EdgesDone)
+		jobInfo := map[string]interface{}{
+			"commit_sha":  job.CommitSHA,
+			"status":      job.Status,
+			"phase":       job.Phase,
+			"message":     job.Message.String,
+			"percent":     percent,
+			"files_total": job.FilesTotal,
+			"files_done":  job.FilesDone,
+			"nodes_total": job.NodesTotal,
+			"nodes_done":  job.NodesDone,
+			"edges_total": job.EdgesTotal,
+			"edges_done":  job.EdgesDone,
+			"updated_at":  job.UpdatedAt,
+		}
+		if job.Error.Valid {
+			jobInfo["error"] = job.Error.String
+		}
+		if eta := indexETASeconds(job.Status, percent, job.StartedAt); eta != nil {
+			jobInfo["eta_seconds"] = *eta
+		}
+		response["index_job"] = jobInfo
+		response["index_phase"] = job.Phase
+		response["index_message"] = job.Message.String
+		response["index_percent"] = percent
+		if eta := indexETASeconds(job.Status, percent, job.StartedAt); eta != nil {
+			response["eta_seconds"] = *eta
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func indexPercent(status, phase string, filesTotal, filesDone, nodesTotal, nodesDone, edgesTotal, edgesDone int) int {
+	if status == "ready" {
+		return 100
+	}
+	if status == "failed" {
+		return 0
+	}
+	switch phase {
+	case "queued", "pending":
+		return 2
+	case "fetching_tree":
+		return 5
+	case "fetching_files":
+		return 5 + scaledPercent(filesDone, filesTotal, 40)
+	case "writing_nodes":
+		return 45 + scaledPercent(nodesDone, nodesTotal, 20)
+	case "building_edges":
+		return 65 + scaledPercent(edgesDone, edgesTotal, 25)
+	case "extracting_tests":
+		return 92
+	default:
+		return 1
+	}
+}
+
+func scaledPercent(done, total, width int) int {
+	if total <= 0 {
+		return 0
+	}
+	if done > total {
+		done = total
+	}
+	return done * width / total
+}
+
+func indexETASeconds(status string, percent int, startedAt sql.NullTime) *int {
+	if status != "running" || !startedAt.Valid || percent < 5 || percent >= 100 {
+		return nil
+	}
+	elapsed := int(time.Since(startedAt.Time).Seconds())
+	if elapsed <= 0 {
+		return nil
+	}
+	remaining := elapsed * (100 - percent) / percent
+	return &remaining
 }
 
 // DELETE /api/v1/me — delete the current user's account and all their data.

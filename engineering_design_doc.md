@@ -139,6 +139,26 @@ repositories
   created_at          timestamptz
   UNIQUE (user_id, github_repo_id)
 
+-- Indexing jobs
+indexing_jobs
+  id                  uuid PK
+  repo_id             uuid FK → repositories
+  commit_sha          text
+  status              text DEFAULT 'pending'  -- 'pending' | 'running' | 'ready' | 'failed'
+  phase               text                    -- queued | fetching_files | writing_nodes | building_edges | extracting_tests | ready | failed
+  message             text
+  files_total         int DEFAULT 0
+  files_done          int DEFAULT 0
+  nodes_total         int DEFAULT 0
+  nodes_done          int DEFAULT 0
+  edges_total         int DEFAULT 0
+  edges_done          int DEFAULT 0
+  started_at          timestamptz
+  updated_at          timestamptz
+  finished_at         timestamptz
+  error               text
+  UNIQUE (repo_id, commit_sha)
+
 -- Pull requests
 pull_requests
   id                  uuid PK
@@ -307,6 +327,8 @@ The backend is defined around three events. All other logic flows from them.
 
 **Purpose:** Build the base code graph for the repository from the current HEAD of its GitHub default branch.
 
+`RepoInit` is idempotent per `(repo_id, commit_sha)`. If the current default-branch commit already has a `ready` `indexing_jobs` row, `POST /index` returns immediately and the UI opens the existing graph. If that commit is already `pending` or `running`, `POST /index` returns the existing job instead of starting another worker. A new job is created only when the default branch points to a new commit or a failed job is retried.
+
 **Steps:**
 
 1. Fetch the current HEAD commit SHA of `repositories.default_branch` via `GET /repos/{owner}/{repo}/git/ref/heads/{default_branch}`
@@ -319,7 +341,7 @@ The backend is defined around three events. All other logic flows from them.
 8. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes
 9. Generate optional AI summaries for production nodes in batches and update `code_nodes.summary` as they arrive
 
-Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` (returns `index_status`) every 2 seconds until `ready` or `failed`. `ready` means the structural graph is available; summaries may continue to fill in afterward.
+Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` every 2 seconds until `ready` or `failed`. The status response includes the current indexing job phase, progress percentage, counters, and a rough ETA. `ready` means the structural graph is available; summaries may continue to fill in afterward.
 
 ---
 
@@ -427,9 +449,9 @@ DELETE /api/v1/me
 
 GET    /api/v1/repos/{repoID}                             repo detail + index_status
 POST   /api/v1/repos/{repoID}/index                       trigger RepoInit
-GET    /api/v1/repos/{repoID}/status                      {index_status, pr_count, ready_count}
+GET    /api/v1/repos/{repoID}/status                      {index_status, index_job, index_percent, eta_seconds, pr_count, ready_count}
 GET    /api/v1/repos/{repoID}/queue                       top 5 PRs by urgency
-GET    /api/v1/repos/{repoID}/graph                       repo graph from main HEAD
+GET    /api/v1/repos/{repoID}/graph                       repo graph from default branch HEAD
 GET    /api/v1/repos/{repoID}/nodes/{nodeID}/code         lazy repo node source
 GET    /api/v1/repos/{repoID}/prs/{prID}/graph            PR graph (nodes + edges + deltas)
 GET    /api/v1/repos/{repoID}/prs/number/{number}/graph   PR graph by GitHub PR number

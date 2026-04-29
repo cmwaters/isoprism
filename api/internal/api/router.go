@@ -166,13 +166,77 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 		userID := r.Header.Get("X-User-ID")
 		ctx := r.Context()
 
-		var exists bool
-		db.QueryRow(ctx, `select exists(select 1 from repositories where id=$1 and user_id=$2)`, repoID, userID).Scan(&exists)
-		if !exists {
+		var installationID int64
+		var fullName, defaultBranch string
+		var mainCommitSHA *string
+		err := db.QueryRow(ctx, `
+			select gi.installation_id, r.full_name, r.default_branch, r.main_commit_sha
+			from repositories r
+			join github_installations gi on gi.id = r.installation_id
+			where r.id=$1 and r.user_id=$2
+		`, repoID, userID).Scan(&installationID, &fullName, &defaultBranch, &mainCommitSHA)
+		if err != nil {
 			http.Error(w, "repo not found", http.StatusNotFound)
 			return
 		}
 
+		ghClient, err := appClient.ClientForInstallation(ctx, installationID)
+		if err != nil {
+			http.Error(w, "github client error", http.StatusInternalServerError)
+			return
+		}
+		owner, repo, ok := strings.Cut(fullName, "/")
+		if !ok {
+			http.Error(w, "invalid repo name", http.StatusInternalServerError)
+			return
+		}
+		headSHA, err := ghClient.GetBranchSHA(ctx, owner, repo, defaultBranch)
+		if err != nil {
+			http.Error(w, "github branch error", http.StatusInternalServerError)
+			return
+		}
+
+		var jobStatus string
+		_ = db.QueryRow(ctx, `
+			select status from indexing_jobs
+			where repo_id=$1 and commit_sha=$2
+		`, repoID, headSHA).Scan(&jobStatus)
+
+		if jobStatus == "ready" || (mainCommitSHA != nil && *mainCommitSHA == headSHA) {
+			_, _ = db.Exec(ctx, `
+				update repositories set index_status='ready', main_commit_sha=$1 where id=$2
+			`, headSHA, repoID)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":     "already_indexed",
+				"repo_id":    repoID,
+				"commit_sha": headSHA,
+			})
+			return
+		}
+
+		if jobStatus == "running" || jobStatus == "pending" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":     "indexing_already_running",
+				"repo_id":    repoID,
+				"commit_sha": headSHA,
+			})
+			return
+		}
+
+		_, _ = db.Exec(ctx, `
+			insert into indexing_jobs (repo_id, commit_sha, status, phase, message, updated_at)
+			values ($1, $2, 'pending', 'queued', 'Queued for indexing', now())
+			on conflict (repo_id, commit_sha) do update set
+				status='pending',
+				phase='queued',
+				message='Queued for indexing',
+				updated_at=now(),
+				finished_at=null,
+				error=null
+		`, repoID, headSHA)
 		db.Exec(ctx, `update repositories set index_status='pending' where id=$1`, repoID)
 
 		go func() {
@@ -182,7 +246,11 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(map[string]string{"status": "indexing_started"})
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":     "indexing_started",
+			"repo_id":    repoID,
+			"commit_sha": headSHA,
+		})
 	}
 }
 
