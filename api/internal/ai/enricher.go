@@ -16,10 +16,9 @@ const model = "claude-sonnet-4-6"
 
 // NodeInput is a code node to be summarised.
 type NodeInput struct {
-	FullName  string
-	Signature string
-	Body      string
-	DiffHunk  string // empty for base nodes; set for PR delta nodes
+	FullName string
+	Body     string
+	DiffHunk string // empty for base nodes; set for PR delta nodes
 }
 
 // NodeOutput holds the AI-generated summaries.
@@ -101,7 +100,7 @@ Changed functions and their diffs:
 
 `)
 	for _, n := range nodes {
-		sb.WriteString(fmt.Sprintf("--- %s ---\nSignature: %s\nDiff:\n%s\n\n", n.FullName, n.Signature, n.DiffHunk))
+		sb.WriteString(fmt.Sprintf("--- %s ---\nDiff:\n%s\n\n", n.FullName, n.DiffHunk))
 	}
 
 	resp, err := e.call(ctx, sb.String(), 4096)

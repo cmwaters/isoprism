@@ -96,7 +96,6 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
       {/* Sidebar */}
       <div style={{ width: 240, background: "#E1E1E1", borderRight: "1px solid #D4D4D4", padding: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <GraphLogo />
           <span style={{ color: "#111111", fontSize: 15, fontWeight: 600 }}>Isoprism</span>
         </div>
       </div>
@@ -167,18 +166,6 @@ function formatETA(seconds?: number) {
   const minutes = Math.max(1, Math.round(seconds / 60));
   if (minutes === 1) return "About 1 minute remaining";
   return `About ${minutes} minutes remaining`;
-}
-
-function GraphLogo() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-      <circle cx="8" cy="16" r="4" fill="#111111" />
-      <circle cx="24" cy="8" r="4" fill="#111111" />
-      <circle cx="24" cy="24" r="4" fill="#111111" />
-      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
-      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
-    </svg>
-  );
 }
 
 function GitHubIcon() {

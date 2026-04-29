@@ -11,7 +11,7 @@ create table if not exists beta_invites (
   expires_at       timestamptz,
   accepted_at      timestamptz,
   completed_at     timestamptz,
-  user_id          uuid references users(id) on delete set null,
+  user_id          uuid references auth.users(id) on delete set null,
   selected_repo_id uuid references repositories(id) on delete set null,
   trial_starts_at  timestamptz,
   trial_ends_at    timestamptz,
@@ -21,7 +21,7 @@ create table if not exists beta_invites (
 create table if not exists beta_feedback (
   id                uuid primary key default gen_random_uuid(),
   invite_id         uuid references beta_invites(id) on delete set null,
-  user_id           uuid references users(id) on delete set null,
+  user_id           uuid references auth.users(id) on delete set null,
   repo_id           uuid references repositories(id) on delete set null,
   pull_request_id   uuid references pull_requests(id) on delete set null,
   node_id           uuid references code_nodes(id) on delete set null,
@@ -37,7 +37,7 @@ create table if not exists beta_feedback (
 create table if not exists beta_questionnaires (
   id                   uuid primary key default gen_random_uuid(),
   invite_id            uuid not null references beta_invites(id) on delete cascade,
-  user_id              uuid references users(id) on delete set null,
+  user_id              uuid references auth.users(id) on delete set null,
   repo_id              uuid references repositories(id) on delete set null,
   faster_rating        int,
   risk_clarity_rating  int,

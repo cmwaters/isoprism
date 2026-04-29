@@ -17,16 +17,14 @@ type BetaTester = {
   id: string;
   beta_id: string;
   name: string;
+  link: string;
+  token?: string | null;
   email?: string | null;
-  status: string;
   invited_at: string;
-  accepted_at?: string | null;
   completed_at?: string | null;
   user_id?: string | null;
   selected_repo_id?: string | null;
   selected_repo_full_name?: string | null;
-  trial_starts_at?: string | null;
-  trial_ends_at?: string | null;
   questionnaire_submitted_at?: string | null;
   questionnaire?: BetaQuestionnaire | null;
 };
@@ -49,6 +47,7 @@ export default function BetaAdminPage() {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState("");
 
   const activePassword = savedPassword || password;
 
@@ -140,18 +139,25 @@ export default function BetaAdminPage() {
     }
   }
 
+  async function copyValue(value: string, label: string) {
+    try {
+      await writeClipboard(value);
+      setError("");
+      setCopied(label);
+      window.setTimeout(() => setCopied((current) => current === label ? "" : current), 1600);
+    } catch {
+      setError("Could not copy to clipboard.");
+    }
+  }
+
   const sortedTesters = useMemo(() => testers, [testers]);
 
   if (!savedPassword) {
     return (
       <AdminShell>
         <section style={loginPanelStyle}>
-          <div style={eyebrowStyle}>Admin</div>
-          <h1 style={titleStyle}>Beta testers</h1>
-          <p style={copyStyle}>Enter the admin password to manage beta invite links and tester progress.</p>
-
           <form
-            style={{ display: "grid", gap: 12, marginTop: 22 }}
+            style={{ display: "grid", gap: 12 }}
             onSubmit={(event) => {
               event.preventDefault();
               void loadTesters(password);
@@ -220,11 +226,11 @@ export default function BetaAdminPage() {
 
           {created && (
             <div style={createdBoxStyle}>
-              <div style={rowTitleStyle}>{created.name} · {created.beta_id}</div>
+              <CopyRow label="Tester ID" value={`${created.name} · ${created.beta_id}`} copied={copied} onCopy={copyValue} />
               <div style={smallLabelStyle}>Raw token, shown once</div>
-              <code style={codeBlockStyle}>{created.token}</code>
+              <CopyRow label="Token" value={created.token} copied={copied} onCopy={copyValue} code />
               <div style={smallLabelStyle}>Invite link</div>
-              <code style={codeBlockStyle}>{created.link}</code>
+              <CopyRow label="Invite link" value={created.link} copied={copied} onCopy={copyValue} code />
             </div>
           )}
         </section>
@@ -240,7 +246,7 @@ export default function BetaAdminPage() {
           <div style={tableStyle}>
             <div style={tableHeaderStyle}>
               <span>Tester</span>
-              <span>Status</span>
+              <span>Invite link</span>
               <span>Repository</span>
               <span>Questionnaire</span>
             </div>
@@ -255,20 +261,25 @@ export default function BetaAdminPage() {
                     <button style={rowButtonStyle} onClick={() => setExpandedID(expanded ? null : tester.id)}>
                       <div>
                         <div style={rowTitleStyle}>{tester.name}</div>
-                        <div style={rowMetaStyle}>{tester.beta_id}</div>
+                        <div style={rowMetaStyle}>{tester.user_id ?? tester.beta_id}</div>
                       </div>
-                      <StatusPill status={tester.status} used={Boolean(tester.accepted_at || tester.user_id)} />
+                      <div style={rowMetaStrongStyle}>{tester.link || "Not available"}</div>
                       <div style={rowMetaStrongStyle}>{tester.selected_repo_full_name ?? "Not set up"}</div>
                       <div style={rowMetaStrongStyle}>{tester.questionnaire_submitted_at ? "Submitted" : "Pending"}</div>
                     </button>
 
                     {expanded && (
                       <div style={detailStyle}>
+                        <CopyDetail label="ID" value={tester.user_id ?? tester.beta_id} copied={copied} onCopy={copyValue} />
+                        <CopyDetail label="Token" value={tester.token ?? "Not stored"} copied={copied} onCopy={copyValue} />
+                        <CopyDetail
+                          label="Invite link"
+                          value={tester.link || "Not available"}
+                          copied={copied}
+                          onCopy={copyValue}
+                        />
                         <Detail label="Email / note" value={tester.email ?? "None"} />
-                        <Detail label="Invite used" value={tester.accepted_at ? formatDate(tester.accepted_at) : "No"} />
-                        <Detail label="User ID" value={tester.user_id ?? "Not linked"} />
-                        <Detail label="Trial" value={trialLabel(tester)} />
-                        <Detail label="Selected repo ID" value={tester.selected_repo_id ?? "None"} />
+                        <CopyDetail label="Selected repo ID" value={tester.selected_repo_id ?? "None"} copied={copied} onCopy={copyValue} />
                         {tester.questionnaire ? (
                           <div style={questionnaireStyle}>
                             <Detail label="Faster rating" value={String(tester.questionnaire.faster_rating ?? "None")} />
@@ -302,17 +313,31 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function StatusPill({ status, used }: { status: string; used: boolean }) {
-  return (
-    <span style={{
-      ...pillStyle,
-      borderColor: used ? "#BFE2C5" : "#D6D6D6",
-      background: used ? "#EEF8F0" : "#F3F3F3",
-      color: used ? "#166534" : "#555555",
-    }}>
-      {used ? `${status} · used` : status}
-    </span>
-  );
+async function writeClipboard(value: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall back for local/in-app browsers that expose clipboard but reject writes.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textarea);
+
+  if (!copied) {
+    throw new Error("copy failed");
+  }
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
@@ -324,18 +349,54 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+function CopyDetail({
+  label,
+  value,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  copied: string;
+  onCopy: (value: string, label: string) => void;
+}) {
+  const canCopy = !["None", "Not linked", "Not stored", "Not available"].includes(value);
+  return (
+    <div style={detailItemStyle}>
+      <div style={smallLabelStyle}>{label}</div>
+      <div style={copyValueRowStyle}>
+        <div style={detailValueStyle}>{value}</div>
+        {canCopy && (
+          <button style={copyButtonStyle} onClick={() => onCopy(value, label)}>
+            {copied === label ? "Copied" : "Copy"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function trialLabel(tester: BetaTester) {
-  if (!tester.trial_starts_at) return "Not started";
-  const start = formatDate(tester.trial_starts_at);
-  const end = tester.trial_ends_at ? formatDate(tester.trial_ends_at) : "No end date";
-  return `${start} to ${end}`;
+function CopyRow({
+  label,
+  value,
+  copied,
+  onCopy,
+  code = false,
+}: {
+  label: string;
+  value: string;
+  copied: string;
+  onCopy: (value: string, label: string) => void;
+  code?: boolean;
+}) {
+  return (
+    <div style={copyRowStyle}>
+      {code ? <code style={copyCodeStyle}>{value}</code> : <div style={detailValueStyle}>{value}</div>}
+      <button style={copyButtonStyle} onClick={() => onCopy(value, label)}>
+        {copied === label ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
 }
 
 const mainStyle: React.CSSProperties = {
@@ -467,6 +528,38 @@ const codeBlockStyle: React.CSSProperties = {
   fontSize: 12,
 };
 
+const copyRowStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
+  alignItems: "center",
+  gap: 8,
+};
+
+const copyCodeStyle: React.CSSProperties = {
+  ...codeBlockStyle,
+  minWidth: 0,
+};
+
+const copyValueRowStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
+  alignItems: "center",
+  gap: 8,
+};
+
+const copyButtonStyle: React.CSSProperties = {
+  height: 30,
+  borderRadius: 6,
+  border: "1px solid #D4D4D4",
+  background: "#FFFFFF",
+  color: "#333333",
+  padding: "0 9px",
+  cursor: "pointer",
+  fontSize: 12,
+  fontWeight: 650,
+  whiteSpace: "nowrap",
+};
+
 const tableStyle: React.CSSProperties = {
   display: "grid",
   gap: 8,
@@ -522,18 +615,6 @@ const rowMetaStrongStyle: React.CSSProperties = {
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-};
-
-const pillStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "fit-content",
-  border: "1px solid #D6D6D6",
-  borderRadius: 999,
-  padding: "3px 8px",
-  fontSize: 12,
-  fontWeight: 650,
 };
 
 const detailStyle: React.CSSProperties = {

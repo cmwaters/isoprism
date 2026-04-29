@@ -78,7 +78,6 @@ function ReposContent() {
       {/* Sidebar */}
       <div style={{ width: 240, background: "#E1E1E1", borderRight: "1px solid #D4D4D4", padding: 20, display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <GraphLogo />
           <span style={{ color: "#111111", fontSize: 15, fontWeight: 600 }}>Isoprism</span>
         </div>
       </div>
@@ -193,18 +192,6 @@ function SearchIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#AAAAAA" strokeWidth="2" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>
       <circle cx="11" cy="11" r="8" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  );
-}
-
-function GraphLogo() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-      <circle cx="8" cy="16" r="4" fill="#111111" />
-      <circle cx="24" cy="8" r="4" fill="#111111" />
-      <circle cx="24" cy="24" r="4" fill="#111111" />
-      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
-      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
     </svg>
   );
 }

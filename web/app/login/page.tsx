@@ -28,9 +28,7 @@ export default function LoginPage() {
       className="min-h-screen flex items-center justify-center"
     >
       <main style={{ maxWidth: 640, width: "100%", padding: "48px 24px" }}>
-        {/* Logo + wordmark */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
-          <GraphLogo />
           <span style={{ color: "#111111", fontSize: 20, fontWeight: 600 }}>Isoprism</span>
         </div>
 
@@ -89,18 +87,6 @@ export default function LoginPage() {
         </p>
       </main>
     </div>
-  );
-}
-
-function GraphLogo() {
-  return (
-    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-      <circle cx="8" cy="16" r="4" fill="#111111" />
-      <circle cx="24" cy="8" r="4" fill="#111111" />
-      <circle cx="24" cy="24" r="4" fill="#111111" />
-      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
-      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
-    </svg>
   );
 }
 

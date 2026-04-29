@@ -8,7 +8,7 @@ The layout is based on a weighted seed set, not a single focal node.
 
 ## Current Implementation
 
-The first implementation uses the weighted seed set, depth-2 loading, a 150-node visible budget, boundary-node marking, and deterministic hex-grid placement.
+The current implementation uses the weighted seed set, depth-2 loading, a 150-node visible budget, boundary-node marking, deterministic hex-grid placement, and query-time semantic granularity.
 
 The API includes layout metadata on each node:
 
@@ -21,19 +21,29 @@ boundary
 
 Clustering and interactive boundary expansion are still design targets; the current client marks boundary nodes through metadata and keeps them on the outer hex ring, but it does not yet request incremental expansion from a clicked boundary node.
 
+The canonical graph remains function-level. The API projects that graph into:
+
+```text
+function: function/method/type cards
+object:   a type plus receiver methods, with package-level functions preserved
+package:  all production nodes under a package path
+```
+
+Aggregate edges are collapsed from underlying call edges. A package/object edge means "at least one member in the source group calls at least one member in the target group" and carries `weight`, `changed_weight`, `underlying_edge_count`, and `sample_edges` so the UI can expose the concrete calls behind the summary.
+
 ## Views
 
 ### Repo-Wide View
 
-Seed nodes are entrypoints.
+Repo graphs default to package granularity. Seed nodes are packages containing entrypoints.
 
-For Go, the first entrypoint is `main`.
+For Go, the first entrypoint signal is `main`; the containing package becomes the seed in package view and the containing object/function becomes the seed in lower-granularity views.
 
 Future entrypoints can include HTTP handlers, CLI commands, workers, exported APIs, and scheduled jobs.
 
 ### PR View
 
-Seed nodes are all changed nodes.
+Seed nodes are all changed nodes, or their collapsed object/package groups when the user is in a higher-level granularity.
 
 Changed nodes with larger changes and more graph connectivity appear closer to the center.
 

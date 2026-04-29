@@ -43,7 +43,6 @@ export default function OnboardingPage() {
     <div style={{ minHeight: "100vh", background: "#EBE9E9", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: "100%", maxWidth: 360, padding: "0 24px" }}>
         <div style={{ marginBottom: 48, display: "flex", alignItems: "center", gap: 10 }}>
-          <GraphLogo />
           <span style={{ color: "#111111", fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}>Isoprism</span>
         </div>
 
@@ -85,17 +84,5 @@ export default function OnboardingPage() {
         </button>
       </div>
     </div>
-  );
-}
-
-function GraphLogo() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-      <circle cx="8" cy="16" r="4" fill="#111111" />
-      <circle cx="24" cy="8" r="4" fill="#111111" />
-      <circle cx="24" cy="24" r="4" fill="#111111" />
-      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
-      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
-    </svg>
   );
 }

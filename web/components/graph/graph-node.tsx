@@ -2,13 +2,13 @@
 
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { GraphNode } from "@/lib/types";
+import { GraphNode, GraphNodeTypeRef } from "@/lib/types";
 import { cardColorByKind } from "./graph-canvas";
 
 const CARD_PADDING = 10;
 
 interface Props {
-  data: { node: GraphNode };
+  data: { node: GraphNode; onSelectType?: (nodeID: string) => void };
   selected?: boolean;
 }
 
@@ -31,6 +31,8 @@ function Divider({ color }: { color: string }) {
 }
 
 function inferPackageLabel(node: GraphNode): string {
+  if (node.granularity === "package") return "package";
+  if (node.granularity === "object") return node.package_path || "object";
   const parts = node.file_path.split("/");
   // Use directory name as package; fall back to filename stem for root-level files
   const pkg = parts.length >= 2
@@ -43,84 +45,19 @@ function inferPackageLabel(node: GraphNode): string {
   return pkg;
 }
 
-function parseGoSignature(sig: string): { params: { name: string; type: string }[]; returns: string[] } {
-  if (!sig || sig.startsWith("type ")) return { params: [], returns: [] };
-  if (!sig.startsWith("func ")) return { params: [], returns: [sig] };
-
-  let rest = sig.slice(5).trim();
-  if (rest.startsWith("(")) {
-    let depth = 0, i = 0;
-    for (; i < rest.length; i++) {
-      if (rest[i] === "(") depth++;
-      else if (rest[i] === ")") { depth--; if (depth === 0) break; }
-    }
-    rest = rest.slice(i + 1).trim();
-  }
-
-  const parenIdx = rest.indexOf("(");
-  if (parenIdx === -1) return { params: [], returns: [] };
-  rest = rest.slice(parenIdx);
-
-  let depth = 0, paramsEnd = 0;
-  for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === "(") depth++;
-    else if (rest[i] === ")") { depth--; if (depth === 0) { paramsEnd = i; break; } }
-  }
-
-  const paramsStr = rest.slice(1, paramsEnd).trim();
-  const rawReturns = rest.slice(paramsEnd + 1).trim();
-
-  // Split tuple returns "(a, b)" → ["a", "b"], or single return as-is
-  let returns: string[] = [];
-  if (rawReturns) {
-    if (rawReturns.startsWith("(") && rawReturns.endsWith(")")) {
-      returns = rawReturns.slice(1, -1).split(",").map(s => s.trim()).filter(Boolean);
-    } else {
-      returns = [rawReturns];
-    }
-  }
-
-  return { params: parseGoParams(paramsStr), returns };
-}
-
-function parseGoParams(s: string): { name: string; type: string }[] {
-  if (!s) return [];
-  const parts: string[] = [];
-  let depth = 0, cur = "";
-  for (const ch of s) {
-    if ("([{".includes(ch)) depth++;
-    else if (")]}".includes(ch)) depth--;
-    else if (ch === "," && depth === 0) { parts.push(cur.trim()); cur = ""; continue; }
-    cur += ch;
-  }
-  if (cur.trim()) parts.push(cur.trim());
-
-  const result: { name: string; type: string }[] = [];
-  let pending: string[] = [];
-  for (const part of parts) {
-    const sp = part.search(/\s/);
-    if (sp === -1) {
-      pending.push(part);
-    } else {
-      const name = part.slice(0, sp);
-      const type = part.slice(sp + 1).trim();
-      for (const n of pending) result.push({ name: n, type });
-      pending = [];
-      result.push({ name, type });
-    }
-  }
-  for (const n of pending) result.push({ name: n, type: "" });
-  return result;
-}
-
 function DiffPills({ node }: { node: GraphNode }) {
-  if (!node.change_type) return null;
+  if (!node.change_type && !node.changed_member_count) return null;
   const pillBase: React.CSSProperties = {
     display: "inline-flex", alignItems: "center",
     borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 500,
   };
   return (
     <div style={{ display: "flex", gap: 6, marginTop: 6, paddingLeft: 2 }}>
+      {!node.change_type && Boolean(node.changed_member_count) && (
+        <span style={{ ...pillBase, background: "#F0FFF4", color: "#166534" }}>
+          {node.changed_member_count} changed
+        </span>
+      )}
       {node.change_type === "added" && (
         <span style={{ ...pillBase, background: "#DCFCE7", color: "#16A34A" }}>
           Added {node.lines_added > 0 ? `+${node.lines_added}` : ""}
@@ -144,12 +81,14 @@ function DiffPills({ node }: { node: GraphNode }) {
 }
 
 function GraphNodeComponent({ data, selected }: Props) {
-  const { node } = data;
+  const { node, onSelectType } = data;
   const bg = selected ? "#F5F5F5" : cardColorByKind(node.kind);
   const dividerColor = darken(bg);
   const pkgLabel = inferPackageLabel(node);
-  const { params, returns } = parseGoSignature(node.signature);
-  const hasSignature = params.length > 0 || returns.length > 0;
+  const inputs = node.inputs ?? [];
+  const outputs = node.outputs ?? [];
+  const hasAggregateMeta = node.granularity !== "function" && Boolean(node.member_count);
+  const hasIO = inputs.length > 0 || outputs.length > 0;
 
   const handleStyle = { opacity: 0, width: 8, height: 8 };
 
@@ -175,37 +114,46 @@ function GraphNodeComponent({ data, selected }: Props) {
           </div>
         )}
 
-        {/* Function / struct name */}
+        {/* Function / aggregate name */}
         <div style={{
           fontSize: 13,
           fontWeight: 600,
           color: "#111111",
-          marginBottom: hasSignature ? 6 : 0,
+          marginBottom: hasIO ? 6 : 0,
           wordBreak: "break-word",
         }}>
-          {node.name}
+          {node.full_name}
         </div>
 
-        {/* Signature divider — sits between the function name and signature details */}
-        {hasSignature && <Divider color={dividerColor} />}
+        {hasAggregateMeta && (
+          <div style={{ fontSize: 11, color: "#666666", lineHeight: 1.45 }}>
+            {node.member_count} {node.member_count === 1 ? "member" : "members"}
+            {node.changed_member_count ? ` · ${node.changed_member_count} changed` : ""}
+          </div>
+        )}
+
+        {hasIO && <Divider color={dividerColor} />}
 
         {/* Parameters — one per line */}
-        {params.length > 0 && (
+        {inputs.length > 0 && (
           <div>
-            {params.map((p, i) => (
+            {inputs.map((p, i) => (
               <div key={i} style={{ fontSize: 11, lineHeight: 1.5 }}>
                 {p.name && <span style={{ color: "#444444" }}>{p.name} </span>}
-                <span style={{ color: "#0088FF" }}>{p.type}</span>
+                <TypeRef refInfo={p} color="#0088FF" onSelectType={onSelectType} />
               </div>
             ))}
           </div>
         )}
 
         {/* Return types — one per line */}
-        {returns.length > 0 && (
-          <div style={{ marginTop: params.length > 0 ? 4 : 0 }}>
-            {returns.map((r, i) => (
-              <div key={i} style={{ fontSize: 11, color: "#FF383C", lineHeight: 1.5 }}>{r}</div>
+        {outputs.length > 0 && (
+          <div style={{ marginTop: inputs.length > 0 ? 4 : 0 }}>
+            {outputs.map((r, i) => (
+              <div key={i} style={{ fontSize: 11, lineHeight: 1.5 }}>
+                {r.name && <span style={{ color: "#444444" }}>{r.name} </span>}
+                <TypeRef refInfo={r} color="#FF383C" onSelectType={onSelectType} />
+              </div>
             ))}
           </div>
         )}
@@ -214,6 +162,42 @@ function GraphNodeComponent({ data, selected }: Props) {
       {/* Diff pills — below the card, not inside */}
       <DiffPills node={node} />
     </div>
+  );
+}
+
+function TypeRef({
+  refInfo,
+  color,
+  onSelectType,
+}: {
+  refInfo: GraphNodeTypeRef;
+  color: string;
+  onSelectType?: (nodeID: string) => void;
+}) {
+  if (!refInfo.node_id || !onSelectType) {
+    return <span style={{ color }}>{refInfo.type}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelectType(refInfo.node_id!);
+      }}
+      style={{
+        appearance: "none",
+        border: 0,
+        padding: 0,
+        background: "transparent",
+        color,
+        cursor: "pointer",
+        font: "inherit",
+        textDecoration: "underline",
+        textUnderlineOffset: 2,
+      }}
+    >
+      {refInfo.type}
+    </button>
   );
 }
 

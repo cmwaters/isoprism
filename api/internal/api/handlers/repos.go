@@ -138,9 +138,22 @@ func (h *RepoHandler) GetRepoStatus(w http.ResponseWriter, r *http.Request) {
 	var prCount, readyCount int
 	h.DB.QueryRow(ctx, `
 		select
-			count(*) filter (where state = 'open' and draft = false),
-			count(*) filter (where state = 'open' and draft = false and graph_status = 'ready')
-		from pull_requests where repo_id = $1
+			count(*) filter (
+				where pr.state = 'open'
+				  and pr.draft = false
+				  and pr.base_branch = 'main'
+				  and pr.base_commit_sha = r.main_commit_sha
+			),
+			count(*) filter (
+				where pr.state = 'open'
+				  and pr.draft = false
+				  and pr.graph_status = 'ready'
+				  and pr.base_branch = 'main'
+				  and pr.base_commit_sha = r.main_commit_sha
+			)
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		where pr.repo_id = $1
 	`, repoID).Scan(&prCount, &readyCount)
 
 	response := map[string]interface{}{

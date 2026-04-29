@@ -61,7 +61,7 @@ type PullRequest struct {
 	OpenedAt        time.Time  `json:"opened_at"`
 	MergedAt        *time.Time `json:"merged_at"`
 	LastActivityAt  *time.Time `json:"last_activity_at"`
-	GraphStatus     string     `json:"graph_status"` // pending | running | ready | failed
+	GraphStatus     string     `json:"graph_status"` // pending | running | ready | skipped | failed
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
@@ -71,12 +71,12 @@ type CodeNode struct {
 	ID        string    `json:"id"`
 	RepoID    string    `json:"repo_id"`
 	CommitSHA string    `json:"commit_sha"`
-	Name      string    `json:"name"`
 	FullName  string    `json:"full_name"`
 	FilePath  string    `json:"file_path"`
 	LineStart int       `json:"line_start"`
 	LineEnd   int       `json:"line_end"`
-	Signature string    `json:"signature"`
+	Inputs    []TypeRef `json:"inputs"`
+	Outputs   []TypeRef `json:"outputs"`
 	Language  string    `json:"language"`
 	Kind      string    `json:"kind"`
 	BodyHash  string    `json:"body_hash"`
@@ -133,22 +133,22 @@ type QueuePR struct {
 
 // GraphNode is a node in the PR graph response, tagged with its computed role.
 type GraphNode struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	FullName      string  `json:"full_name"`
-	FilePath      string  `json:"file_path"`
-	PackagePath   string  `json:"package_path,omitempty"`
-	LineStart     int     `json:"line_start"`
-	LineEnd       int     `json:"line_end"`
-	Signature     string  `json:"signature"`
-	Language      string  `json:"language"`
-	Kind          string  `json:"kind"`
-	Granularity   string  `json:"granularity"` // function | object | package
-	NodeType      string  `json:"node_type"`   // changed | caller | callee
-	Summary       *string `json:"summary"`
-	ChangeSummary *string `json:"change_summary"`
-	DiffHunk      *string `json:"diff_hunk"`
-	ChangeType    *string `json:"change_type"` // added | modified | deleted | nil for unchanged
+	ID            string    `json:"id"`
+	FullName      string    `json:"full_name"`
+	FilePath      string    `json:"file_path"`
+	PackagePath   string    `json:"package_path,omitempty"`
+	LineStart     int       `json:"line_start"`
+	LineEnd       int       `json:"line_end"`
+	Inputs        []TypeRef `json:"inputs"`
+	Outputs       []TypeRef `json:"outputs"`
+	Language      string    `json:"language"`
+	Kind          string    `json:"kind"`
+	Granularity   string    `json:"granularity"` // function | object | package
+	NodeType      string    `json:"node_type"`   // changed | caller | callee
+	Summary       *string   `json:"summary"`
+	ChangeSummary *string   `json:"change_summary"`
+	DiffHunk      *string   `json:"diff_hunk"`
+	ChangeType    *string   `json:"change_type"` // added | modified | deleted | nil for unchanged
 	// Diff stats (only for changed nodes)
 	LinesAdded         int             `json:"lines_added"`
 	LinesRemoved       int             `json:"lines_removed"`
@@ -161,6 +161,12 @@ type GraphNode struct {
 	ChangedMemberCount int             `json:"changed_member_count,omitempty"`
 	CollapsedNodeIDs   []string        `json:"collapsed_node_ids,omitempty"`
 	Expandable         bool            `json:"expandable"`
+}
+
+type TypeRef struct {
+	Name   string  `json:"name,omitempty"`
+	Type   string  `json:"type"`
+	NodeID *string `json:"node_id,omitempty"`
 }
 
 type GraphNodeTest struct {

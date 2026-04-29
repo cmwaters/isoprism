@@ -3,7 +3,7 @@
 import type React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowUpRight, GitBranch, Github, Loader2, RefreshCw, Search } from "lucide-react";
+import { ArrowUpRight, GitBranch, Github, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import IndexingProgress from "@/components/onboarding/indexing-progress";
 import { apiFetch } from "@/lib/api";
@@ -18,9 +18,22 @@ type GitHubUser = {
 
 export default function SettingsPage() {
   const params = useParams<{ owner: string }>();
+  const account = decodeURIComponent(params.owner);
+
+  return <SettingsView account={account} />;
+}
+
+export function SettingsView({
+  account,
+  embedded = false,
+  onClose,
+}: {
+  account: string;
+  embedded?: boolean;
+  onClose?: () => void;
+}) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
-  const account = decodeURIComponent(params.owner);
 
   const [currentUser, setCurrentUser] = useState<GitHubUser | null>(null);
   const [repos, setRepos] = useState<Repository[]>([]);
@@ -78,8 +91,6 @@ export default function SettingsPage() {
     };
   }, [account, router, supabase]);
 
-  const appName = process.env.NEXT_PUBLIC_GITHUB_APP_NAME;
-  const installURL = appName ? `https://github.com/apps/${appName}/installations/new` : undefined;
   const manageURL = "https://github.com/settings/installations";
 
   const readyRepo = repos.find((repo) => repo.index_status === "ready") ?? null;
@@ -124,12 +135,19 @@ export default function SettingsPage() {
   }
 
   return (
-    <SettingsShell>
-      <main style={mainStyle}>
-        <Link href="/" style={brandStyle}>
-          <GraphLogo />
-          <span>Isoprism</span>
-        </Link>
+    <SettingsShell embedded={embedded}>
+      <main style={embedded ? embeddedMainStyle : mainStyle}>
+        {embedded && onClose && (
+          <button aria-label="Close settings" onClick={onClose} style={closeButtonStyle}>
+            <X size={18} />
+          </button>
+        )}
+
+        {!embedded && (
+          <Link href="/" style={brandStyle}>
+            <span>Isoprism</span>
+          </Link>
+        )}
 
         <header style={headerStyle}>
           <div>
@@ -139,15 +157,22 @@ export default function SettingsPage() {
               Manage your GitHub connection and choose the single repository Isoprism should index for the beta.
             </p>
           </div>
-          {currentUser?.avatarURL && (
-            <div
-              aria-hidden="true"
-              style={{
-                ...avatarStyle,
-                background: `url(${currentUser.avatarURL}) center / cover`,
-              }}
-            />
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {readyRepo && !embedded && (
+              <Link href={`/${readyRepo.full_name}`} style={secondaryActionStyle}>
+                Exit settings
+              </Link>
+            )}
+            {currentUser?.avatarURL && (
+              <div
+                aria-hidden="true"
+                style={{
+                  ...avatarStyle,
+                  background: `url(${currentUser.avatarURL}) center / cover`,
+                }}
+              />
+            )}
+          </div>
         </header>
 
         {error && <Notice tone="error">{error}</Notice>}
@@ -164,12 +189,6 @@ export default function SettingsPage() {
           </div>
 
           <div style={actionRowStyle}>
-            {installURL && (
-              <a href={installURL} style={secondaryActionStyle}>
-                <ArrowUpRight size={15} />
-                Install GitHub App
-              </a>
-            )}
             <a href={manageURL} style={primaryActionStyle}>
               <ArrowUpRight size={15} />
               Manage GitHub App
@@ -263,9 +282,9 @@ export default function SettingsPage() {
   );
 }
 
-function SettingsShell({ children }: { children: React.ReactNode }) {
+function SettingsShell({ children, embedded = false }: { children: React.ReactNode; embedded?: boolean }) {
   return (
-    <div style={{ minHeight: "100vh", background: "#EBE9E9", color: "#111111" }}>
+    <div style={{ minHeight: embedded ? "100%" : "100vh", background: "#EBE9E9", color: "#111111" }}>
       {children}
     </div>
   );
@@ -305,22 +324,34 @@ function StatusChip({ children }: { children: React.ReactNode }) {
   );
 }
 
-function GraphLogo() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <circle cx="8" cy="16" r="4" fill="#111111" />
-      <circle cx="24" cy="8" r="4" fill="#111111" />
-      <circle cx="24" cy="24" r="4" fill="#111111" />
-      <line x1="12" y1="14" x2="20" y2="10" stroke="#111111" strokeWidth="1.5" />
-      <line x1="12" y1="18" x2="20" y2="22" stroke="#111111" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
 const mainStyle: React.CSSProperties = {
   width: "min(860px, 100%)",
   margin: "0 auto",
   padding: "48px 24px",
+};
+
+const embeddedMainStyle: React.CSSProperties = {
+  width: "min(860px, 100%)",
+  margin: "0 auto",
+  padding: "34px 24px 96px",
+  position: "relative",
+};
+
+const closeButtonStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 18,
+  right: 24,
+  width: 34,
+  height: 34,
+  borderRadius: 999,
+  border: "1px solid #D4D4D4",
+  background: "#FFFFFF",
+  color: "#111111",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  zIndex: 2,
 };
 
 const brandStyle: React.CSSProperties = {

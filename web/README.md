@@ -59,8 +59,8 @@ Admin capabilities:
 
 - Create a beta tester by name, with an optional email/note.
 - Generate a unique beta ID, raw token, and invite link.
-- Show the raw token and full link only immediately after creation.
-- Monitor invite status, whether the invite has been used, selected repository, trial dates, and questionnaire answers.
+- Store the invite token directly for admin display and invite lookup.
+- Monitor each tester's ID, invite link, selected repository, and questionnaire answers.
 
 The API routes are:
 
@@ -79,13 +79,19 @@ The primary review route mirrors the GitHub repository path:
 
 The repo route renders one persistent `GraphCanvas` and side panel:
 
-- A repo graph for the whole indexed system.
+- A repo graph for the whole indexed system. It defaults to package granularity so large repositories are navigable before drilling into objects or functions.
 - A ranked PR list in the repo overview panel. Each PR card shows the PR number, title, AI summary, changed-function count, risk label, and a client-updated open-time badge.
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
-- Node cards with package/type labels, signatures, and added/removed/deleted pills.
+- Node cards with package/type labels, full names, aggregate member counts, structured inputs/outputs for function-level nodes, and added/removed/deleted pills.
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
+
+During beta, the PR queue only includes open, non-draft PRs targeting `main` whose `base_commit_sha` exactly matches the repository's indexed `main_commit_sha`. PRs from other base branches, or PRs whose base SHA is out of sync with the indexed main graph, are hidden rather than shown with approximate graph data.
+
+Graph responses accept `granularity=function|object|package` and return a matching `granularity` field. Function-level responses use `full_name` as the node display label and expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records. Object responses collapse a type and its receiver methods into an aggregate node. Package responses collapse all production nodes under a package path into one aggregate node. Aggregate nodes include `member_count`, `changed_member_count`, `collapsed_node_ids`, and `expandable`; aggregate edges include `weight`, `changed_weight`, `underlying_edge_count`, and sample underlying caller/callee pairs.
+
+PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata before applying object/package projection. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail.
 
 PR review does not have a separate route or page.
 

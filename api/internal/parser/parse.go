@@ -21,13 +21,19 @@ type Node struct {
 	FilePath         string
 	LineStart        int
 	LineEnd          int
-	Signature        string
+	Inputs           []Param
+	Outputs          []Param
 	Language         string
 	Kind             string // function | method | type
 	BodyHash         string
 	Body             string // raw source text of the node body (for AI enrichment)
 	IsTestCode       bool
 	IsTestEntrypoint bool
+}
+
+type Param struct {
+	Name string `json:"name,omitempty"`
+	Type string `json:"type"`
 }
 
 // Parse extracts code nodes from the given source bytes.
@@ -140,15 +146,14 @@ func parseGo(src []byte, filePath string) []Node {
 				kind = "method"
 			}
 
-			sig := buildGoSignature(d)
-
 			nodes = append(nodes, Node{
 				Name:             name,
 				FullName:         fullName,
 				FilePath:         filePath,
 				LineStart:        start.Line,
 				LineEnd:          end.Line,
-				Signature:        sig,
+				Inputs:           goFieldParams(d.Type.Params),
+				Outputs:          goFieldParams(d.Type.Results),
 				Language:         "go",
 				Kind:             kind,
 				BodyHash:         bodyHash([]byte(body)),
@@ -195,7 +200,6 @@ func parseGo(src []byte, filePath string) []Node {
 					FilePath:   filePath,
 					LineStart:  start.Line,
 					LineEnd:    end.Line,
-					Signature:  "type " + ts.Name.Name,
 					Language:   "go",
 					Kind:       kind,
 					BodyHash:   bodyHash([]byte(body)),
@@ -226,59 +230,22 @@ func exprToString(e ast.Expr) string {
 	}
 }
 
-func buildGoSignature(fn *ast.FuncDecl) string {
-	var sb strings.Builder
-	sb.WriteString("func ")
-	if fn.Recv != nil && len(fn.Recv.List) > 0 {
-		sb.WriteString("(")
-		for i, f := range fn.Recv.List {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			if len(f.Names) > 0 {
-				sb.WriteString(f.Names[0].Name)
-				sb.WriteString(" ")
-			}
-			sb.WriteString(exprToString(f.Type))
-		}
-		sb.WriteString(") ")
+func goFieldParams(fields *ast.FieldList) []Param {
+	if fields == nil {
+		return nil
 	}
-	sb.WriteString(fn.Name.Name)
-	sb.WriteString("(")
-	if fn.Type.Params != nil {
-		for i, f := range fn.Type.Params.List {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			names := make([]string, len(f.Names))
-			for j, n := range f.Names {
-				names[j] = n.Name
-			}
-			if len(names) > 0 {
-				sb.WriteString(strings.Join(names, ", "))
-				sb.WriteString(" ")
-			}
-			sb.WriteString(exprToString(f.Type))
+	var params []Param
+	for _, field := range fields.List {
+		typeName := exprToString(field.Type)
+		if len(field.Names) == 0 {
+			params = append(params, Param{Type: typeName})
+			continue
+		}
+		for _, name := range field.Names {
+			params = append(params, Param{Name: name.Name, Type: typeName})
 		}
 	}
-	sb.WriteString(")")
-	if fn.Type.Results != nil && len(fn.Type.Results.List) > 0 {
-		results := fn.Type.Results.List
-		if len(results) == 1 && len(results[0].Names) == 0 {
-			sb.WriteString(" ")
-			sb.WriteString(exprToString(results[0].Type))
-		} else {
-			sb.WriteString(" (")
-			for i, f := range results {
-				if i > 0 {
-					sb.WriteString(", ")
-				}
-				sb.WriteString(exprToString(f.Type))
-			}
-			sb.WriteString(")")
-		}
-	}
-	return sb.String()
+	return params
 }
 
 // ── TypeScript / JavaScript parser (regex-based) ──────────────────────────────
@@ -329,7 +296,6 @@ func parseTS(src []byte, filePath, lang string) []Node {
 				FilePath:   filePath,
 				LineStart:  lineNum,
 				LineEnd:    lineEnd,
-				Signature:  name + "(...)",
 				Language:   lang,
 				Kind:       "function",
 				BodyHash:   bodyHash([]byte(body)),
