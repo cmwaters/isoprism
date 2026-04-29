@@ -27,19 +27,30 @@ export default function LoginPage() {
       style={{ background: "#EBE9E9" }}
       className="min-h-screen flex items-center justify-center"
     >
-      <div style={{ maxWidth: 360, width: "100%", padding: "0 24px" }}>
+      <main style={{ maxWidth: 640, width: "100%", padding: "48px 24px" }}>
         {/* Logo + wordmark */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 48 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
           <GraphLogo />
           <span style={{ color: "#111111", fontSize: 20, fontWeight: 600 }}>Isoprism</span>
         </div>
 
-        <h1 style={{ color: "#111111", fontSize: 28, fontWeight: 600, marginBottom: 12, lineHeight: 1.25 }}>
-          Understand what your PRs actually change.
-        </h1>
-        <p style={{ color: "#666666", fontSize: 15, marginBottom: 40, lineHeight: 1.6 }}>
-          A graph view of every function affected. Plain-language summaries. No diffs.
-        </p>
+        <section style={{ display: "grid", gap: 20, marginBottom: 36 }}>
+          <p style={{ color: "#333333", fontSize: 18, lineHeight: 1.65, margin: 0 }}>
+            This is a prototype, not a fully fledged product. It serves to answer one simple
+            question: is there a better way of understanding and reviewing code changes?
+          </p>
+
+          <p style={{ color: "#555555", fontSize: 15, lineHeight: 1.7, margin: 0 }}>
+            This is for beta testers. The expectation is to use this prototype where possible
+            for reviewing PRs. You will connect this to your GitHub and select a single
+            repository.
+          </p>
+
+          <p style={{ color: "#555555", fontSize: 15, lineHeight: 1.7, margin: 0 }}>
+            There will be a footer for submitting feature requests and bug reports. You are
+            expected to trial this for a week and fill out a short questionnaire at the end.
+          </p>
+        </section>
 
         <button
           onClick={signInWithGitHub}
@@ -68,7 +79,7 @@ export default function LoginPage() {
           ) : (
             <>
               <GitHubIcon />
-              Continue with GitHub
+              Connect GitHub
             </>
           )}
         </button>
@@ -76,7 +87,7 @@ export default function LoginPage() {
         <p style={{ color: "#888888", fontSize: 12, textAlign: "center", marginTop: 48 }}>
           By signing in you authorise read access to your repositories.
         </p>
-      </div>
+      </main>
     </div>
   );
 }

@@ -20,6 +20,10 @@ type Config struct {
 	AnthropicAPIKey string
 	OpenAIAPIKey    string
 
+	GitHubFeedbackToken string
+	GitHubFeedbackRepo  string
+	AdminPassword       string
+
 	FrontendURL  string
 	FrontendURLs []string
 }
@@ -35,6 +39,9 @@ func Load() (*Config, error) {
 		GitHubClientSecret:     mustGetEnv("GITHUB_CLIENT_SECRET"),
 		AnthropicAPIKey:        getEnv("ANTHROPIC_API_KEY", ""),
 		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", ""),
+		GitHubFeedbackToken:    getEnv("GITHUB_FEEDBACK_TOKEN", ""),
+		GitHubFeedbackRepo:     getEnv("GITHUB_FEEDBACK_REPO", ""),
+		AdminPassword:          getEnv("ADMIN_PASSWORD", ""),
 		FrontendURL:            getEnv("FRONTEND_URL", "https://isoprism.com"),
 	}
 	cfg.FrontendURLs = frontendURLs(cfg.FrontendURL)

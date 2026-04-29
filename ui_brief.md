@@ -1,6 +1,6 @@
 # Isoprism — UI Brief
 
-> For AI generation and Figma design | Updated: 2026-04-24
+> For AI generation and Figma design | Updated: 2026-04-29
 
 ---
 
@@ -32,18 +32,22 @@
 
 ## Screen 1 — Login
 
-**Layout:** Full viewport. Vertically and horizontally centred content column, max-width 360px.
+**Layout:** Full viewport. Vertically and horizontally centred content column, max-width 640px.
 
 **Content (top to bottom):**
 1. Isoprism logo mark — a small abstract graph icon (3 nodes connected by 2 edges), 32×32px, `#111111`
-2. Product name "Isoprism" in 20px semibold, `#111111`, 12px below the logo
-3. 48px gap
-4. Headline: "Understand what your PRs actually change." — 28px, semibold, `#111111`, centered, max 2 lines
-5. Subheading: "A graph view of every function affected. Plain-language summaries. No diffs." — 15px, `#666666`, centered, 12px below headline
-6. 40px gap
-7. **GitHub sign-in button** — full width, 48px height, `#111111` background, white text, 8px border-radius. GitHub Octocat icon (20px) left of text "Continue with GitHub". On hover: `#333333` background.
-8. 48px gap below button
-9. Fine print: "By signing in you authorise read access to your repositories." — 12px, `#888888`, centered
+2. Product name "Isoprism" in 20px semibold, `#111111`, inline with the logo
+3. 32px gap
+4. Lead copy — 18px, `#333333`, line-height 1.65: "This is a prototype, not a fully fledged product. It serves to answer one simple question: is there a better way of understanding and reviewing code changes?"
+5. Beta expectation copy — 15px, `#555555`, line-height 1.7: "This is for beta testers. The expectation is to use this prototype where possible for reviewing PRs. You will connect this to your GitHub and select a single repository."
+6. Trial copy — 15px, `#555555`, line-height 1.7: "There will be a footer for submitting feature requests and bug reports. You are expected to trial this for a week and fill out a short questionnaire at the end."
+7. 36px gap
+8. Invite status line — only when entered through a beta link. Text: "Beta invite verified." — 12px, `#666666`
+9. **GitHub sign-in button** — full width, 48px height, `#111111` background, white text, 8px border-radius. GitHub Octocat icon (20px) left of text "Connect GitHub". On hover: `#333333` background.
+10. 48px gap below button
+11. Fine print: "By signing in you authorise read access to your repositories." — 12px, `#888888`, centered
+
+If the beta token is invalid, expired, or already completed, replace the GitHub button with a quiet disabled state and the message: "This beta invite is no longer available."
 
 **Background:** Solid `#EBE9E9`. No image, no pattern.
 
@@ -60,7 +64,7 @@
 
 **Main Content (centred column, max-width 560px, vertically centred in viewport):**
 1. Heading: "Select a repository" — 24px semibold, `#111111`
-2. Subheading: "Isoprism will index this repository's pull requests." — 15px, `#666666`, 8px below heading
+2. Subheading: "Choose the one repository you want to trial with Isoprism this week." — 15px, `#666666`, 8px below heading
 3. 24px gap
 4. **Search input** — full width, 44px height, white background, `#D4D4D4` border, 6px border-radius. Placeholder: "Search repositories…" in `#AAAAAA`. Magnifier icon on left inside.
 5. 16px gap
@@ -72,7 +76,8 @@
    - Selected state: `#D8D8D8` background, `#6366F1` left border (3px), repo name in `#6366F1`
    - Hover state: `#F0F0F0` background
 7. 24px gap
-8. **Continue button** — right-aligned, 180px wide, 44px height, `#6366F1` background, white text "Index repository →", 6px border-radius. Disabled (opacity 0.4) until a repo is selected.
+8. Helper text — "You can grant GitHub access to multiple repositories, but the beta trial uses one selected repository." — 13px, `#888888`
+9. **Continue button** — right-aligned, 180px wide, 44px height, `#6366F1` background, white text "Start one-week trial", 6px border-radius. Disabled (opacity 0.4) until a repo is selected.
 
 ---
 
@@ -197,6 +202,16 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
 - Left: "← Back" link in `#888888`, separator `·`, PR number in `#888888`, PR title in `#111111` semibold.
 - Right: "View on GitHub →" link in `#6366F1`.
 
+**Trial status:** Authenticated product views should show a compact beta status affordance in the app shell: "Trial day N of 7" until the questionnaire is due, then "Questionnaire due". Keep it small and operational; it should not compete with PR review content.
+
+**Beta footer:** The repo graph and PR graph views should show a black footer banner across the full graph workspace:
+
+```text
+This is a beta version of Isoprism. Report a problem - Request a feature.
+```
+
+"Report a problem" and "Request a feature" are links. Each opens a centered popup panel. Submissions create GitHub issues in the configured feedback repository, reference the tester's unique beta ID, and apply either the `bug` or `feature` label.
+
 **Graph layout:** Concentric rings. Changed nodes sit at the centre; BFS assigns each connected node a ring level. Outer rings are evenly distributed around a circle whose radius adapts to node count (`max(level × 380px, count × 300px / 2π)`). Pan and zoom freely.
 
 **Node color by kind:**
@@ -257,9 +272,70 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 | Click node chip in "Calls" / "Called by" | Select that node |
 | Click empty canvas | Deselect node, return to Sub-view B |
 | Click "View on GitHub →" | Open GitHub PR URL in new tab |
+| Click "Report a problem" | Open feedback form with type preselected as bug |
+| Click "Request feature" | Open feedback form with type preselected as feature |
 | Click back breadcrumb | Return to PR Queue |
 | Zoom controls | Zoom graph canvas in/out or fit to screen |
-| Visit `/` without a ready repo | Show Login; after GitHub OAuth, send unconnected users to GitHub App install |
+| Visit `/` without an active beta invite/session | Show Login/access state; after GitHub OAuth, send invited unconnected users to GitHub App install |
+
+---
+
+## Screen 6 — Feedback Form
+
+Feedback should be available during the full trial week from authenticated product views.
+
+**Presentation:** Small modal, max-width 520px, centered over the current review workspace.
+
+**Fields:**
+- Type segmented control: Bug / Feature
+- Title input
+- Details textarea
+- Optional current context captured automatically: repo, PR number, selected node, browser path
+
+**Actions:**
+- Primary: "Send feedback"
+- Secondary: "Cancel"
+
+Submission should create a GitHub issue with the tester beta ID, repo, PR, selected node, browser path, app commit SHA, and source commit SHA, then return the tester to the same PR review state.
+
+---
+
+## Screen 7 — Questionnaire
+
+At the end of the seven-day trial, show a short questionnaire prompt. It may be a blocking page or a dismissible prompt during prototype operation, but the copy should make clear that the trial feedback is now due.
+
+**Fields:**
+- Rating: "Isoprism helped me understand PRs faster"
+- Rating: "The graph made review risk clearer"
+- Short answer: "What was confusing or missing?"
+- Short answer: "What bugs did you hit?"
+- Short answer: "What should we build next?"
+- Choice: "Would you keep using Isoprism for PR review?"
+
+---
+
+## Screen 8 — Admin Beta Console
+
+Route: `/admin`
+
+The admin console is for managing beta testers. It is protected by an admin password before tester data is loaded.
+
+**Create tester:**
+- Name input
+- Generate tester button
+- Output: unique beta ID, raw token shown once, full invite link
+
+**Monitor testers:**
+- Tester name
+- Beta ID
+- Invite state: new / active / completed / revoked / expired
+- Whether the invite link has been used
+- Selected repository
+- Trial start/end dates
+- Questionnaire status
+- Link to questionnaire answers
+
+The admin console must not show raw invite tokens after creation.
 
 ---
 
@@ -279,3 +355,8 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 | `DiffPills` | Green +N / red -N pill badges rendered below a graph node |
 | `TopBar` | PR breadcrumb, title, and GitHub link (`#E1E1E1` background) |
 | `AppSidebar` | Narrow left sidebar (`#E1E1E1` background) with logo |
+| `BetaStatus` | Compact trial status and questionnaire due affordance |
+| `BetaFeedbackBanner` | Black footer banner with bug/feature links and centered feedback form |
+| `FeedbackModal` | Bug/feature feedback form with current repo/PR/node context, app commit, and source commit |
+| `QuestionnairePage` | End-of-week beta questionnaire |
+| `AdminBetaConsole` | Operator-only beta tester creation and monitoring page |

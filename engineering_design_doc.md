@@ -1,6 +1,6 @@
 # Isoprism — Engineering Design Document
 
-> Status: v0.7 | Author: Callum | Updated: 2026-04-21
+> Status: v0.9 | Author: Callum | Updated: 2026-04-29
 
 ---
 
@@ -24,16 +24,18 @@
 
 ## 1. Overview
 
-Isoprism is a validation prototype testing the hypothesis that a **graph representation of software changes** is faster and more effective than reading code diffs.
+Isoprism is an invite-only validation prototype testing the hypothesis that a **graph representation of software changes** is faster and more effective than reading code diffs.
 
 The prototype delivers exactly one flow:
 
-1. User signs in with GitHub and selects a single repository
-2. The backend indexes the repo, building a base code graph from the `main` branch HEAD
-3. The user sees the top five open PRs ranked by urgency
-4. The user selects a PR and sees an interactive graph where each node is a function, method, or type affected by the PR — with its signature, a plain-English summary of what it does, and a summary of what changed
+1. Beta tester opens a unique invite link containing an access token
+2. Tester signs in with GitHub and installs or authorizes the Isoprism GitHub App
+3. Tester selects exactly one repository for a one-week trial
+4. The backend indexes the repo, building a base code graph from the `main` branch HEAD
+5. The tester uses Isoprism while reviewing PRs for one week, with in-product bug and feature feedback available throughout
+6. At the end of the week, the tester is asked to complete a short questionnaire
 
-**Target scale:** Single-user prototype. No multi-tenancy, no teams, no billing. Architecture is deliberately simple.
+**Target scale:** Invite-only beta prototype. Each tester has one selected repository and one seven-day trial window. No teams, billing, or open signup. Architecture is deliberately simple.
 
 ---
 
@@ -263,6 +265,80 @@ pr_analyses
   created_at       timestamptz
 ```
 
+### Planned Beta Tables
+
+The current production graph schema does not yet model the beta loop. To support the intended tester flow, add a small beta access layer:
+
+```sql
+-- One row per invite link.
+beta_invites
+  id                    uuid PK
+  beta_id               text UNIQUE        -- short human/reference ID used in feedback issues
+  name                  text               -- beta tester name entered by the admin
+  token_hash            text UNIQUE        -- store a hash, never the raw URL token
+  email                 text               -- optional operator note, not used for auth
+  status                text DEFAULT 'new' -- 'new' | 'active' | 'completed' | 'revoked' | 'expired'
+  invited_at            timestamptz
+  expires_at            timestamptz
+  accepted_at           timestamptz
+  completed_at          timestamptz
+  user_id               uuid FK -> users
+  selected_repo_id      uuid FK -> repositories
+  trial_starts_at       timestamptz
+  trial_ends_at         timestamptz
+  created_at            timestamptz
+
+-- Bug reports and feature requests submitted during the trial.
+beta_feedback
+  id                    uuid PK
+  invite_id             uuid FK -> beta_invites
+  user_id               uuid FK -> users
+  repo_id               uuid FK -> repositories
+  pull_request_id       uuid FK -> pull_requests
+  node_id               uuid FK -> code_nodes
+  type                  text               -- 'bug' | 'feature'
+  title                 text
+  details               text
+  browser_path          text
+  created_at            timestamptz
+
+-- One questionnaire response per beta invite.
+beta_questionnaires
+  id                    uuid PK
+  invite_id             uuid FK -> beta_invites UNIQUE
+  user_id               uuid FK -> users
+  repo_id               uuid FK -> repositories
+  faster_rating         int
+  risk_clarity_rating   int
+  confusing_or_missing  text
+  bugs_hit              text
+  build_next            text
+  would_keep_using      text
+  submitted_at          timestamptz
+  created_at            timestamptz
+```
+
+The selected repository should be enforced at the product layer and, ideally, by API checks: once `selected_repo_id` is set for an active invite, the tester should not be able to index a second repository through normal UI/API paths.
+
+### Planned Admin Console
+
+The beta admin console should live at `/admin` and require an operator-only check before rendering data.
+
+It should let an operator:
+
+- Enter a beta tester by name
+- Generate a unique `beta_id`
+- Generate a raw invite token once and store only `token_hash`
+- Copy the full invite link
+- Monitor whether the tester has used the link
+- See which repository the tester has selected
+- See trial start/end status
+- Review submitted questionnaire answers
+
+The admin page should not expose raw tokens after creation. If a link is lost, the operator should revoke the old invite and generate a new one.
+
+The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send the password as `X-Admin-Password`; the API compares it server-side before listing or creating beta testers.
+
 ### Design Notes
 
 **`code_nodes` is a content-addressed snapshot store.** The same function at two different commits is two rows. The `body_hash` field enables change detection between commits without re-parsing: if `body_hash` is identical across commits, the node is unchanged and its existing `summary` can be reused without calling Claude again.
@@ -301,6 +377,8 @@ All webhooks verified with `X-Hub-Signature-256` HMAC before processing.
 ### Installation Flow
 
 `GET /api/v1/github/callback` receives `installation_id`, `setup_action`, and `state` (user's Supabase UUID).
+
+For the beta flow, `state` must preserve both the authenticated user/session identity and the active beta invite context. After GitHub App install or update, the callback should return the tester to repo selection only when the invite is valid and not completed.
 
 | `setup_action` | Behaviour |
 |---|---|
@@ -440,10 +518,20 @@ api/
 POST /webhooks/github
 GET  /api/v1/github/callback
 GET  /api/v1/auth/status
+GET  /api/v1/beta/invites/{token}/status
 ```
 
 **Authenticated**
 ```
+POST   /api/v1/beta/invites/{token}/accept
+GET    /api/v1/beta/trial
+POST   /api/v1/beta/feedback
+POST   /api/v1/beta/questionnaire
+
+GET    /api/v1/admin/beta/testers
+POST   /api/v1/admin/beta/testers
+GET    /api/v1/admin/beta/testers/{betaID}
+
 GET    /api/v1/me/repos                                   list repos for current user
 DELETE /api/v1/me
 
@@ -457,6 +545,29 @@ GET    /api/v1/repos/{repoID}/prs/{prID}/graph            PR graph (nodes + edge
 GET    /api/v1/repos/{repoID}/prs/number/{number}/graph   PR graph by GitHub PR number
 GET    /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code lazy PR node source/diff
 ```
+
+### Beta Access Rules
+
+- A tester can only start from a valid beta invite token.
+- GitHub OAuth must bind the invite to one `users.id`.
+- GitHub App installation may expose several repositories, but Isoprism allows one `selected_repo_id` for the beta invite.
+- `POST /api/v1/repos/{repoID}/index` should reject attempts to index a second repository for the same active beta invite.
+- The trial starts when the tester selects the repository and indexing is triggered.
+- The trial ends seven calendar days after `trial_starts_at`.
+- Feedback submissions are accepted during the trial and may continue after the questionnaire is due if the product remains accessible.
+- The questionnaire is due once `now() >= trial_ends_at` and should be stored once per invite.
+- Feedback submissions should create GitHub issues in the configured feedback repository using labels `bug` or `feature`, and should include the tester's `beta_id`, selected repository, PR/node context, browser path, app commit SHA, and source commit SHA.
+
+### Feedback Issue Configuration
+
+Feedback issue creation uses:
+
+```text
+GITHUB_FEEDBACK_TOKEN
+GITHUB_FEEDBACK_REPO
+```
+
+`GITHUB_FEEDBACK_REPO` should be an `owner/repo` slug for the repository where beta feedback issues are filed. `GITHUB_FEEDBACK_TOKEN` needs permission to create issues and apply the `bug` and `feature` labels in that repository.
 
 ### `GET /repos/{repoID}/queue` Response
 
@@ -659,6 +770,18 @@ Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No 
 
 ## 10. Implementation Plan
 
+### Phase 0 — Beta Access Loop *(~1.5 days)*
+
+1. Add `beta_invites`, `beta_feedback`, and `beta_questionnaires` migrations.
+2. Add invite-token validation using hashed tokens; never persist raw URL tokens.
+3. Add beta routes for invite status, invite acceptance, trial status, feedback submission, and questionnaire submission.
+4. Preserve invite context across Supabase GitHub OAuth and GitHub App installation callback.
+5. Enforce one selected repository per active beta invite in repo selection and `POST /repos/{repoID}/index`.
+6. Add trial timing: `trial_starts_at` when the selected repo is indexed, `trial_ends_at = trial_starts_at + interval '7 days'`.
+7. Add frontend states for invalid invite, active trial status, questionnaire due, feedback modal, and questionnaire page.
+8. Add `/admin` with tester creation, invite-link generation, usage monitoring, selected repo visibility, and questionnaire answer review.
+9. Configure feedback issue creation with `GITHUB_FEEDBACK_TOKEN` and `GITHUB_FEEDBACK_REPO`.
+
 ### Phase 1 — Auth, Repo Selection, and DB Foundation *(~1 day)*
 
 1. Write and apply new DB migration (clean schema: `users`, `github_installations`, `repositories`, `pull_requests`, `code_nodes`, `code_edges`, `pr_node_changes`, `pr_analyses`)
@@ -791,3 +914,4 @@ Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No 
 | v0.6 | 2026-04-21 | Pivot to graph validation prototype; graph pipeline; function nodes; AI enrichment |
 | v0.7 | 2026-04-21 | Railway; clean schema; graph parser pipeline; three-event backend model (RepoInit/OpenPR/MergePR); `code_nodes` keyed by commit SHA; `node_type` derived at query time |
 | v0.8 | 2026-04-26 | Test code excluded from production graph; `code_test_references` records tests that exercise production nodes; parser docs reflect Go/TypeScript/JavaScript implementation |
+| v0.9 | 2026-04-29 | Documented invite-only beta loop: unique access tokens, one selected repo, one-week trial, in-product feedback, and end-of-week questionnaire |

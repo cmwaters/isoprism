@@ -24,7 +24,11 @@ npm run build
 
 ## Auth routing
 
-The root route is login-first: unauthenticated visitors go to `/login`, and signed-in visitors only skip login when `GET /api/v1/auth/status?user_id=...` returns a ready repo (`/{owner}/{repo}`) or an installed-but-unindexed repo (`/onboarding/repos`). If auth status returns `/onboarding`, root maps that to `/login`; the OAuth callback keeps `/onboarding` so newly signed-in GitHub users without a connected Isoprism repo are prompted to install the GitHub App and grant repo permissions.
+The intended beta route is invite-first: testers receive a unique link containing an access token, connect GitHub, authorize the Isoprism GitHub App, and select one repository for a one-week trial.
+
+The current root route is login-first: unauthenticated visitors go to `/login`, and signed-in visitors only skip login when `GET /api/v1/auth/status?user_id=...` returns a ready repo (`/{owner}/{repo}`) or an installed-but-unindexed repo (`/onboarding/repos`). If auth status returns `/onboarding`, root maps that to `/login`; the OAuth callback keeps `/onboarding` so newly signed-in GitHub users without a connected Isoprism repo are prompted to install the GitHub App and grant repo permissions.
+
+To fully match the beta loop, routing should preserve invite context across OAuth and GitHub App installation, reject invalid or completed beta tokens, lock the tester to one selected repository, show trial status for seven days, and ask for the questionnaire once the trial window ends.
 
 The GitHub OAuth login requests `read:user`, `user:email`, and `read:org`. The org scope lets the settings UI discover private organization memberships when GitHub exposes them to the signed-in user's OAuth token.
 
@@ -32,20 +36,40 @@ The GitHub OAuth login requests `read:user`, `user:email`, and `read:org`. The o
 
 Authenticated views render a fixed account pill in the top-right corner. The pill shows the signed-in user's GitHub avatar and display name, and links to `/{user}/settings`.
 
-Settings are scoped to a GitHub account slug:
+Settings are intentionally simple during beta. `/{user}/settings` is a single page where the tester can:
 
-- `/{user}/settings` for personal settings.
-- `/{org}/settings` for organization settings.
+- See their GitHub connection
+- Install or manage the Isoprism GitHub App on GitHub
+- See the current indexed repository
+- Select a different accessible repository
+- Trigger indexing for the selected repository
 
-The settings route has a side panel with `Overview`, `GitHub`, and `Repositories` categories. User settings act as the home base for organization discovery: organization rows navigate internally to `/{org}/settings` instead of sending the user directly to GitHub.
-
-The first implementation uses the existing API contract:
+When a different repository is indexed from settings, the page shows the same `IndexingProgress` component used during onboarding.
 
 - `GET /api/v1/me/repos` supplies repositories currently available to Isoprism.
 - `POST /api/v1/repos/{repoID}/index` starts or retries indexing from the repositories settings category.
-- GitHub organization discovery is attempted client-side with the Supabase GitHub provider token and `GET https://api.github.com/user/orgs`.
 
-GitHub App install and permission changes still happen on GitHub. The settings UI links to GitHub's App install/manage pages from the relevant account settings page, while keeping GitHub permission state distinct from Isoprism repository indexing state.
+GitHub App install and permission changes still happen on GitHub.
+
+## Beta admin
+
+The beta admin console is available at `/admin`. It prompts for the admin password and then calls the Go API with `X-Admin-Password`.
+
+Admin capabilities:
+
+- Create a beta tester by name, with an optional email/note.
+- Generate a unique beta ID, raw token, and invite link.
+- Show the raw token and full link only immediately after creation.
+- Monitor invite status, whether the invite has been used, selected repository, trial dates, and questionnaire answers.
+
+The API routes are:
+
+```http
+GET  /api/v1/admin/beta/testers
+POST /api/v1/admin/beta/testers
+```
+
+The Railway API must have `ADMIN_PASSWORD` set before this page can unlock.
 
 ## Repository Graph View
 
@@ -64,6 +88,16 @@ The repo route renders one persistent `GraphCanvas` and side panel:
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
 
 PR review does not have a separate route or page.
+
+During the beta, this repository is the tester's selected trial repository. Feedback controls for bug reports and feature requests should be available from this review workspace and should capture current context such as repository, PR number, selected node, and browser path.
+
+The graph workspace shows a black beta footer banner with "Report a problem" and "Request a feature" actions. Each action opens a centered feedback form and submits to:
+
+```http
+POST /api/v1/beta/feedback
+```
+
+The API creates a GitHub issue in the configured feedback repository with either the `bug` or `feature` label. The payload includes repo/PR/node context, browser path, frontend app commit, and source commit.
 
 The side panel has two modes:
 
