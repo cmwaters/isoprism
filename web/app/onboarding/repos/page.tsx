@@ -47,7 +47,11 @@ function ReposContent() {
     setIndexingRepoID(selected);
 
     try {
-      await apiFetch(`/api/v1/repos/${selected}/index`, token, { method: "POST" });
+      const result = await apiFetch<{ status: string }>(`/api/v1/repos/${selected}/index`, token, { method: "POST" });
+      if (result.status === "already_indexed") {
+        const repo = repos.find((r) => r.id === selected);
+        if (repo) router.push(`/${repo.full_name}`);
+      }
     } catch {
       // index call may already have started
     }
