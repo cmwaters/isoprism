@@ -140,3 +140,27 @@ export interface RepoStatus {
   pr_count: number;
   ready_count: number;
 }
+
+// ── Beta feedback ────────────────────────────────────────────────────────────
+
+export interface BetaFeedbackPayload {
+  type: "bug" | "feature";
+  title: string;
+  details: string;
+  beta_id?: string;
+  repo_full_name: string;
+  repo_id: string;
+  pr_number?: number;
+  pr_title?: string;
+  node_full_name?: string;
+  node_file_path?: string;
+  browser_path: string;
+  app_commit_sha: string;
+  source_commit_sha?: string;
+}
+
+export interface BetaFeedbackResponse {
+  status: "submitted";
+  issue: number;
+  html_url: string;
+}

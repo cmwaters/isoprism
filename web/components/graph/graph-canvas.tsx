@@ -21,6 +21,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
+import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel from "./node-detail-panel";
 
@@ -528,6 +529,8 @@ function InnerCanvas({
 
   const totalNodes = activeGraph.nodes.length;
   const maxNodes = 20;
+  const activeRepo = repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo);
+  const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw" }}>
@@ -540,8 +543,8 @@ function InnerCanvas({
           setSelectedNode(n);
         }}
         repoID={repoID}
-        repo={repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo)}
-        pr={isPRGraph(activeGraph) ? activeGraph.pr : undefined}
+        repo={activeRepo}
+        pr={activePR}
         prs={prs}
         loadingPRNumber={loadingPRNumber}
         onSelectPR={onSelectPR}
@@ -584,7 +587,7 @@ function InnerCanvas({
 
           <div style={{
             position: "absolute",
-            bottom: 24,
+            bottom: 64,
             right: 24,
             display: "flex",
             flexDirection: "column",
@@ -597,7 +600,7 @@ function InnerCanvas({
           {totalNodes >= maxNodes && (
             <div style={{
               position: "absolute",
-              bottom: 24,
+              bottom: 64,
               left: 24,
               color: "#888888",
               fontSize: 12,
@@ -606,6 +609,13 @@ function InnerCanvas({
               Showing {maxNodes} of {totalNodes} affected functions
             </div>
           )}
+
+          <BetaFeedbackBanner
+            token={token}
+            repo={activeRepo}
+            pr={activePR}
+            selectedNode={selectedNode}
+          />
         </div>
       </div>
     </div>

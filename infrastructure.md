@@ -154,7 +154,11 @@ supabase db dump --linked | grep -E "pr_check_runs|pr_review_threads|pr_review_r
 | `FRONTEND_URLS` | Railway service env | Go API → allowed CORS origins and allowed install redirect origins |
 | `ANTHROPIC_API_KEY` | Railway service env | Go API → AI enrichment for code summaries, PR change summaries, and PR analyses |
 | `OPENAI_API_KEY` | Railway service env | Go API config only; currently unused by AI call sites |
+| `GITHUB_FEEDBACK_TOKEN` | Railway service env | Go API → creates GitHub issues for beta bug reports and feature requests |
+| `GITHUB_FEEDBACK_REPO` | Railway service env | Go API → `owner/repo` target for beta feedback issues |
+| `ADMIN_PASSWORD` | Railway service env | Go API → password gate for `/api/v1/admin/beta/testers` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Vercel project env | Next.js |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel project env | Next.js |
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel project env | Next.js server (if needed) |
 | `NEXT_PUBLIC_API_URL` | Vercel project env and local shell | Next.js → Go API; defaults to `https://api.isoprism.com` |
+| `NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA` | Vercel system env | Next.js → included in beta feedback issues as the app commit |

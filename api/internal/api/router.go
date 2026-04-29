@@ -27,7 +27,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.FrontendURLs,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Admin-Password"},
 		AllowCredentials: true,
 	}))
 
@@ -44,6 +44,13 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	repoHandler := &handlers.RepoHandler{DB: db}
 	queueHandler := &handlers.QueueHandler{DB: db}
 	graphHandler := &handlers.GraphHandler{DB: db, AppClient: appClient}
+	betaHandler := &handlers.BetaHandler{
+		FeedbackToken: cfg.GitHubFeedbackToken,
+		FeedbackRepo:  cfg.GitHubFeedbackRepo,
+		AdminPassword: cfg.AdminPassword,
+		FrontendURL:   cfg.FrontendURL,
+		DB:            db,
+	}
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -135,6 +142,8 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	r.Post("/webhooks/github", ghHandler.HandleWebhook)
 	r.Get("/api/v1/github/callback", ghHandler.HandleInstallationCallback)
 	r.Get("/api/v1/auth/status", repoHandler.GetAuthStatus)
+	r.Get("/api/v1/admin/beta/testers", betaHandler.ListBetaTesters)
+	r.Post("/api/v1/admin/beta/testers", betaHandler.CreateBetaTester)
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
@@ -142,6 +151,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 
 		r.Get("/api/v1/me/repos", repoHandler.ListMyRepos)
 		r.Delete("/api/v1/me", repoHandler.DeleteMe)
+		r.Post("/api/v1/beta/feedback", betaHandler.SubmitFeedback)
 
 		r.Route("/api/v1/repos/{repoID}", func(r chi.Router) {
 			r.Get("/", repoHandler.GetRepo)
