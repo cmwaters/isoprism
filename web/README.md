@@ -60,15 +60,13 @@ Admin capabilities:
 - Create a beta tester by name, with an optional email/note.
 - Generate a unique beta ID, raw token, and invite link.
 - Store the invite token directly for admin display and invite lookup.
-- Regenerate a token for older tester rows that were created before direct token storage existed.
-- Monitor invite status, whether the invite has been used, selected repository, trial dates, and questionnaire answers.
+- Monitor each tester's ID, invite link, selected repository, and questionnaire answers.
 
 The API routes are:
 
 ```http
 GET  /api/v1/admin/beta/testers
 POST /api/v1/admin/beta/testers
-POST /api/v1/admin/beta/testers/{testerID}/token
 ```
 
 The Railway API must have `ADMIN_PASSWORD` set before this page can unlock.

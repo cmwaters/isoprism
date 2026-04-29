@@ -20,15 +20,11 @@ type BetaTester = {
   link: string;
   token?: string | null;
   email?: string | null;
-  status: string;
   invited_at: string;
-  accepted_at?: string | null;
   completed_at?: string | null;
   user_id?: string | null;
   selected_repo_id?: string | null;
   selected_repo_full_name?: string | null;
-  trial_starts_at?: string | null;
-  trial_ends_at?: string | null;
   questionnaire_submitted_at?: string | null;
   questionnaire?: BetaQuestionnaire | null;
 };
@@ -154,24 +150,6 @@ export default function BetaAdminPage() {
     }
   }
 
-  async function regenerateToken(testerID: string) {
-    setCreating(true);
-    setError("");
-
-    try {
-      const result = await adminFetch<CreateBetaTesterResponse>(`/api/v1/admin/beta/testers/${testerID}/token`, {
-        method: "POST",
-      });
-      setCreated(result);
-      await loadTesters();
-      setExpandedID(testerID);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not regenerate invite token.");
-    } finally {
-      setCreating(false);
-    }
-  }
-
   const sortedTesters = useMemo(() => testers, [testers]);
 
   if (!savedPassword) {
@@ -268,7 +246,7 @@ export default function BetaAdminPage() {
           <div style={tableStyle}>
             <div style={tableHeaderStyle}>
               <span>Tester</span>
-              <span>Status</span>
+              <span>Invite link</span>
               <span>Repository</span>
               <span>Questionnaire</span>
             </div>
@@ -283,39 +261,24 @@ export default function BetaAdminPage() {
                     <button style={rowButtonStyle} onClick={() => setExpandedID(expanded ? null : tester.id)}>
                       <div>
                         <div style={rowTitleStyle}>{tester.name}</div>
-                        <div style={rowMetaStyle}>{tester.beta_id}</div>
+                        <div style={rowMetaStyle}>{tester.user_id ?? tester.beta_id}</div>
                       </div>
-                      <StatusPill status={tester.status} used={Boolean(tester.accepted_at || tester.user_id)} />
+                      <div style={rowMetaStrongStyle}>{tester.link || "Not available"}</div>
                       <div style={rowMetaStrongStyle}>{tester.selected_repo_full_name ?? "Not set up"}</div>
                       <div style={rowMetaStrongStyle}>{tester.questionnaire_submitted_at ? "Submitted" : "Pending"}</div>
                     </button>
 
                     {expanded && (
                       <div style={detailStyle}>
-                        <CopyDetail label="Beta ID" value={tester.beta_id} copied={copied} onCopy={copyValue} />
+                        <CopyDetail label="ID" value={tester.user_id ?? tester.beta_id} copied={copied} onCopy={copyValue} />
                         <CopyDetail label="Token" value={tester.token ?? "Not stored"} copied={copied} onCopy={copyValue} />
                         <CopyDetail
                           label="Invite link"
-                          value={tester.token ? tester.link : "Regenerate token to show link"}
+                          value={tester.link || "Not available"}
                           copied={copied}
                           onCopy={copyValue}
                         />
-                        {!tester.token && (
-                          <div style={detailItemStyle}>
-                            <div style={smallLabelStyle}>Missing token</div>
-                            <button
-                              style={secondaryButtonStyle}
-                              onClick={() => void regenerateToken(tester.id)}
-                              disabled={creating}
-                            >
-                              {creating ? "Regenerating..." : "Regenerate invite token"}
-                            </button>
-                          </div>
-                        )}
                         <Detail label="Email / note" value={tester.email ?? "None"} />
-                        <Detail label="Invite used" value={tester.accepted_at ? formatDate(tester.accepted_at) : "No"} />
-                        <CopyDetail label="User ID" value={tester.user_id ?? "Not linked"} copied={copied} onCopy={copyValue} />
-                        <Detail label="Trial" value={trialLabel(tester)} />
                         <CopyDetail label="Selected repo ID" value={tester.selected_repo_id ?? "None"} copied={copied} onCopy={copyValue} />
                         {tester.questionnaire ? (
                           <div style={questionnaireStyle}>
@@ -377,19 +340,6 @@ async function writeClipboard(value: string) {
   }
 }
 
-function StatusPill({ status, used }: { status: string; used: boolean }) {
-  return (
-    <span style={{
-      ...pillStyle,
-      borderColor: used ? "#BFE2C5" : "#D6D6D6",
-      background: used ? "#EEF8F0" : "#F3F3F3",
-      color: used ? "#166534" : "#555555",
-    }}>
-      {used ? `${status} · used` : status}
-    </span>
-  );
-}
-
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div style={detailItemStyle}>
@@ -410,7 +360,7 @@ function CopyDetail({
   copied: string;
   onCopy: (value: string, label: string) => void;
 }) {
-  const canCopy = !["None", "Not linked", "Not stored", "Regenerate token to show link"].includes(value);
+  const canCopy = !["None", "Not linked", "Not stored", "Not available"].includes(value);
   return (
     <div style={detailItemStyle}>
       <div style={smallLabelStyle}>{label}</div>
@@ -447,20 +397,6 @@ function CopyRow({
       </button>
     </div>
   );
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
-function trialLabel(tester: BetaTester) {
-  if (!tester.trial_starts_at) return "Not started";
-  const start = formatDate(tester.trial_starts_at);
-  const end = tester.trial_ends_at ? formatDate(tester.trial_ends_at) : "No end date";
-  return `${start} to ${end}`;
 }
 
 const mainStyle: React.CSSProperties = {
@@ -679,18 +615,6 @@ const rowMetaStrongStyle: React.CSSProperties = {
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-};
-
-const pillStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "fit-content",
-  border: "1px solid #D6D6D6",
-  borderRadius: 999,
-  padding: "3px 8px",
-  fontSize: 12,
-  fontWeight: 650,
 };
 
 const detailStyle: React.CSSProperties = {

@@ -32,6 +32,7 @@ export default function BetaFeedbackBanner({
 
   const appCommit = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "local";
   const sourceCommit = pr?.head_commit_sha ?? repo.main_commit_sha ?? "";
+  const userID = useMemo(() => userIDFromAccessToken(token), [token]);
 
   const contextLabel = useMemo(() => {
     const parts = [repo.full_name];
@@ -63,6 +64,7 @@ export default function BetaFeedbackBanner({
       type: feedbackType,
       title: title.trim(),
       details: details.trim(),
+      user_id: userID,
       repo_full_name: repo.full_name,
       repo_id: repo.id,
       pr_number: pr?.number,
@@ -161,6 +163,19 @@ export default function BetaFeedbackBanner({
       )}
     </>
   );
+}
+
+function userIDFromAccessToken(token: string) {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return "";
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=");
+    const claims = JSON.parse(atob(padded)) as { sub?: string };
+    return claims.sub ?? "";
+  } catch {
+    return "";
+  }
 }
 
 const bannerStyle: React.CSSProperties = {

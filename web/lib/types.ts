@@ -173,6 +173,7 @@ export interface BetaFeedbackPayload {
   title: string;
   details: string;
   beta_id?: string;
+  user_id?: string;
   repo_full_name: string;
   repo_id: string;
   pr_number?: number;
