@@ -217,7 +217,14 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	var changeSummaries map[string]string
 	var prOut ai.PROutput
 
-	if enricher != nil && len(aiInputs) > 0 {
+	const maxAIChangedNodes = 80
+	if len(aiInputs) > maxAIChangedNodes {
+		prOut = ai.PROutput{
+			Summary:   "Large PR changing " + strconv.Itoa(len(aiInputs)) + " functions; detailed AI analysis skipped.",
+			RiskScore: 5,
+			RiskLabel: "medium",
+		}
+	} else if enricher != nil && len(aiInputs) > 0 {
 		cs, po, err := enricher.EnrichPRChanges(ctx, aiInputs)
 		if err != nil {
 			log.Printf("OpenPR: AI enrichment error: %v", err)

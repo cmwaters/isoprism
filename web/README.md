@@ -89,6 +89,8 @@ The repo route renders one persistent `GraphCanvas` and side panel:
 
 During beta, the PR queue only includes open, non-draft PRs targeting the repository's indexed default branch whose `base_commit_sha` exactly matches the repository's indexed `main_commit_sha`. PRs from other base branches, or PRs whose base SHA is out of sync with the indexed default-branch graph, are hidden rather than shown with approximate graph data.
 
+Large PRs can skip per-function AI summaries so the graph and changed-node overlay still become available without waiting on an oversized enrichment request.
+
 Graph responses accept `granularity=function|object|package` and return a matching `granularity` field. Function-level responses use `full_name` as the node display label and expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records. Object responses collapse a type and its receiver methods into an aggregate node. Package responses collapse all production nodes under a package path into one aggregate node. Aggregate nodes include `member_count`, `changed_member_count`, `collapsed_node_ids`, and `expandable`; aggregate edges include `weight`, `changed_weight`, `underlying_edge_count`, and sample underlying caller/callee pairs.
 
 PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata before applying object/package projection. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail.
