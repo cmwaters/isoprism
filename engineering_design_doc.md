@@ -448,7 +448,7 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 
 **Steps:**
 
-1. **Validate branch and SHA:** Require `pull_requests.base_branch = 'main'` and `pull_requests.base_commit_sha = repositories.main_commit_sha`. If either check fails, mark `graph_status = 'skipped'` so the PR is hidden instead of rendered against an approximate graph. Reserve `failed` for processing errors.
+1. **Validate branch and SHA:** Require `pull_requests.base_branch = repositories.default_branch` and `pull_requests.base_commit_sha = repositories.main_commit_sha`. If either check fails, mark `graph_status = 'skipped'` so the PR is hidden instead of rendered against an approximate graph. Reserve `failed` for processing errors.
 2. **Check cache:** Look up the PR's stored `head_commit_sha`. If the incoming webhook's `head_sha` matches → already processed, skip.
 3. **Fetch diff:** `GET /repos/{owner}/{repo}/compare/{base_commit_sha}...{head_sha}` — returns a list of changed files with their unified diffs.
 4. **Parse head commit:** For each changed file at `head_sha`, fetch content and parse it. Insert new production `code_nodes` at `commit_sha = head_sha` if not already present. Reuse existing `summary` where `body_hash` is unchanged.
@@ -676,7 +676,7 @@ GITHUB_FEEDBACK_REPO
 urgency = (wait_time_score × 0.4) + (risk_score × 0.35) + (nodes_changed_score × 0.25)
 ```
 
-Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` are excluded from the queue until processing completes. During beta, the queue also excludes PRs that do not target `main` or whose `base_commit_sha` does not match the repository's indexed `main_commit_sha`.
+Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` are excluded from the queue until processing completes. During beta, the queue also excludes PRs that do not target the repository's indexed default branch or whose `base_commit_sha` does not match the repository's indexed `main_commit_sha`.
 
 ---
 

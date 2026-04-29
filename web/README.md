@@ -87,7 +87,7 @@ The repo route renders one persistent `GraphCanvas` and side panel:
 - Node cards with package/type labels, full names, aggregate member counts, structured inputs/outputs for function-level nodes, and added/removed/deleted pills.
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
 
-During beta, the PR queue only includes open, non-draft PRs targeting `main` whose `base_commit_sha` exactly matches the repository's indexed `main_commit_sha`. PRs from other base branches, or PRs whose base SHA is out of sync with the indexed main graph, are hidden rather than shown with approximate graph data.
+During beta, the PR queue only includes open, non-draft PRs targeting the repository's indexed default branch whose `base_commit_sha` exactly matches the repository's indexed `main_commit_sha`. PRs from other base branches, or PRs whose base SHA is out of sync with the indexed default-branch graph, are hidden rather than shown with approximate graph data.
 
 Graph responses accept `granularity=function|object|package` and return a matching `granularity` field. Function-level responses use `full_name` as the node display label and expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records. Object responses collapse a type and its receiver methods into an aggregate node. Package responses collapse all production nodes under a package path into one aggregate node. Aggregate nodes include `member_count`, `changed_member_count`, `collapsed_node_ids`, and `expandable`; aggregate edges include `weight`, `changed_weight`, `underlying_edge_count`, and sample underlying caller/callee pairs.
 

@@ -21,26 +21,26 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	log.Printf("OpenPR: starting for pr %s", prID)
 
 	// Load PR details
-	var repoID, fullName, baseBranch, mainCommitSHA string
+	var repoID, fullName, baseBranch, defaultBranch, mainCommitSHA string
 	var installationID int64
 	var headSHA, baseSHA, baseCommit string
 	var prNumber int
 	err := db.QueryRow(ctx, `
 		select pr.repo_id, pr.head_commit_sha, pr.base_commit_sha,
-		       pr.number, r.full_name, pr.base_branch, coalesce(r.main_commit_sha, ''),
+		       pr.number, r.full_name, pr.base_branch, r.default_branch, coalesce(r.main_commit_sha, ''),
 		       gi.installation_id
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
 		join github_installations gi on gi.id = r.installation_id
 		where pr.id = $1
-	`, prID).Scan(&repoID, &headSHA, &baseSHA, &prNumber, &fullName, &baseBranch, &mainCommitSHA, &installationID)
+	`, prID).Scan(&repoID, &headSHA, &baseSHA, &prNumber, &fullName, &baseBranch, &defaultBranch, &mainCommitSHA, &installationID)
 	if err != nil {
 		log.Printf("OpenPR: failed to load PR: %v", err)
 		return
 	}
 
-	if baseBranch != "main" {
-		log.Printf("OpenPR: skipping pr %s: base branch %q is not main", prID, baseBranch)
+	if baseBranch != defaultBranch {
+		log.Printf("OpenPR: skipping pr %s: base branch %q is not indexed default branch %q", prID, baseBranch, defaultBranch)
 		db.Exec(ctx, `update pull_requests set graph_status='skipped' where id=$1`, prID)
 		return
 	}
@@ -52,7 +52,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	}
 
 	if baseSHA != mainCommitSHA {
-		log.Printf("OpenPR: skipping pr %s: base sha %s does not match indexed main sha %s", prID, baseSHA, mainCommitSHA)
+		log.Printf("OpenPR: skipping pr %s: base sha %s does not match indexed default branch sha %s", prID, baseSHA, mainCommitSHA)
 		db.Exec(ctx, `update pull_requests set graph_status='skipped' where id=$1`, prID)
 		return
 	}

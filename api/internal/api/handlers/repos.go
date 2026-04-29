@@ -141,14 +141,14 @@ func (h *RepoHandler) GetRepoStatus(w http.ResponseWriter, r *http.Request) {
 			count(*) filter (
 				where pr.state = 'open'
 				  and pr.draft = false
-				  and pr.base_branch = 'main'
+				  and pr.base_branch = r.default_branch
 				  and pr.base_commit_sha = r.main_commit_sha
 			),
 			count(*) filter (
 				where pr.state = 'open'
 				  and pr.draft = false
 				  and pr.graph_status = 'ready'
-				  and pr.base_branch = 'main'
+				  and pr.base_branch = r.default_branch
 				  and pr.base_commit_sha = r.main_commit_sha
 			)
 		from pull_requests pr

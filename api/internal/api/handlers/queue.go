@@ -47,7 +47,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 		where pr.repo_id = $1
 		  and pr.state   = 'open'
 		  and pr.draft   = false
-		  and pr.base_branch = 'main'
+		  and pr.base_branch = r.default_branch
 		  and pr.base_commit_sha = r.main_commit_sha
 		  and pr.graph_status = 'ready'
 		order by pr.opened_at asc
