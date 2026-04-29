@@ -910,29 +910,29 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// Load PR + main commit SHA
 	var pr models.GraphPR
-	var baseCommit, headCommit, mainCommitSHA, baseBranch string
+	var baseCommit, headCommit, mainCommitSHA, baseBranch, defaultBranch string
 	err := h.DB.QueryRow(ctx, `
 		select pr.id, pr.number, pr.title, pr.html_url,
 		       coalesce(pr.base_commit_sha,''), coalesce(pr.head_commit_sha,''),
 		       coalesce(r.main_commit_sha,''),
-		       coalesce(pr.body,''), coalesce(pr.author_login,''), pr.base_branch
+		       coalesce(pr.body,''), coalesce(pr.author_login,''), pr.base_branch, r.default_branch
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
 		where pr.id=$1 and pr.repo_id=$2
 	`, prID, repoID).Scan(&pr.ID, &pr.Number, &pr.Title, &pr.HTMLURL, &baseCommit, &headCommit, &mainCommitSHA,
-		&pr.Body, &pr.AuthorLogin, &baseBranch)
+		&pr.Body, &pr.AuthorLogin, &baseBranch, &defaultBranch)
 	if err != nil {
 		http.Error(w, "pr not found", http.StatusNotFound)
 		return
 	}
 	pr.BaseCommitSHA = baseCommit
 	pr.HeadCommitSHA = headCommit
-	if baseBranch != "main" {
-		http.Error(w, "PR graph only supports pull requests targeting main", http.StatusConflict)
+	if baseBranch != defaultBranch {
+		http.Error(w, "PR graph only supports pull requests targeting the indexed default branch", http.StatusConflict)
 		return
 	}
 	if baseCommit == "" || mainCommitSHA == "" || baseCommit != mainCommitSHA {
-		http.Error(w, "PR base SHA does not match the indexed main SHA", http.StatusConflict)
+		http.Error(w, "PR base SHA does not match the indexed default branch SHA", http.StatusConflict)
 		return
 	}
 
@@ -993,7 +993,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		fnRows.Close()
 	}
 
-	// Find equivalent node IDs at the main branch commit (for edge lookups).
+	// Find equivalent node IDs at the indexed default-branch commit (for edge lookups).
 	// code_edges are stored with main-branch node IDs during repo_init.
 	mainIDByFullName := map[string]string{}
 	var mainChangedIDs []string
