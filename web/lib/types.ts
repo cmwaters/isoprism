@@ -71,6 +71,10 @@ export interface GraphNode {
   change_type?: "added" | "modified" | "deleted";
   lines_added: number;
   lines_removed: number;
+  weight: number;
+  degree: number;
+  graph_depth: number;
+  boundary: boolean;
   tests: GraphNodeTest[];
 }
 

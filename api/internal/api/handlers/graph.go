@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,189 @@ import (
 type GraphHandler struct {
 	DB        *pgxpool.Pool
 	AppClient *github.AppClient
+}
+
+const (
+	graphNeighborhoodDepth = 2
+	graphMaxVisibleNodes   = 150
+)
+
+type graphEdgeRow struct {
+	callerID string
+	calleeID string
+}
+
+type graphCandidate struct {
+	id          string
+	seed        bool
+	lines       int
+	callerCount int
+	calleeCount int
+	degree      int
+	depth       int
+	boundary    bool
+	weight      int
+}
+
+func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
+	adj := map[string]map[string]bool{}
+	callerCount := map[string]int{}
+	calleeCount := map[string]int{}
+	knownIDs := map[string]bool{}
+
+	ensure := func(id string) {
+		if id == "" {
+			return
+		}
+		knownIDs[id] = true
+		if adj[id] == nil {
+			adj[id] = map[string]bool{}
+		}
+	}
+	for _, id := range seedIDs {
+		ensure(id)
+	}
+	for _, e := range allEdges {
+		if e.callerID == "" || e.calleeID == "" || e.callerID == e.calleeID {
+			continue
+		}
+		ensure(e.callerID)
+		ensure(e.calleeID)
+		if !adj[e.callerID][e.calleeID] {
+			adj[e.callerID][e.calleeID] = true
+			adj[e.calleeID][e.callerID] = true
+			calleeCount[e.callerID]++
+			callerCount[e.calleeID]++
+		}
+	}
+
+	seedSet := map[string]bool{}
+	for _, id := range seedIDs {
+		if knownIDs[id] {
+			seedSet[id] = true
+		}
+	}
+
+	depths := map[string]int{}
+	queue := make([]string, 0, len(seedSet))
+	for id := range seedSet {
+		depths[id] = 0
+		queue = append(queue, id)
+	}
+	if len(queue) == 0 {
+		for id := range knownIDs {
+			depths[id] = 0
+			queue = append(queue, id)
+			break
+		}
+	}
+	for head := 0; head < len(queue); head++ {
+		id := queue[head]
+		depth := depths[id]
+		if depth >= graphNeighborhoodDepth {
+			continue
+		}
+		for nb := range adj[id] {
+			if _, seen := depths[nb]; seen {
+				continue
+			}
+			depths[nb] = depth + 1
+			queue = append(queue, nb)
+		}
+	}
+
+	candidates := make([]graphCandidate, 0, len(depths))
+	for id, depth := range depths {
+		if depth > graphNeighborhoodDepth {
+			continue
+		}
+		c := graphCandidate{
+			id:          id,
+			seed:        seedSet[id],
+			lines:       lineChanges[id],
+			callerCount: callerCount[id],
+			calleeCount: calleeCount[id],
+			degree:      len(adj[id]),
+			depth:       depth,
+		}
+		c.weight = c.lines + c.callerCount + c.calleeCount
+		candidates = append(candidates, c)
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		a, b := candidates[i], candidates[j]
+		if a.seed != b.seed {
+			return a.seed
+		}
+		if a.weight != b.weight {
+			return a.weight > b.weight
+		}
+		if a.depth != b.depth {
+			return a.depth < b.depth
+		}
+		if a.degree != b.degree {
+			return a.degree > b.degree
+		}
+		return a.id < b.id
+	})
+
+	selected := map[string]graphCandidate{}
+	for _, c := range candidates {
+		if len(selected) >= graphMaxVisibleNodes {
+			break
+		}
+		selected[c.id] = c
+	}
+	for id, c := range selected {
+		for nb := range adj[id] {
+			if _, ok := selected[nb]; !ok {
+				c.boundary = true
+				selected[id] = c
+				break
+			}
+		}
+	}
+
+	visibleEdges := make([]models.GraphEdge, 0)
+	seenEdges := map[string]bool{}
+	for _, e := range allEdges {
+		if _, ok := selected[e.callerID]; !ok {
+			continue
+		}
+		if _, ok := selected[e.calleeID]; !ok {
+			continue
+		}
+		key := e.callerID + "|" + e.calleeID
+		if seenEdges[key] {
+			continue
+		}
+		seenEdges[key] = true
+		visibleEdges = append(visibleEdges, models.GraphEdge{CallerID: e.callerID, CalleeID: e.calleeID})
+	}
+
+	return selected, visibleEdges
+}
+
+func sortGraphNodes(nodes []models.GraphNode) {
+	sort.SliceStable(nodes, func(i, j int) bool {
+		a, b := nodes[i], nodes[j]
+		if a.GraphDepth != b.GraphDepth {
+			return a.GraphDepth < b.GraphDepth
+		}
+		if a.Weight != b.Weight {
+			return a.Weight > b.Weight
+		}
+		if a.Degree != b.Degree {
+			return a.Degree > b.Degree
+		}
+		if a.FilePath != b.FilePath {
+			return a.FilePath < b.FilePath
+		}
+		if a.LineStart != b.LineStart {
+			return a.LineStart < b.LineStart
+		}
+		return a.ID < b.ID
+	})
 }
 
 // GET /api/v1/repos/{repoID}/graph
@@ -55,7 +239,6 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		from code_nodes
 		where repo_id=$1 and commit_sha=$2
 		order by file_path, line_start
-		limit 150
 	`, repoID, *repo.MainCommitSHA)
 	if err != nil {
 		log.Printf("GetRepoGraph: node query: %v", err)
@@ -64,9 +247,9 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	defer nodeRows.Close()
 
-	nodes := make([]models.GraphNode, 0)
-	nodeIDs := make([]string, 0)
-	nodeSet := map[string]bool{}
+	nodeMap := map[string]models.GraphNode{}
+	seedIDs := make([]string, 0)
+	fallbackSeed := ""
 	for nodeRows.Next() {
 		var n models.GraphNode
 		var summary string
@@ -79,27 +262,27 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		if summary != "" {
 			n.Summary = &summary
 		}
-		if n.Name == "main" || n.FullName == "main" {
-			n.NodeType = "entrypoint"
-		} else {
-			n.NodeType = "context"
-		}
 		n.Tests = []models.GraphNodeTest{}
-		nodes = append(nodes, n)
-		nodeIDs = append(nodeIDs, n.ID)
-		nodeSet[n.ID] = true
+		nodeMap[n.ID] = n
+		if fallbackSeed == "" {
+			fallbackSeed = n.ID
+		}
+		if n.Name == "main" || n.FullName == "main" || strings.HasSuffix(n.FullName, ".main") {
+			seedIDs = append(seedIDs, n.ID)
+		}
 	}
 	nodeRows.Close()
+	if len(seedIDs) == 0 && fallbackSeed != "" {
+		seedIDs = append(seedIDs, fallbackSeed)
+	}
 
-	edges := make([]models.GraphEdge, 0)
-	if len(nodeIDs) > 0 {
+	allEdges := make([]graphEdgeRow, 0)
+	if len(nodeMap) > 0 {
 		edgeRows, err := h.DB.Query(ctx, `
 			select caller_id, callee_id
 			from code_edges
 			where repo_id=$1 and commit_sha=$2
-			  and caller_id = any($3::uuid[])
-			  and callee_id = any($3::uuid[])
-		`, repoID, *repo.MainCommitSHA, nodeIDs)
+		`, repoID, *repo.MainCommitSHA)
 		if err != nil {
 			log.Printf("GetRepoGraph: edge query: %v", err)
 			http.Error(w, "db error", http.StatusInternalServerError)
@@ -107,16 +290,46 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		}
 		defer edgeRows.Close()
 		for edgeRows.Next() {
-			var e models.GraphEdge
-			if err := edgeRows.Scan(&e.CallerID, &e.CalleeID); err != nil {
+			var e graphEdgeRow
+			if err := edgeRows.Scan(&e.callerID, &e.calleeID); err != nil {
 				continue
 			}
-			if nodeSet[e.CallerID] && nodeSet[e.CalleeID] {
-				edges = append(edges, e)
+			if _, ok := nodeMap[e.callerID]; !ok {
+				continue
 			}
+			if _, ok := nodeMap[e.calleeID]; !ok {
+				continue
+			}
+			allEdges = append(allEdges, e)
 		}
 		edgeRows.Close()
 	}
+
+	selected, edges := selectVisibleGraph(seedIDs, allEdges, map[string]int{})
+	nodes := make([]models.GraphNode, 0, len(selected))
+	nodeIDs := make([]string, 0, len(selected))
+	seedSet := map[string]bool{}
+	for _, id := range seedIDs {
+		seedSet[id] = true
+	}
+	for id, meta := range selected {
+		n, ok := nodeMap[id]
+		if !ok {
+			continue
+		}
+		if seedSet[id] {
+			n.NodeType = "entrypoint"
+		} else {
+			n.NodeType = "context"
+		}
+		n.Weight = meta.weight
+		n.Degree = meta.degree
+		n.GraphDepth = meta.depth
+		n.Boundary = meta.boundary
+		nodes = append(nodes, n)
+		nodeIDs = append(nodeIDs, id)
+	}
+	sortGraphNodes(nodes)
 
 	if len(nodeIDs) > 0 {
 		testRows, err := h.DB.Query(ctx, `
@@ -287,7 +500,6 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	// Find equivalent node IDs at the main branch commit (for edge lookups).
 	// code_edges are stored with main-branch node IDs during repo_init.
 	mainIDByFullName := map[string]string{}
-	fullNameByMainID := map[string]string{}
 	var mainChangedIDs []string
 	if mainCommitSHA != "" && len(changedFullNames) > 0 {
 		mRows, _ := h.DB.Query(ctx, `
@@ -300,97 +512,79 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 				var id, fn string
 				mRows.Scan(&id, &fn)
 				mainIDByFullName[fn] = id
-				fullNameByMainID[id] = fn
 				mainChangedIDs = append(mainChangedIDs, id)
 			}
 			mRows.Close()
 		}
 	}
 
-	// Build lookup IDs: prefer main-branch IDs (so edges resolve), fall back to PR head IDs
+	// Build lookup IDs: prefer main-branch IDs (so edges resolve), fall back to PR head IDs.
 	lookupIDs := make([]string, 0, len(mainChangedIDs)+len(changedIDs))
 	lookupIDs = append(lookupIDs, mainChangedIDs...)
-	// Also include PR-head IDs to catch edges built during open_pr
 	for _, id := range changedIDs {
 		if fn, ok := changedIDToFullName[id]; ok {
-			if _, hasmain := mainIDByFullName[fn]; !hasmain {
+			if _, hasMain := mainIDByFullName[fn]; !hasMain {
 				lookupIDs = append(lookupIDs, id)
 			}
 		}
 	}
 
-	// Query call edges touching any of the lookup IDs (no commit_sha filter — edges
-	// may exist at either main SHA or PR head SHA depending on when they were built)
-	type edgeRow struct{ callerID, calleeID string }
-	var allEdges []edgeRow
-	callerSet := map[string]bool{}
-	calleeSet := map[string]bool{}
+	mainIDToPRID := map[string]string{}
+	for prID2, fn := range changedIDToFullName {
+		if mainID, ok := mainIDByFullName[fn]; ok {
+			mainIDToPRID[mainID] = prID2
+		}
+	}
+	remapID := func(id string) string {
+		if prEquiv, ok := mainIDToPRID[id]; ok {
+			return prEquiv
+		}
+		return id
+	}
 
+	var allEdges []graphEdgeRow
 	if len(lookupIDs) > 0 {
 		eRows, _ := h.DB.Query(ctx, `
 			select caller_id, callee_id
 			from code_edges
 			where repo_id = $1
-			  and (caller_id = any($2::uuid[]) or callee_id = any($2::uuid[]))
-		`, repoID, lookupIDs)
+			  and (($2 <> '' and commit_sha = $2) or ($3 <> '' and commit_sha = $3))
+		`, repoID, mainCommitSHA, headCommit)
 		if eRows != nil {
 			defer eRows.Close()
 			for eRows.Next() {
-				var e edgeRow
+				var e graphEdgeRow
 				eRows.Scan(&e.callerID, &e.calleeID)
+				e.callerID = remapID(e.callerID)
+				e.calleeID = remapID(e.calleeID)
+				if e.callerID == e.calleeID {
+					continue
+				}
 				allEdges = append(allEdges, e)
-
-				// Determine caller/callee relative to changed nodes.
-				// An ID is "changed" if it's a main-branch equivalent of a changed node
-				// or directly a PR-head changed node.
-				isChanged := func(id string) bool {
-					if _, ok := changedSet[id]; ok {
-						return true
-					}
-					if fn, ok := fullNameByMainID[id]; ok {
-						for _, cid := range changedIDs {
-							if changedIDToFullName[cid] == fn {
-								return true
-							}
-						}
-					}
-					return false
-				}
-
-				if isChanged(e.calleeID) {
-					callerSet[e.callerID] = true
-				}
-				if isChanged(e.callerID) {
-					calleeSet[e.calleeID] = true
-				}
 			}
 			eRows.Close()
 		}
 	}
 
-	// Build the full node ID set (cap at 20).
-	// Changed nodes use their PR-head IDs; context nodes use whatever ID the edge returned.
-	includedIDs := map[string]bool{}
+	lineChanges := map[string]int{}
 	for _, id := range changedIDs {
-		includedIDs[id] = true
-	}
-	// Also include main-branch changed IDs so we can resolve context edges
-	for _, id := range mainChangedIDs {
-		includedIDs[id] = true
-	}
-	for id := range callerSet {
-		if !includedIDs[id] && len(includedIDs) < 20 {
-			includedIDs[id] = true
+		c := changedSet[id]
+		if c.diffHunk != nil {
+			added, removed := countDiffLines(*c.diffHunk)
+			lineChanges[id] = added + removed
 		}
 	}
-	for id := range calleeSet {
-		if !includedIDs[id] && len(includedIDs) < 20 {
-			includedIDs[id] = true
-		}
-	}
+	selected, edges := selectVisibleGraph(changedIDs, allEdges, lineChanges)
 
-	idList := make([]string, 0, len(includedIDs))
-	for id := range includedIDs {
+	idSet := map[string]bool{}
+	for id := range selected {
+		idSet[id] = true
+	}
+	for _, id := range mainChangedIDs {
+		idSet[id] = true
+	}
+	idList := make([]string, 0, len(idSet))
+	for id := range idSet {
 		idList = append(idList, id)
 	}
 
@@ -425,9 +619,27 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	// Tag node types. For nodes that appear in both PR-head and main-branch forms,
 	// prefer the PR-head version (it has change info).
 	finalNodeMap := map[string]models.GraphNode{} // keyed by the ID we'll use in the response
+	changedIDSet := map[string]bool{}
+	for _, id := range changedIDs {
+		changedIDSet[id] = true
+	}
+	callerSet := map[string]bool{}
+	calleeSet := map[string]bool{}
+	for _, e := range edges {
+		if changedIDSet[e.CalleeID] {
+			callerSet[e.CallerID] = true
+		}
+		if changedIDSet[e.CallerID] {
+			calleeSet[e.CalleeID] = true
+		}
+	}
 
 	// First pass: add changed nodes (PR-head IDs) with change info
 	for _, id := range changedIDs {
+		meta, isSelected := selected[id]
+		if !isSelected {
+			continue
+		}
 		n, ok := nodeMap[id]
 		if !ok {
 			continue
@@ -443,19 +655,15 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 			n.LinesAdded = added
 			n.LinesRemoved = removed
 		}
+		n.Weight = meta.weight
+		n.Degree = meta.degree
+		n.GraphDepth = meta.depth
+		n.Boundary = meta.boundary
 		finalNodeMap[id] = n
 	}
 
-	// Build a lookup: main-branch ID → PR-head changed node ID (for edge remapping)
-	mainIDToPRID := map[string]string{}
-	for prID2, fn := range changedIDToFullName {
-		if mainID, ok := mainIDByFullName[fn]; ok {
-			mainIDToPRID[mainID] = prID2
-		}
-	}
-
 	// Second pass: add context nodes (caller/callee) that aren't already included
-	for id := range includedIDs {
+	for id, meta := range selected {
 		// Skip if it's a main-branch equivalent of a changed node
 		if prEquiv, ok := mainIDToPRID[id]; ok {
 			_ = prEquiv
@@ -473,15 +681,11 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		} else {
 			n.NodeType = "callee"
 		}
+		n.Weight = meta.weight
+		n.Degree = meta.degree
+		n.GraphDepth = meta.depth
+		n.Boundary = meta.boundary
 		finalNodeMap[id] = n
-	}
-
-	// Remap edges: replace main-branch changed node IDs with their PR-head IDs
-	remapID := func(id string) string {
-		if prEquiv, ok := mainIDToPRID[id]; ok {
-			return prEquiv
-		}
-		return id
 	}
 
 	if len(idList) > 0 {
@@ -528,23 +732,11 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 		nodes = append(nodes, n)
 	}
+	sortGraphNodes(nodes)
 
-	edges := make([]models.GraphEdge, 0)
 	seenEdges := map[string]bool{}
-	for _, e := range allEdges {
-		callerID := remapID(e.callerID)
-		calleeID := remapID(e.calleeID)
-		if _, ok := finalNodeMap[callerID]; !ok {
-			continue
-		}
-		if _, ok := finalNodeMap[calleeID]; !ok {
-			continue
-		}
-		key := callerID + "|" + calleeID
-		if !seenEdges[key] {
-			seenEdges[key] = true
-			edges = append(edges, models.GraphEdge{CallerID: callerID, CalleeID: calleeID})
-		}
+	for _, e := range edges {
+		seenEdges[e.CallerID+"|"+e.CalleeID] = true
 	}
 
 	// Add implicit struct → method edges (methods whose full_name = StructName.MethodName)

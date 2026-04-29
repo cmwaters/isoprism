@@ -274,87 +274,133 @@ export function cardColorByKind(kind: string): string {
   }
 }
 
-// ── Concentric ring layout ────────────────────────────────────────────────────
+// ── Weighted hex-grid layout ──────────────────────────────────────────────────
 const NODE_W = 280;
-const BASE_RADIUS = 380;
-const MIN_SPACING = 300;
+const HEX_X = 360;
+const HEX_Y = 300;
 const PANEL_MIN_WIDTH = 260;
 const PANEL_MAX_WIDTH = 620;
 const PANEL_DEFAULT_WIDTH = 320;
 
-export function concentricLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
-  const centerIDs = new Set(
-    graphNodes
-      .filter((n) => n.node_type === "changed" || n.node_type === "entrypoint")
-      .map((n) => n.id)
-  );
+export function hexGridLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
+  type Hex = { q: number; r: number; ring: number; x: number; y: number };
 
+  const graphByID = new Map(graphNodes.map((n) => [n.id, n]));
+  const nodeByID = new Map(nodes.map((n) => [n.id, n]));
   const neighbors = new Map<string, string[]>();
   nodes.forEach((n) => neighbors.set(n.id, []));
   edges.forEach((e) => {
+    if (!nodeByID.has(e.source) || !nodeByID.has(e.target)) return;
     neighbors.get(e.source)?.push(e.target);
     neighbors.get(e.target)?.push(e.source);
   });
 
-  const levels = new Map<string, number>();
-  const queue: string[] = [];
-
-  if (centerIDs.size > 0) {
-    centerIDs.forEach((id) => { levels.set(id, 0); queue.push(id); });
-  } else {
-    nodes.forEach((n) => { levels.set(n.id, 0); queue.push(n.id); });
-  }
-
-  let head = 0;
-  while (head < queue.length) {
-    const curr = queue[head++];
-    const level = levels.get(curr)!;
-    for (const nb of (neighbors.get(curr) ?? [])) {
-      if (!levels.has(nb)) { levels.set(nb, level + 1); queue.push(nb); }
-    }
-  }
-
-  const maxLevel = Math.max(0, ...Array.from(levels.values()));
-  nodes.forEach((n) => { if (!levels.has(n.id)) levels.set(n.id, maxLevel + 1); });
-
-  const byLevel = new Map<number, Node[]>();
-  nodes.forEach((n) => {
-    const lvl = levels.get(n.id) ?? 0;
-    if (!byLevel.has(lvl)) byLevel.set(lvl, []);
-    byLevel.get(lvl)!.push(n);
+  const ringOf = (q: number, r: number) => Math.max(Math.abs(q), Math.abs(r), Math.abs(-q - r));
+  const hexToPoint = (q: number, r: number) => ({
+    x: HEX_X * (q + r / 2),
+    y: HEX_Y * r,
   });
 
-  const positions = new Map<string, { x: number; y: number }>();
+  const maxDepth = Math.max(0, ...graphNodes.map((n) => n.graph_depth ?? 0));
+  const outerRing = Math.max(maxDepth + 1, Math.ceil(Math.sqrt(nodes.length / 3)) + 1);
+  const cells: Hex[] = [];
+  for (let q = -outerRing; q <= outerRing; q++) {
+    for (let r = -outerRing; r <= outerRing; r++) {
+      const ring = ringOf(q, r);
+      if (ring <= outerRing) cells.push({ q, r, ring, ...hexToPoint(q, r) });
+    }
+  }
+  cells.sort((a, b) => a.ring - b.ring || a.y - b.y || a.x - b.x);
 
-  const hasOuterRings = byLevel.size > 1;
+  const rank = (node: Node) => {
+    const meta = graphByID.get(node.id);
+    const seed = meta?.node_type === "changed" || meta?.node_type === "entrypoint";
+    const typeRank = seed ? 0 : meta?.boundary ? 3 : (meta?.graph_depth ?? 2);
+    return {
+      typeRank,
+      weight: meta?.weight ?? 0,
+      degree: meta?.degree ?? (neighbors.get(node.id)?.length ?? 0),
+      depth: meta?.graph_depth ?? 2,
+      file: meta?.file_path ?? "",
+    };
+  };
 
-  byLevel.forEach((levelNodes, level) => {
-    const count = levelNodes.length;
-    if (level === 0 && hasOuterRings && count <= 3) {
-      // Few changed nodes with outer context: place in a tight row at centre
-      const spacing = NODE_W + 60;
-      const totalW = count * spacing - 60;
-      const startX = -totalW / 2;
-      levelNodes.forEach((n, i) => {
-        positions.set(n.id, { x: startX + i * spacing, y: 0 });
-      });
-    } else {
-      // All other cases (including sole ring): circle arrangement
-      if (count === 1) {
-        positions.set(levelNodes[0].id, { x: 0, y: 0 });
-      } else {
-        const minR = level === 0 ? 180 : level * BASE_RADIUS;
-        const radius = Math.max(minR, (count * MIN_SPACING) / (2 * Math.PI));
-        levelNodes.forEach((n, i) => {
-          const angle = (2 * Math.PI * i) / count - Math.PI / 2;
-          positions.set(n.id, {
-            x: Math.cos(angle) * radius,
-            y: Math.sin(angle) * radius,
-          });
-        });
+  const ordered = [...nodes].sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    return ra.typeRank - rb.typeRank
+      || rb.weight - ra.weight
+      || ra.depth - rb.depth
+      || rb.degree - ra.degree
+      || ra.file.localeCompare(rb.file)
+      || a.id.localeCompare(b.id);
+  });
+
+  const assigned = new Map<string, Hex>();
+  const occupied = new Set<string>();
+  const cellKey = (cell: Hex) => `${cell.q},${cell.r}`;
+  const desiredRing = (id: string) => {
+    const meta = graphByID.get(id);
+    if (meta?.boundary) return outerRing;
+    if (meta?.node_type === "changed" || meta?.node_type === "entrypoint") {
+      return (meta.weight ?? 0) > 0 ? 0 : 1;
+    }
+    return Math.max(1, meta?.graph_depth ?? 2);
+  };
+  const dist = (a: Hex, b: Hex) => {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  ordered.forEach((node) => {
+    const targetRing = desiredRing(node.id);
+    let best = cells.find((cell) => !occupied.has(cellKey(cell))) ?? cells[0];
+    let bestCost = Number.POSITIVE_INFINITY;
+    cells.forEach((cell) => {
+      if (occupied.has(cellKey(cell))) return;
+      const ringCost = Math.abs(cell.ring - targetRing) * 5000;
+      const centerCost = (graphByID.get(node.id)?.weight ?? 0) * cell.ring * cell.ring * 4;
+      const edgeCost = (neighbors.get(node.id) ?? []).reduce((sum, nb) => {
+        const placed = assigned.get(nb);
+        return placed ? sum + dist(cell, placed) : sum;
+      }, 0);
+      const cost = ringCost + edgeCost + centerCost;
+      if (cost < bestCost || (cost === bestCost && cell.ring < best.ring)) {
+        best = cell;
+        bestCost = cost;
+      }
+    });
+    assigned.set(node.id, best);
+    occupied.add(cellKey(best));
+  });
+
+  const edgeLengthScore = (id: string, cell: Hex) => (neighbors.get(id) ?? []).reduce((sum, nb) => {
+    const other = assigned.get(nb);
+    return other ? sum + dist(cell, other) : sum;
+  }, 0);
+
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < ordered.length; i++) {
+      for (let j = i + 1; j < ordered.length; j++) {
+        const a = ordered[i];
+        const b = ordered[j];
+        const cellA = assigned.get(a.id);
+        const cellB = assigned.get(b.id);
+        if (!cellA || !cellB) continue;
+        if (Math.abs(cellA.ring - desiredRing(b.id)) > 1 || Math.abs(cellB.ring - desiredRing(a.id)) > 1) continue;
+        const before = edgeLengthScore(a.id, cellA) + edgeLengthScore(b.id, cellB);
+        const after = edgeLengthScore(a.id, cellB) + edgeLengthScore(b.id, cellA);
+        if (after + 20 < before) {
+          assigned.set(a.id, cellB);
+          assigned.set(b.id, cellA);
+        }
       }
     }
-  });
+  }
+
+  const positions = new Map<string, { x: number; y: number }>();
+  assigned.forEach((cell, id) => positions.set(id, { x: cell.x, y: cell.y }));
 
   return nodes.map((n) => ({
     ...n,
@@ -406,7 +452,7 @@ function InnerCanvas({
   })), [activeGraph.edges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(
-    concentricLayout(initialNodes, baseEdges, activeGraph.nodes)
+    hexGridLayout(initialNodes, baseEdges, activeGraph.nodes)
   );
 
   // Recompute edge styles whenever selection changes
@@ -432,7 +478,7 @@ function InnerCanvas({
   }, [graph]);
 
   useEffect(() => {
-    setNodes(concentricLayout(initialNodes, baseEdges, activeGraph.nodes));
+    setNodes(hexGridLayout(initialNodes, baseEdges, activeGraph.nodes));
     setSelectedNode(null);
     setPanelMode("overview");
     setTimeout(() => fitView({ padding: 0.15 }), 50);

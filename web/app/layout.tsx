@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import AccountPill from "@/components/account-pill";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"] });
@@ -17,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geist.className} antialiased`} style={{ background: "#EBE9E9", color: "#111111" }}>
+        <AccountPill />
         {children}
       </body>
     </html>

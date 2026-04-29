@@ -13,7 +13,7 @@ export default function LoginPage() {
       provider: "github",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: "read:user user:email",
+        scopes: "read:user user:email read:org",
       },
     });
     if (error) {

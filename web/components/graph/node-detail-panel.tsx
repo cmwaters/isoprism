@@ -113,6 +113,11 @@ export default function NodeDetailPanel({
           mode={mode}
           onModeChange={onModeChange}
           onViewCode={onViewCode}
+          repoID={repoID}
+          prID={pr?.id}
+          token={token}
+          nodeCodeCache={nodeCodeCache}
+          onCacheNodeCode={onCacheNodeCode}
         />
         )
       ) : (
@@ -333,8 +338,11 @@ function PRSummaryPanel({
                     display: "flex", alignItems: "center", gap: 4,
                   }}
                 >
-                  {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
-                  <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
+                  <span style={{ minWidth: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
+                    <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
+                  </span>
+                  <DiffPills node={n} compact alignRight />
                 </button>
               );
             })}
@@ -364,6 +372,11 @@ function NodeDetail({
   mode,
   onModeChange,
   onViewCode,
+  repoID,
+  prID,
+  token,
+  nodeCodeCache,
+  onCacheNodeCode,
 }: {
   node: GraphNode;
   allNodes: GraphNode[];
@@ -373,8 +386,41 @@ function NodeDetail({
   mode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
   onViewCode: () => void;
+  repoID: string;
+  prID?: string;
+  token: string;
+  nodeCodeCache: Record<string, NodeCodeResponse>;
+  onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
 }) {
   const pkgPrefix = pkgLabel(node);
+  const cachedCode = nodeCodeCache[node.id];
+
+  useEffect(() => {
+    if (cachedCode?.node_id === node.id) return;
+
+    let cancelled = false;
+    const path = prID
+      ? `/api/v1/repos/${repoID}/prs/${prID}/nodes/${node.id}/code`
+      : `/api/v1/repos/${repoID}/nodes/${node.id}/code`;
+
+    apiFetch<NodeCodeResponse>(path, token)
+      .then((response) => {
+        if (!cancelled) onCacheNodeCode(node.id, response);
+      })
+      .catch(() => {
+        // Call-site line numbers are helpful but not required for the overview panel.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedCode?.node_id, node.id, onCacheNodeCode, prID, repoID, token]);
+
+  const sourceSegment = cachedCode?.node_id === node.id
+    ? cachedCode.head ?? cachedCode.base
+    : undefined;
+  const calleeIDs = calleesOf(node.id, edges);
+  const callSiteLines = buildCallSiteLines(sourceSegment, calleeIDs, allNodes);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
@@ -460,9 +506,10 @@ function NodeDetail({
       {/* Calls section */}
       <RelationSection
         label="Calls"
-        nodeIDs={calleesOf(node.id, edges)}
+        nodeIDs={calleeIDs}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
+        lineNumbers={callSiteLines}
       />
 
       {/* Is Called By section */}
@@ -893,11 +940,13 @@ function RelationSection({
   nodeIDs,
   allNodes,
   onSelectNode,
+  lineNumbers,
 }: {
   label: string;
   nodeIDs: string[];
   allNodes: GraphNode[];
   onSelectNode: (id: string) => void;
+  lineNumbers?: Record<string, number>;
 }) {
   if (nodeIDs.length === 0) return null;
   const nodes = nodeIDs.map((id) => allNodes.find((n) => n.id === id)).filter(Boolean) as GraphNode[];
@@ -923,22 +972,17 @@ function RelationSection({
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
+                width: "100%",
               }}
             >
-              <div>
+              <span style={{ color: "#888888", flex: "0 0 34px", fontSize: 11, textAlign: "right", userSelect: "none" }}>
+                L{lineNumbers?.[n.id] ?? n.line_start}
+              </span>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
                 <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
               </div>
-              {n.change_type === "added" && (
-                <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: 4, padding: "0 5px", fontSize: 10, fontWeight: 500, whiteSpace: "nowrap" }}>
-                  Added {n.lines_added > 0 ? `+${n.lines_added}` : ""}
-                </span>
-              )}
-              {n.change_type === "deleted" && (
-                <span style={{ background: "#FEE2E2", color: "#EF4444", borderRadius: 4, padding: "0 5px", fontSize: 10, fontWeight: 500 }}>
-                  Deleted
-                </span>
-              )}
+              <DiffPills node={n} compact />
             </button>
           );
         })}
@@ -993,6 +1037,86 @@ function calleesOf(nodeID: string, edges: GraphEdge[]): string[] {
 
 function callersOf(nodeID: string, edges: GraphEdge[]): string[] {
   return edges.filter((e) => e.callee_id === nodeID).map((e) => e.caller_id);
+}
+
+function buildCallSiteLines(
+  segment: NodeCodeSegment | undefined,
+  calleeIDs: string[],
+  allNodes: GraphNode[]
+): Record<string, number> {
+  if (!segment) return {};
+
+  const lines = segment.source.split("\n");
+  const byID: Record<string, number> = {};
+
+  for (const id of calleeIDs) {
+    const callee = allNodes.find((candidate) => candidate.id === id);
+    if (!callee) continue;
+
+    const index = lines.findIndex((line) => lineMatchesCall(line, callee.name));
+    if (index >= 0) {
+      byID[id] = segment.start_line + index;
+    }
+  }
+
+  return byID;
+}
+
+function lineMatchesCall(line: string, functionName: string): boolean {
+  const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:\\b|\\.)${escaped}\\s*\\(`).test(line);
+}
+
+function DiffPills({
+  node,
+  compact = false,
+  alignRight = false,
+}: {
+  node: GraphNode;
+  compact?: boolean;
+  alignRight?: boolean;
+}) {
+  if (!node.change_type) return alignRight ? <span style={{ marginLeft: "auto" }} /> : null;
+
+  const pillBase: CSSProperties = {
+    borderRadius: compact ? 8 : 12,
+    display: "inline-flex",
+    fontSize: compact ? 10 : 11,
+    fontWeight: 500,
+    lineHeight: 1.25,
+    padding: compact ? "1px 6px" : "1px 7px",
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <span
+      style={{
+        alignItems: "center",
+        display: "inline-flex",
+        gap: compact ? 4 : 6,
+        marginLeft: alignRight ? "auto" : 0,
+      }}
+    >
+      {node.change_type === "added" ? (
+        <span style={{ ...pillBase, background: "#DCFCE7", color: "#16A34A" }}>
+          Added {node.lines_added > 0 ? `+${node.lines_added}` : ""}
+        </span>
+      ) : node.change_type === "deleted" ? (
+        <span style={{ ...pillBase, background: "#FEE2E2", color: "#EF4444" }}>
+          Deleted
+        </span>
+      ) : (
+        <>
+          {node.lines_added > 0 && (
+            <span style={{ ...pillBase, background: "#DCFCE7", color: "#16A34A" }}>+{node.lines_added}</span>
+          )}
+          {node.lines_removed > 0 && (
+            <span style={{ ...pillBase, background: "#FEE2E2", color: "#EF4444" }}>-{node.lines_removed}</span>
+          )}
+        </>
+      )}
+    </span>
+  );
 }
 
 const markdownComponents: Components = {

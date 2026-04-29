@@ -243,4 +243,22 @@
     margin-right: 6px;
     vertical-align: -1px;
   }
+
+  @media (max-width: 760px) {
+    .settings-shell {
+      display: block !important;
+    }
+
+    .settings-sidebar {
+      width: auto !important;
+      min-height: 0 !important;
+      border-right: none !important;
+      border-bottom: 1px solid #D4D4D4 !important;
+    }
+
+    .settings-main {
+      padding: 32px 20px 40px !important;
+      max-width: none !important;
+    }
+  }
 }

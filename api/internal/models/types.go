@@ -150,6 +150,10 @@ type GraphNode struct {
 	// Diff stats (only for changed nodes)
 	LinesAdded   int             `json:"lines_added"`
 	LinesRemoved int             `json:"lines_removed"`
+	Weight       int             `json:"weight"`
+	Degree       int             `json:"degree"`
+	GraphDepth   int             `json:"graph_depth"`
+	Boundary     bool            `json:"boundary"`
 	Tests        []GraphNodeTest `json:"tests"`
 }
 
