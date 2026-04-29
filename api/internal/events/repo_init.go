@@ -179,6 +179,17 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 
 	insertTestReferences(ctx, db, repoID, headSHA, fileContents, nodeByName, nodeIDs)
 
+	// Mark the structural graph ready before optional AI enrichment. Large repos can
+	// spend a long time in enrichment, but the graph is already usable here.
+	_, err = db.Exec(ctx, `
+		update repositories set index_status='ready', main_commit_sha=$1 where id=$2
+	`, headSHA, repoID)
+	if err != nil {
+		fail("marking ready", err)
+		return
+	}
+	log.Printf("RepoInit: structural graph ready for repo %s (%d nodes)", repoID, len(allNodes))
+
 	// AI enrichment: generate summaries for all nodes
 	if enricher != nil && len(allNodes) > 0 {
 		// Batch in groups of 30 to avoid token limits
@@ -221,15 +232,6 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 				db.Exec(ctx, `update code_nodes set summary=$1 where id=$2`, s, id)
 			}
 		}
-	}
-
-	// Mark ready
-	_, err = db.Exec(ctx, `
-		update repositories set index_status='ready', main_commit_sha=$1 where id=$2
-	`, headSHA, repoID)
-	if err != nil {
-		fail("marking ready", err)
-		return
 	}
 
 	log.Printf("RepoInit: completed for repo %s (%d nodes)", repoID, len(allNodes))

@@ -315,11 +315,11 @@ The backend is defined around three events. All other logic flows from them.
 4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse it to extract functions, methods, and types.
 5. Exclude test code from `code_nodes`/`code_edges`, then build production call/reference edges by resolving identifiers in function bodies against the production node set → insert `code_edges`.
 6. Extract test entrypoints and store the production nodes they exercise in `code_test_references`.
-7. Generate AI summaries for all production nodes in a single batched Claude call (see §Parsing below)
-8. Persist all `code_nodes`, `code_edges`, and `code_test_references` with `commit_sha = HEAD`
-9. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'`
+7. Persist all `code_nodes`, `code_edges`, and `code_test_references` with `commit_sha = HEAD`
+8. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes
+9. Generate optional AI summaries for production nodes in batches and update `code_nodes.summary` as they arrive
 
-Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` (returns `index_status`) every 2 seconds until `ready` or `failed`.
+Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` (returns `index_status`) every 2 seconds until `ready` or `failed`. `ready` means the structural graph is available; summaries may continue to fill in afterward.
 
 ---
 
@@ -678,7 +678,7 @@ Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No 
 2. Implement `ai.EnrichPRChanges(ctx, changes []PRNodeChange, client) error`:
    - Same batched call pattern; generates `change_summary` for each changed node
    - Also generates `pr_analyses.summary` and `risk_score` in the same call
-3. Integrate enrichment into `RepoInit` (after node insertion) and `OpenPR` (after change detection)
+3. Integrate enrichment into `RepoInit` after structural graph readiness, and into `OpenPR` after change detection
 
 ---
 
