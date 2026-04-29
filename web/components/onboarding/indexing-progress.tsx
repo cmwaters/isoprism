@@ -6,40 +6,50 @@ import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/api";
 import { RepoStatus } from "@/lib/types";
 
-const STATUS_MESSAGES = [
-  "Fetching pull requests…",
-  "Analysing changed functions…",
-  "Building call graphs…",
-  "Generating AI summaries…",
-];
-
 interface Props {
   repoID: string;
   repoName: string;
 }
 
+type IndexingStatus = RepoStatus & {
+  index_phase?: string;
+  index_message?: string;
+  index_percent?: number;
+  eta_seconds?: number;
+  index_job?: {
+    commit_sha: string;
+    status: "pending" | "running" | "ready" | "failed";
+    phase: string;
+    message: string;
+    percent: number;
+    files_total: number;
+    files_done: number;
+    nodes_total: number;
+    nodes_done: number;
+    edges_total: number;
+    edges_done: number;
+    eta_seconds?: number;
+    updated_at: string;
+    error?: string;
+  };
+};
+
 export default function IndexingProgress({ repoID, repoName }: Props) {
   const router = useRouter();
   const supabase = createClient();
   const [progress, setProgress] = useState(0);
-  const [msgIndex, setMsgIndex] = useState(0);
+  const [status, setStatus] = useState<IndexingStatus | null>(null);
   const [failed, setFailed] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const msgIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    // Animate progress bar: 0 → 70% over 3s, then pulse
+    // Gentle fallback movement until the API reports concrete progress.
     let p = 0;
     const step = () => {
-      p += 2;
-      if (p <= 70) setProgress(p);
+      p += 1;
+      setProgress((current) => Math.max(current, Math.min(p, 20)));
     };
-    const progInterval = setInterval(step, 85);
-
-    // Cycle status messages
-    msgIntervalRef.current = setInterval(() => {
-      setMsgIndex((i) => (i + 1) % STATUS_MESSAGES.length);
-    }, 1800);
+    const progInterval = setInterval(step, 240);
 
     // Poll status every 2 seconds
     intervalRef.current = setInterval(async () => {
@@ -48,18 +58,23 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
       if (!token) return;
 
       try {
-        const status = await apiFetch<RepoStatus>(`/api/v1/repos/${repoID}/status`, token);
-        if (status.index_status === "ready") {
+        const nextStatus = await apiFetch<IndexingStatus>(`/api/v1/repos/${repoID}/status`, token);
+        setStatus(nextStatus);
+        if (typeof nextStatus.index_percent === "number") {
+          setProgress(nextStatus.index_percent);
+        } else if (nextStatus.index_job?.percent) {
+          setProgress(nextStatus.index_job.percent);
+        }
+
+        if (nextStatus.index_status === "ready") {
           setProgress(100);
           clearInterval(progInterval);
           if (intervalRef.current) clearInterval(intervalRef.current);
-          if (msgIntervalRef.current) clearInterval(msgIntervalRef.current);
           setTimeout(() => router.push(`/${repoName}`), 400);
-        } else if (status.index_status === "failed") {
+        } else if (nextStatus.index_status === "failed") {
           setFailed(true);
           clearInterval(progInterval);
           if (intervalRef.current) clearInterval(intervalRef.current);
-          if (msgIntervalRef.current) clearInterval(msgIntervalRef.current);
         }
       } catch {
         // keep polling
@@ -69,9 +84,12 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
     return () => {
       clearInterval(progInterval);
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (msgIntervalRef.current) clearInterval(msgIntervalRef.current);
     };
-  }, [repoID]);
+  }, [repoID, repoName, router]);
+
+  const message = status?.index_message || status?.index_job?.message || "Preparing repository index";
+  const counter = stageCounter(status);
+  const eta = formatETA(status?.eta_seconds ?? status?.index_job?.eta_seconds);
 
   return (
     <div style={{ background: "#EBE9E9", minHeight: "100vh", display: "flex" }}>
@@ -109,13 +127,46 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
                   }}
                 />
               </div>
-              <p style={{ color: "#666666", fontSize: 14 }}>{STATUS_MESSAGES[msgIndex]}</p>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16 }}>
+                <p style={{ color: "#111111", fontSize: 15, fontWeight: 500, margin: 0 }}>{message}</p>
+                <span style={{ color: "#666666", fontSize: 13 }}>{Math.round(progress)}%</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 8 }}>
+                <p style={{ color: "#666666", fontSize: 13, margin: 0 }}>{counter}</p>
+                <p style={{ color: "#666666", fontSize: 13, margin: 0 }}>{eta}</p>
+              </div>
             </>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function stageCounter(status: IndexingStatus | null) {
+  const job = status?.index_job;
+  if (!job) return "Starting";
+
+  if (job.phase === "fetching_files" && job.files_total > 0) {
+    return `${job.files_done.toLocaleString()} / ${job.files_total.toLocaleString()} files`;
+  }
+  if (job.phase === "writing_nodes" && job.nodes_total > 0) {
+    return `${job.nodes_done.toLocaleString()} / ${job.nodes_total.toLocaleString()} nodes`;
+  }
+  if (job.phase === "building_edges" && job.edges_total > 0) {
+    return `${job.edges_done.toLocaleString()} / ${job.edges_total.toLocaleString()} files analysed`;
+  }
+  if (job.phase === "extracting_tests") {
+    return "Linking tests";
+  }
+  return "Resolving default branch";
+}
+
+function formatETA(seconds?: number) {
+  if (!seconds || seconds < 20) return "Estimating time remaining";
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes === 1) return "About 1 minute remaining";
+  return `About ${minutes} minutes remaining`;
 }
 
 function GraphLogo() {

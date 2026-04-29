@@ -6,6 +6,21 @@ Create a graph layout that works for small PRs and large systems by keeping conn
 
 The layout is based on a weighted seed set, not a single focal node.
 
+## Current Implementation
+
+The first implementation uses the weighted seed set, depth-2 loading, a 150-node visible budget, boundary-node marking, and deterministic hex-grid placement.
+
+The API includes layout metadata on each node:
+
+```text
+weight
+degree
+graph_depth
+boundary
+```
+
+Clustering and interactive boundary expansion are still design targets; the current client marks boundary nodes through metadata and keeps them on the outer hex ring, but it does not yet request incremental expansion from a clicked boundary node.
+
 ## Views
 
 ### Repo-Wide View

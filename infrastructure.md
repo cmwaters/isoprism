@@ -152,6 +152,8 @@ supabase db dump --linked | grep -E "pr_check_runs|pr_review_threads|pr_review_r
 | `GITHUB_WEBHOOK_SECRET` | Railway service env | Go API → webhook validation |
 | `FRONTEND_URL` | Railway service env | Go API → default OAuth/install redirect |
 | `FRONTEND_URLS` | Railway service env | Go API → allowed CORS origins and allowed install redirect origins |
+| `ANTHROPIC_API_KEY` | Railway service env | Go API → AI enrichment for code summaries, PR change summaries, and PR analyses |
+| `OPENAI_API_KEY` | Railway service env | Go API config only; currently unused by AI call sites |
 | `NEXT_PUBLIC_SUPABASE_URL` | Vercel project env | Next.js |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel project env | Next.js |
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel project env | Next.js server (if needed) |

@@ -69,7 +69,7 @@ function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: 
 
         {/* Row 3: badges */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Badge icon="⏱" label={`${timeLabel} open`} />
+          <Badge icon="⏱" label={timeLabel ? `${timeLabel} open` : "Open"} />
           <Badge icon="⬡" label={`${pr.nodes_changed} functions`} />
           {pr.risk_label && (
             <Badge
@@ -113,12 +113,19 @@ function capitalize(s: string) {
 }
 
 function useOpenTimeLabel(openedAt: string): string {
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState<number | null>(null);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
+    const updateNow = () => setNowMs(Date.now());
+    const initialTimer = window.setTimeout(updateNow, 0);
+    const intervalTimer = window.setInterval(updateNow, 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalTimer);
+    };
   }, []);
+
+  if (nowMs === null) return "";
 
   const hoursOpen = Math.max(0, Math.floor((nowMs - new Date(openedAt).getTime()) / 3_600_000));
   return hoursOpen < 24 ? `${hoursOpen}h` : `${Math.floor(hoursOpen / 24)}d`;

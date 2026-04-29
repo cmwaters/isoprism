@@ -26,6 +26,27 @@ npm run build
 
 The root route is login-first: unauthenticated visitors go to `/login`, and signed-in visitors only skip login when `GET /api/v1/auth/status?user_id=...` returns a ready repo (`/{owner}/{repo}`) or an installed-but-unindexed repo (`/onboarding/repos`). If auth status returns `/onboarding`, root maps that to `/login`; the OAuth callback keeps `/onboarding` so newly signed-in GitHub users without a connected Isoprism repo are prompted to install the GitHub App and grant repo permissions.
 
+The GitHub OAuth login requests `read:user`, `user:email`, and `read:org`. The org scope lets the settings UI discover private organization memberships when GitHub exposes them to the signed-in user's OAuth token.
+
+## Settings
+
+Authenticated views render a fixed account pill in the top-right corner. The pill shows the signed-in user's GitHub avatar and display name, and links to `/{user}/settings`.
+
+Settings are scoped to a GitHub account slug:
+
+- `/{user}/settings` for personal settings.
+- `/{org}/settings` for organization settings.
+
+The settings route has a side panel with `Overview`, `GitHub`, and `Repositories` categories. User settings act as the home base for organization discovery: organization rows navigate internally to `/{org}/settings` instead of sending the user directly to GitHub.
+
+The first implementation uses the existing API contract:
+
+- `GET /api/v1/me/repos` supplies repositories currently available to Isoprism.
+- `POST /api/v1/repos/{repoID}/index` starts or retries indexing from the repositories settings category.
+- GitHub organization discovery is attempted client-side with the Supabase GitHub provider token and `GET https://api.github.com/user/orgs`.
+
+GitHub App install and permission changes still happen on GitHub. The settings UI links to GitHub's App install/manage pages from the relevant account settings page, while keeping GitHub permission state distinct from Isoprism repository indexing state.
+
 ## Repository Graph View
 
 The primary review route mirrors the GitHub repository path:
@@ -35,7 +56,7 @@ The primary review route mirrors the GitHub repository path:
 The repo route renders one persistent `GraphCanvas` and side panel:
 
 - A repo graph for the whole indexed system.
-- A ranked PR list in the repo overview panel.
+- A ranked PR list in the repo overview panel. Each PR card shows the PR number, title, AI summary, changed-function count, risk label, and a client-updated open-time badge.
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.

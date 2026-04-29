@@ -16,7 +16,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { QueuePR, RepoGraphResponse } from "@/lib/types";
 import PRQueue from "@/components/queue/pr-queue";
-import { concentricLayout, edgeTypes, nodeTypes } from "./graph-canvas";
+import { edgeTypes, hexGridLayout, nodeTypes } from "./graph-canvas";
 
 const PANEL_WIDTH = 360;
 
@@ -48,7 +48,7 @@ function InnerRepoGraphCanvas({
   })), [graph.edges]);
 
   const [nodes, , onNodesChange] = useNodesState(
-    concentricLayout(initialNodes, edges, graph.nodes)
+    hexGridLayout(initialNodes, edges, graph.nodes)
   );
 
   const onEdgesChange = useCallback(() => {}, []);

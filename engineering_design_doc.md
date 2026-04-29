@@ -339,7 +339,7 @@ The backend is defined around three events. All other logic flows from them.
 6. Extract test entrypoints and store the production nodes they exercise in `code_test_references`.
 7. Persist all `code_nodes`, `code_edges`, and `code_test_references` with `commit_sha = HEAD`
 8. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes
-9. Generate optional AI summaries for production nodes in batches and update `code_nodes.summary` as they arrive
+9. Generate optional AI summaries for production nodes in Claude batches of up to 30 nodes (see `ai.md`) and update `code_nodes.summary` as they arrive
 
 Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` every 2 seconds until `ready` or `failed`. The status response includes the current indexing job phase, progress percentage, counters, and a rough ETA. `ready` means the structural graph is available; summaries may continue to fill in afterward.
 
@@ -576,13 +576,14 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 
 ### Graph Rendering
 
-React Flow (`@xyflow/react`) with a concentric ring layout:
-- Changed nodes anchor the centre; a few changed nodes with surrounding context are placed in a tight centre row
-- BFS over graph edges assigns surrounding caller/callee nodes to outer rings
-- Node `kind` drives the card colour; `node_type` drives central placement and changed-node diff pills
+React Flow (`@xyflow/react`) with a weighted hex-grid layout:
+- The API returns a bounded depth-2 neighborhood around weighted seed sets: Go repo graphs seed from `main`, and PR graphs seed from changed nodes.
+- Node `weight` is `lines_added + lines_removed + caller_count + callee_count`; high-weight seeds are prioritized near the center.
+- The API caps initial graph responses at 150 visible nodes and marks nodes as `boundary=true` when more connected context exists outside the visible set.
+- The client places one node per hex cell, keeps boundary nodes near the outer ring, and runs small local swaps to shorten visible edges.
+- Node `kind` drives the card colour; `node_type` drives seed placement and changed-node diff pills
 - Edges use a custom smart Bezier renderer that attaches to natural points on the raw card body, excludes diff pills from edge geometry, keeps anchors at least 20px away from corners, separates multiple anchors on the same face by at least 20px when space allows, and makes curves leave and enter perpendicular to the chosen faces
 - `onNodeClick` updates `selectedNodeId` state; `NodeDetailPanel` reads from it, and its back control clears the selection to return to the PR summary
-- Maximum 20 nodes rendered; excess nodes shown as a count notice
 
 ### Data Fetching
 
@@ -694,7 +695,7 @@ Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No 
 ### Phase 4 — AI Enrichment *(~1 day)*
 
 1. Implement `ai.EnrichNodes(ctx, nodes []CodeNode, client *anthropic.Client) error`:
-   - Batch all nodes for a single repo/PR into one Claude API call
+   - Batch repo node summaries in groups of up to 30; process PR change summaries in one Claude call
    - Structured JSON output: array of `{full_name, summary}` (and `{change_summary}` for PR enrichment)
    - Map responses back to nodes by `full_name`; update `code_nodes.summary`
 2. Implement `ai.EnrichPRChanges(ctx, changes []PRNodeChange, client) error`:

@@ -271,10 +271,10 @@ Designed for desktop only (1280px+ wide screens). No mobile layout required.
 | `RepoSelector` | Searchable repo list with single-select |
 | `IndexingState` | Animated progress bar with status messages |
 | `PRQueue` | List of PR cards with urgency ordering |
-| `PRCard` | Single PR row: title, summary, badges, chevron |
+| `PRCard` | Single PR row: number, title, author chip, changed-function diff chip, optional summary |
 | `GraphCanvas` | Concentric-ring graph canvas (pan/zoom/click), `#EBE9E9` bg |
 | `GraphNode` | Kind-colored card: package label, function name, params, return types. Diff pills rendered below (not inside) the card. |
-| `NodeDetailPanel` | Left panel with repo summary, PR summary, node detail, and code states. Repo summary shows repository context and ranked PRs; nodes are selected from the graph canvas. |
+| `NodeDetailPanel` | Left panel with repo summary, PR summary, node detail, and code states. Repo summary shows owner as the small label, repo name as the heading, and ranked PRs; nodes are selected from the graph canvas. |
 | `PRSummaryPanel` | PR title, author, +/- stats, AI summary bullets, test plan bullets, changes list |
 | `DiffPills` | Green +N / red -N pill badges rendered below a graph node |
 | `TopBar` | PR breadcrumb, title, and GitHub link (`#E1E1E1` background) |
