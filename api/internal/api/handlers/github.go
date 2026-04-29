@@ -88,8 +88,16 @@ func (h *GitHubHandler) handlePREvent(ctx context.Context, body []byte) {
 			) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 			on conflict (repo_id, github_pr_id) do update set
 				title           = excluded.title,
+				body            = excluded.body,
+				author_login    = excluded.author_login,
+				author_avatar_url = excluded.author_avatar_url,
+				base_branch     = excluded.base_branch,
+				head_branch     = excluded.head_branch,
+				base_commit_sha = excluded.base_commit_sha,
 				state           = excluded.state,
+				draft           = excluded.draft,
 				head_commit_sha = excluded.head_commit_sha,
+				html_url        = excluded.html_url,
 				graph_status    = 'pending'
 			returning id
 		`,

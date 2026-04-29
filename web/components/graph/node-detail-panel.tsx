@@ -3,7 +3,7 @@
 import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, QueuePR, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import type { PanelMode } from "./graph-canvas";
-import { ArrowLeft, BookOpenText, Code2 } from "lucide-react";
+import { ArrowLeft, BookOpenText, Code2, Settings } from "lucide-react";
 import { useCallback, useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -30,7 +30,25 @@ interface Props {
   mode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
   onViewCode: () => void;
+  onOpenSettings: () => void;
 }
+
+const settingsButtonStyle: CSSProperties = {
+  width: "100%",
+  height: 38,
+  borderRadius: 999,
+  border: "1px solid #E4E4E4",
+  background: "rgba(255,255,255,0.92)",
+  color: "#111111",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 650,
+  backdropFilter: "blur(10px)",
+};
 
 export default function NodeDetailPanel({
   node,
@@ -54,6 +72,7 @@ export default function NodeDetailPanel({
   mode,
   onModeChange,
   onViewCode,
+  onOpenSettings,
 }: Props) {
   const startResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -86,7 +105,7 @@ export default function NodeDetailPanel({
         position: "relative",
       }}
     >
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: !pr ? 68 : 0 }}>
         {!node || mode === "overview" ? (
           !node ? (
             pr ? (
@@ -120,6 +139,25 @@ export default function NodeDetailPanel({
           onCacheNodeCode={onCacheNodeCode}
         />
         )
+      ) : node.granularity !== "function" ? (
+        <NodeDetail
+          node={node}
+          allNodes={allNodes}
+          edges={edges}
+          onSelectNode={onSelectNode}
+          onBackToOverview={() => {
+            onSelectNode("");
+            onModeChange("overview");
+          }}
+          mode="overview"
+          onModeChange={onModeChange}
+          onViewCode={onViewCode}
+          repoID={repoID}
+          prID={pr?.id}
+          token={token}
+          nodeCodeCache={nodeCodeCache}
+          onCacheNodeCode={onCacheNodeCode}
+        />
       ) : (
         <CodePanel
           node={node}
@@ -136,6 +174,22 @@ export default function NodeDetailPanel({
         />
         )}
       </div>
+      {!pr && (
+        <div
+          style={{
+            position: "absolute",
+            left: 20,
+            right: 20,
+            bottom: 52,
+            zIndex: 30,
+          }}
+        >
+          <button type="button" onClick={onOpenSettings} style={settingsButtonStyle}>
+            <Settings size={16} />
+            <span>Settings</span>
+          </button>
+        </div>
+      )}
       <div
         role="separator"
         aria-orientation="vertical"
@@ -270,6 +324,7 @@ function PRSummaryPanel({
   onBackToRepo: () => void;
 }) {
   const changedNodes = allNodes.filter((n) => n.node_type === "changed");
+  const prTests = uniqueGraphTests(changedNodes.flatMap((node) => node.tests ?? []));
   const totalAdded = changedNodes.reduce((s, n) => s + (n.lines_added || 0), 0);
   const totalRemoved = changedNodes.reduce((s, n) => s + (n.lines_removed || 0), 0);
 
@@ -340,7 +395,7 @@ function PRSummaryPanel({
                 >
                   <span style={{ minWidth: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
                     {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
-                    <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
+                    <span style={{ fontSize: 13, color: "#222222" }}>{n.full_name}</span>
                   </span>
                   <DiffPills node={n} compact alignRight />
                 </button>
@@ -349,6 +404,8 @@ function PRSummaryPanel({
           </div>
         </>
       )}
+
+      <TestSection tests={prTests} />
 
       {/* View on GitHub */}
       <a
@@ -394,8 +451,10 @@ function NodeDetail({
 }) {
   const pkgPrefix = pkgLabel(node);
   const cachedCode = nodeCodeCache[node.id];
+  const canViewCode = node.granularity === "function";
 
   useEffect(() => {
+    if (!canViewCode) return;
     if (cachedCode?.node_id === node.id) return;
 
     let cancelled = false;
@@ -414,7 +473,7 @@ function NodeDetail({
     return () => {
       cancelled = true;
     };
-  }, [cachedCode?.node_id, node.id, onCacheNodeCode, prID, repoID, token]);
+  }, [cachedCode?.node_id, canViewCode, node.id, onCacheNodeCode, prID, repoID, token]);
 
   const sourceSegment = cachedCode?.node_id === node.id
     ? cachedCode.head ?? cachedCode.base
@@ -424,11 +483,11 @@ function NodeDetail({
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <PanelToolbar mode={mode} onModeChange={onModeChange} backOnClick={onBackToOverview} />
+      <PanelToolbar mode={mode} onModeChange={onModeChange} canViewCode={canViewCode} backOnClick={onBackToOverview} />
 
       {/* File path */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
-        {node.file_path}
+        {node.granularity === "package" ? node.package_path || node.file_path : node.file_path}
       </p>
 
       {/* Package label */}
@@ -440,8 +499,24 @@ function NodeDetail({
 
       {/* Function name */}
       <h2 style={{ fontSize: 22, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
-        {node.name}
+        {node.full_name}
       </h2>
+
+      {node.granularity !== "function" && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+          <span style={repoPRBadgeStyle}>{node.granularity}</span>
+          {Boolean(node.member_count) && (
+            <span style={repoPRBadgeStyle}>
+              {node.member_count} {node.member_count === 1 ? "member" : "members"}
+            </span>
+          )}
+          {Boolean(node.changed_member_count) && (
+            <span style={{ ...repoPRBadgeStyle, color: "#166534" }}>
+              {node.changed_member_count} changed
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Description */}
       {node.summary && (
@@ -475,7 +550,7 @@ function NodeDetail({
           </div>
           <p style={{ fontSize: 13, color: "#333333", lineHeight: 1.6, margin: 0 }}>{node.change_summary}</p>
 
-          {node.diff_hunk && (
+          {canViewCode && node.diff_hunk && (
             <button
               onClick={onViewCode}
               style={{ background: "none", border: "none", color: "#166534", fontSize: 12, cursor: "pointer", padding: 0, marginTop: 8 }}
@@ -486,22 +561,24 @@ function NodeDetail({
         </div>
       )}
 
-      <button
-        onClick={onViewCode}
-        style={{
-          background: "#CFCFCF",
-          border: "none",
-          borderRadius: 4,
-          color: "#222222",
-          cursor: "pointer",
-          fontSize: 12,
-          marginBottom: 4,
-          padding: "8px 10px",
-          textAlign: "left",
-        }}
-      >
-        Open code view →
-      </button>
+      {canViewCode && (
+        <button
+          onClick={onViewCode}
+          style={{
+            background: "#CFCFCF",
+            border: "none",
+            borderRadius: 4,
+            color: "#222222",
+            cursor: "pointer",
+            fontSize: 12,
+            marginBottom: 4,
+            padding: "8px 10px",
+            textAlign: "left",
+          }}
+        >
+          Open code view →
+        </button>
+      )}
 
       {/* Calls section */}
       <RelationSection
@@ -597,7 +674,7 @@ function CodePanel({
         </p>
       )}
       <h2 style={{ fontSize: 20, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
-        {node.name}
+        {node.full_name}
       </h2>
 
       {loading && (
@@ -632,11 +709,13 @@ function CodePanel({
 function PanelToolbar({
   mode,
   onModeChange,
+  canViewCode = true,
   backHref,
   backOnClick,
 }: {
   mode?: PanelMode;
   onModeChange?: (mode: PanelMode) => void;
+  canViewCode?: boolean;
   backHref?: string;
   backOnClick?: () => void;
 }) {
@@ -644,7 +723,7 @@ function PanelToolbar({
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
       <BackControl href={backHref} onClick={backOnClick} />
       {mode && onModeChange ? (
-        <ModeToggle mode={mode} onModeChange={onModeChange} />
+        <ModeToggle mode={mode} onModeChange={onModeChange} canViewCode={canViewCode} />
       ) : (
         <span />
       )}
@@ -655,21 +734,24 @@ function PanelToolbar({
 function ModeToggle({
   mode,
   onModeChange,
+  canViewCode = true,
 }: {
   mode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
+  canViewCode?: boolean;
 }) {
-  const buttonStyle = (active: boolean): CSSProperties => ({
+  const buttonStyle = (active: boolean, disabled = false): CSSProperties => ({
     width: 30,
     height: 30,
     alignItems: "center",
     background: active ? "#111111" : "#CFCFCF",
     border: "none",
     borderRadius: 4,
-    color: active ? "#FFFFFF" : "#333333",
-    cursor: "pointer",
+    color: disabled ? "#999999" : active ? "#FFFFFF" : "#333333",
+    cursor: disabled ? "not-allowed" : "pointer",
     display: "inline-flex",
     justifyContent: "center",
+    opacity: disabled ? 0.5 : 1,
     padding: 0,
   });
 
@@ -689,7 +771,8 @@ function ModeToggle({
         aria-label="Show code"
         title="Code"
         onClick={() => onModeChange("code")}
-        style={buttonStyle(mode === "code")}
+        disabled={!canViewCode}
+        style={buttonStyle(mode === "code", !canViewCode)}
       >
         <Code2 size={16} strokeWidth={2} />
       </button>
@@ -980,7 +1063,7 @@ function RelationSection({
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>
                 {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
-                <span style={{ fontSize: 13, color: "#222222" }}>{n.name}</span>
+                <span style={{ fontSize: 13, color: "#222222" }}>{n.full_name}</span>
               </div>
               <DiffPills node={n} compact />
             </button>
@@ -1019,7 +1102,21 @@ function TestSection({ tests }: { tests: GraphNode["tests"] }) {
   );
 }
 
+function uniqueGraphTests(tests: GraphNode["tests"]): GraphNode["tests"] {
+  const seen = new Set<string>();
+  const unique: GraphNode["tests"] = [];
+  for (const test of tests) {
+    const key = `${test.file_path}:${test.line_start}:${test.full_name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(test);
+  }
+  return unique;
+}
+
 function pkgLabel(node: GraphNode): string {
+  if (node.granularity === "package") return "package";
+  if (node.granularity === "object") return node.package_path || "object";
   const parts = node.file_path.split("/");
   const pkg = parts.length >= 2
     ? parts[parts.length - 2]
@@ -1029,6 +1126,11 @@ function pkgLabel(node: GraphNode): string {
     return pkg ? `${pkg}.${prefix}` : prefix;
   }
   return pkg;
+}
+
+function functionDisplayName(node: GraphNode): string {
+  const parts = node.full_name.split(".");
+  return parts[parts.length - 1] || node.full_name;
 }
 
 function calleesOf(nodeID: string, edges: GraphEdge[]): string[] {
@@ -1053,7 +1155,7 @@ function buildCallSiteLines(
     const callee = allNodes.find((candidate) => candidate.id === id);
     if (!callee) continue;
 
-    const index = lines.findIndex((line) => lineMatchesCall(line, callee.name));
+    const index = lines.findIndex((line) => lineMatchesCall(line, functionDisplayName(callee)));
     if (index >= 0) {
       byID[id] = segment.start_line + index;
     }

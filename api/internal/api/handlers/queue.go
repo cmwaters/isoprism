@@ -42,10 +42,13 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			pa.risk_score,
 			pa.risk_label
 		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
 		left join pr_analyses pa on pa.pull_request_id = pr.id
 		where pr.repo_id = $1
 		  and pr.state   = 'open'
 		  and pr.draft   = false
+		  and pr.base_branch = 'main'
+		  and pr.base_commit_sha = r.main_commit_sha
 		  and pr.graph_status = 'ready'
 		order by pr.opened_at asc
 	`, repoID)

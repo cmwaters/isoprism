@@ -52,7 +52,7 @@ create table pull_requests (
   merged_at        timestamptz,
   last_activity_at timestamptz,
   graph_status     text not null default 'pending'
-                   check (graph_status in ('pending','running','ready','failed')),
+                   check (graph_status in ('pending','running','ready','skipped','failed')),
   created_at       timestamptz not null default now(),
   unique (repo_id, github_pr_id)
 );
@@ -63,12 +63,12 @@ create table code_nodes (
   id          uuid primary key default gen_random_uuid(),
   repo_id     uuid not null references repositories(id) on delete cascade,
   commit_sha  text not null,
-  name        text not null,
   full_name   text not null,
   file_path   text not null,
   line_start  int not null,
   line_end    int not null,
-  signature   text not null,
+  inputs      jsonb not null default '[]'::jsonb,
+  outputs     jsonb not null default '[]'::jsonb,
   language    text not null,
   kind        text not null,
   body_hash   text not null,

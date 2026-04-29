@@ -32,7 +32,7 @@ The page should have one content column with three sections:
 2. Current repository
 3. Swap repository
 
-The GitHub connection section should show the signed-in GitHub user and provide actions to install or manage the GitHub App.
+The GitHub connection section should show the signed-in GitHub user and provide one action to manage the GitHub App. Installation happens during onboarding; settings should not show a separate install action because that makes the connected state ambiguous.
 
 The current repository section should show the single repository currently indexed for the beta and provide a link back to the graph page.
 

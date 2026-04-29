@@ -133,7 +133,14 @@ supabase db diff --linked
 ```
 
 ### Migrations
-Migration files live in `db/migrations/`. They use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` throughout, making them safe to re-run — **except** `CREATE POLICY` statements, which will error if the policy already exists. If in doubt, dump the schema and grep for the table name before re-running.
+Migration files live in `supabase/migrations/` so the Supabase CLI can discover them without a temporary workdir. They use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` throughout, making them safe to re-run — **except** `CREATE POLICY` statements, which will error if the policy already exists. If in doubt, dump the schema and grep for the table name before re-running.
+
+If the CLI is not logged in, use the production database URL from `api/.env`:
+
+```bash
+DATABASE_URL=$(sed -n 's/^DATABASE_URL=//p' api/.env)
+supabase db push --db-url "$DATABASE_URL"
+```
 
 ```bash
 # Quick check — did migration 002 apply?

@@ -41,6 +41,438 @@ type graphCandidate struct {
 	weight      int
 }
 
+type graphNodeRecord struct {
+	node      models.GraphNode
+	commitSHA string
+}
+
+type projectedGraph struct {
+	nodes       map[string]models.GraphNode
+	edgeRows    []graphEdgeRow
+	edges       map[string]models.GraphEdge
+	seedIDs     []string
+	lineChanges map[string]int
+}
+
+func isTestGraphNode(node models.GraphNode) bool {
+	normalized := strings.ReplaceAll(strings.ToLower(node.FilePath), "\\", "/")
+	base := normalized
+	if slash := strings.LastIndex(base, "/"); slash >= 0 {
+		base = base[slash+1:]
+	}
+	ext := ""
+	stem := base
+	if dot := strings.LastIndex(base, "."); dot >= 0 {
+		ext = base[dot:]
+		stem = base[:dot]
+	}
+
+	if ext == ".go" {
+		return strings.HasSuffix(base, "_test.go") || strings.HasPrefix(lastFullNameSegment(node.FullName), "Test")
+	}
+	if ext == ".ts" || ext == ".tsx" || ext == ".js" || ext == ".jsx" {
+		return strings.Contains(normalized, "/__tests__/") ||
+			strings.HasSuffix(stem, ".test") ||
+			strings.HasSuffix(stem, ".spec")
+	}
+	return strings.HasPrefix(lastFullNameSegment(node.FullName), "Test")
+}
+
+func semanticGraphKey(node models.GraphNode) string {
+	return node.FilePath + "|" + node.FullName
+}
+
+func lastFullNameSegment(fullName string) string {
+	if dot := strings.LastIndex(fullName, "."); dot >= 0 {
+		return fullName[dot+1:]
+	}
+	return fullName
+}
+
+func decodeTypeRefs(raw []byte) []models.TypeRef {
+	if len(raw) == 0 {
+		return []models.TypeRef{}
+	}
+	var refs []models.TypeRef
+	if err := json.Unmarshal(raw, &refs); err != nil {
+		return []models.TypeRef{}
+	}
+	return refs
+}
+
+func resolveGraphTypeRefs(nodes map[string]models.GraphNode) {
+	typeIDByName := map[string]string{}
+	for id, node := range nodes {
+		if node.Kind != "struct" && node.Kind != "type" && node.Kind != "interface" {
+			continue
+		}
+		typeIDByName[node.FullName] = id
+		typeIDByName[lastFullNameSegment(node.FullName)] = id
+	}
+	resolve := func(refs []models.TypeRef) []models.TypeRef {
+		resolved := make([]models.TypeRef, len(refs))
+		copy(resolved, refs)
+		for i := range resolved {
+			if id, ok := typeIDByName[baseTypeName(resolved[i].Type)]; ok {
+				nodeID := id
+				resolved[i].NodeID = &nodeID
+			}
+		}
+		return resolved
+	}
+	for id, node := range nodes {
+		node.Inputs = resolve(node.Inputs)
+		node.Outputs = resolve(node.Outputs)
+		nodes[id] = node
+	}
+}
+
+func baseTypeName(typeName string) string {
+	t := strings.TrimSpace(typeName)
+	t = strings.TrimPrefix(t, "*")
+	for strings.HasPrefix(t, "[]") {
+		t = strings.TrimPrefix(t, "[]")
+		t = strings.TrimPrefix(t, "*")
+	}
+	if strings.HasPrefix(t, "map[") {
+		if idx := strings.LastIndex(t, "]"); idx >= 0 && idx+1 < len(t) {
+			t = strings.TrimPrefix(t[idx+1:], "*")
+		}
+	}
+	if dot := strings.LastIndex(t, "."); dot >= 0 {
+		return t[dot+1:]
+	}
+	return t
+}
+
+func requestedGranularity(r *http.Request, fallback string) string {
+	switch strings.ToLower(r.URL.Query().Get("granularity")) {
+	case "function", "object", "package":
+		return strings.ToLower(r.URL.Query().Get("granularity"))
+	default:
+		return fallback
+	}
+}
+
+func packagePathForNode(node models.GraphNode) string {
+	if node.PackagePath != "" {
+		return node.PackagePath
+	}
+	path := strings.ReplaceAll(node.FilePath, "\\", "/")
+	if path == "" {
+		return "."
+	}
+	if slash := strings.LastIndex(path, "/"); slash >= 0 {
+		return path[:slash]
+	}
+	return "."
+}
+
+func objectNameForNode(node models.GraphNode) string {
+	switch node.Kind {
+	case "method":
+		if dot := strings.LastIndex(node.FullName, "."); dot > 0 {
+			return node.FullName[:dot]
+		}
+	case "struct", "type", "interface":
+		return node.FullName
+	}
+	return ""
+}
+
+func graphNodeRoleRank(role string) int {
+	switch role {
+	case "changed":
+		return 0
+	case "entrypoint":
+		return 1
+	case "caller":
+		return 2
+	case "callee":
+		return 3
+	default:
+		return 4
+	}
+}
+
+func mergeGraphNodeRole(current, next string) string {
+	if current == "" {
+		return next
+	}
+	if graphNodeRoleRank(next) < graphNodeRoleRank(current) {
+		return next
+	}
+	return current
+}
+
+func groupIDForNode(node models.GraphNode, granularity string) string {
+	switch granularity {
+	case "package":
+		return "group:package:" + packagePathForNode(node)
+	case "object":
+		if objectName := objectNameForNode(node); objectName != "" {
+			return "group:object:" + packagePathForNode(node) + ":" + objectName
+		}
+		return node.ID
+	default:
+		return node.ID
+	}
+}
+
+func newAggregateNode(id string, node models.GraphNode, granularity string) models.GraphNode {
+	pkg := packagePathForNode(node)
+	switch granularity {
+	case "package":
+		name := pkg
+		if name == "." {
+			name = "root"
+		} else if slash := strings.LastIndex(name, "/"); slash >= 0 {
+			name = name[slash+1:]
+		}
+		summary := "Package containing code nodes from " + pkg + "."
+		return models.GraphNode{
+			ID:          id,
+			FullName:    name,
+			FilePath:    pkg,
+			PackagePath: pkg,
+			LineStart:   node.LineStart,
+			LineEnd:     node.LineEnd,
+			Inputs:      []models.TypeRef{},
+			Outputs:     []models.TypeRef{},
+			Language:    node.Language,
+			Kind:        "package",
+			Granularity: "package",
+			NodeType:    node.NodeType,
+			Summary:     &summary,
+			Tests:       []models.GraphNodeTest{},
+			Expandable:  true,
+		}
+	case "object":
+		objectName := objectNameForNode(node)
+		summary := "Object containing a type and its associated methods."
+		return models.GraphNode{
+			ID:          id,
+			FullName:    objectName,
+			FilePath:    node.FilePath,
+			PackagePath: pkg,
+			LineStart:   node.LineStart,
+			LineEnd:     node.LineEnd,
+			Inputs:      []models.TypeRef{},
+			Outputs:     []models.TypeRef{},
+			Language:    node.Language,
+			Kind:        "object",
+			Granularity: "object",
+			NodeType:    node.NodeType,
+			Summary:     &summary,
+			Tests:       []models.GraphNodeTest{},
+			Expandable:  true,
+		}
+	default:
+		node.Granularity = "function"
+		node.PackagePath = pkg
+		return node
+	}
+}
+
+func projectGraph(nodes []models.GraphNode, rawEdges []graphEdgeRow, granularity string) projectedGraph {
+	projected := projectedGraph{
+		nodes:       map[string]models.GraphNode{},
+		edges:       map[string]models.GraphEdge{},
+		lineChanges: map[string]int{},
+	}
+	if granularity == "function" {
+		for _, node := range nodes {
+			node.Granularity = "function"
+			node.PackagePath = packagePathForNode(node)
+			node.MemberCount = 1
+			node.CollapsedNodeIDs = []string{node.ID}
+			projected.nodes[node.ID] = node
+			if node.NodeType == "changed" || node.NodeType == "entrypoint" {
+				projected.seedIDs = append(projected.seedIDs, node.ID)
+			}
+			projected.lineChanges[node.ID] = node.LinesAdded + node.LinesRemoved
+		}
+		for _, edge := range rawEdges {
+			if edge.callerID == "" || edge.calleeID == "" || edge.callerID == edge.calleeID {
+				continue
+			}
+			key := edge.callerID + "|" + edge.calleeID
+			if _, exists := projected.edges[key]; exists {
+				continue
+			}
+			projected.edgeRows = append(projected.edgeRows, edge)
+			projected.edges[key] = models.GraphEdge{CallerID: edge.callerID, CalleeID: edge.calleeID, Weight: 1, UnderlyingEdgeCount: 1}
+		}
+		return projected
+	}
+
+	nodeByID := map[string]models.GraphNode{}
+	groupByNodeID := map[string]string{}
+	seedSet := map[string]bool{}
+	for _, node := range nodes {
+		nodeByID[node.ID] = node
+		groupID := groupIDForNode(node, granularity)
+		groupByNodeID[node.ID] = groupID
+
+		group, exists := projected.nodes[groupID]
+		if !exists {
+			if groupID == node.ID {
+				node.Granularity = "function"
+				node.PackagePath = packagePathForNode(node)
+				node.MemberCount = 0
+				node.CollapsedNodeIDs = []string{node.ID}
+				group = node
+			} else {
+				group = newAggregateNode(groupID, node, granularity)
+			}
+		}
+
+		group.NodeType = mergeGraphNodeRole(group.NodeType, node.NodeType)
+		group.Weight += node.Weight
+		group.Degree += node.Degree
+		group.LinesAdded += node.LinesAdded
+		group.LinesRemoved += node.LinesRemoved
+		if node.LineStart > 0 && (group.LineStart == 0 || node.LineStart < group.LineStart) {
+			group.LineStart = node.LineStart
+		}
+		if node.LineEnd > group.LineEnd {
+			group.LineEnd = node.LineEnd
+		}
+		if group.Language == "" {
+			group.Language = node.Language
+		}
+		if group.Summary == nil && node.Summary != nil {
+			group.Summary = node.Summary
+		}
+		group.MemberCount++
+		group.CollapsedNodeIDs = append(group.CollapsedNodeIDs, node.ID)
+		if node.ChangeType != nil || node.NodeType == "changed" {
+			group.ChangedMemberCount++
+		}
+		group.Tests = append(group.Tests, node.Tests...)
+		if node.NodeType == "changed" || node.NodeType == "entrypoint" {
+			seedSet[groupID] = true
+		}
+		projected.nodes[groupID] = group
+		projected.lineChanges[groupID] = group.LinesAdded + group.LinesRemoved
+	}
+
+	for _, edge := range rawEdges {
+		callerGroup := groupByNodeID[edge.callerID]
+		calleeGroup := groupByNodeID[edge.calleeID]
+		if callerGroup == "" || calleeGroup == "" || callerGroup == calleeGroup {
+			continue
+		}
+		key := callerGroup + "|" + calleeGroup
+		agg := projected.edges[key]
+		if agg.CallerID == "" {
+			agg.CallerID = callerGroup
+			agg.CalleeID = calleeGroup
+			projected.edgeRows = append(projected.edgeRows, graphEdgeRow{callerID: callerGroup, calleeID: calleeGroup})
+		}
+		agg.Weight++
+		agg.UnderlyingEdgeCount++
+		callerNode := nodeByID[edge.callerID]
+		calleeNode := nodeByID[edge.calleeID]
+		if callerNode.NodeType == "changed" || calleeNode.NodeType == "changed" || callerNode.ChangeType != nil || calleeNode.ChangeType != nil {
+			agg.ChangedWeight++
+		}
+		if len(agg.SampleEdges) < 3 {
+			agg.SampleEdges = append(agg.SampleEdges, models.GraphEdgeSample{
+				CallerID:   edge.callerID,
+				CalleeID:   edge.calleeID,
+				CallerName: callerNode.FullName,
+				CalleeName: calleeNode.FullName,
+			})
+		}
+		projected.edges[key] = agg
+	}
+
+	for id := range seedSet {
+		projected.seedIDs = append(projected.seedIDs, id)
+	}
+	sort.Strings(projected.seedIDs)
+	if len(projected.seedIDs) == 0 {
+		for id := range projected.nodes {
+			projected.seedIDs = append(projected.seedIDs, id)
+			break
+		}
+	}
+	return projected
+}
+
+func projectedVisibleEdges(edges map[string]models.GraphEdge, selected map[string]graphCandidate) []models.GraphEdge {
+	out := make([]models.GraphEdge, 0, len(edges))
+	for _, edge := range edges {
+		if _, ok := selected[edge.CallerID]; !ok {
+			continue
+		}
+		if _, ok := selected[edge.CalleeID]; !ok {
+			continue
+		}
+		out = append(out, edge)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CallerID != out[j].CallerID {
+			return out[i].CallerID < out[j].CallerID
+		}
+		return out[i].CalleeID < out[j].CalleeID
+	})
+	return out
+}
+
+func mergeGraphCandidate(current graphCandidate, next graphCandidate, id string) graphCandidate {
+	if current.id == "" {
+		next.id = id
+		return next
+	}
+	current.seed = current.seed || next.seed
+	current.lines += next.lines
+	if next.callerCount > current.callerCount {
+		current.callerCount = next.callerCount
+	}
+	if next.calleeCount > current.calleeCount {
+		current.calleeCount = next.calleeCount
+	}
+	if next.degree > current.degree {
+		current.degree = next.degree
+	}
+	if next.depth < current.depth {
+		current.depth = next.depth
+	}
+	current.boundary = current.boundary || next.boundary
+	current.weight += next.weight
+	current.id = id
+	return current
+}
+
+func canonicalizeGraphEdges(edges []models.GraphEdge, canonicalizeID func(string) string, selected map[string]graphCandidate) []models.GraphEdge {
+	visible := map[string]bool{}
+	for id := range selected {
+		visible[id] = true
+	}
+
+	result := make([]models.GraphEdge, 0, len(edges))
+	seen := map[string]bool{}
+	for _, edge := range edges {
+		source := canonicalizeID(edge.CallerID)
+		target := canonicalizeID(edge.CalleeID)
+		if source == "" || target == "" || source == target {
+			continue
+		}
+		if !visible[source] || !visible[target] {
+			continue
+		}
+		key := source + "|" + target
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, models.GraphEdge{CallerID: source, CalleeID: target, Weight: 1, UnderlyingEdgeCount: 1})
+	}
+	return result
+}
+
 func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
 	adj := map[string]map[string]bool{}
 	callerCount := map[string]int{}
@@ -174,7 +606,7 @@ func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges m
 			continue
 		}
 		seenEdges[key] = true
-		visibleEdges = append(visibleEdges, models.GraphEdge{CallerID: e.callerID, CalleeID: e.calleeID})
+		visibleEdges = append(visibleEdges, models.GraphEdge{CallerID: e.callerID, CalleeID: e.calleeID, Weight: 1, UnderlyingEdgeCount: 1})
 	}
 
 	return selected, visibleEdges
@@ -207,6 +639,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	repoID := chi.URLParam(r, "repoID")
 	userID := r.Header.Get("X-User-ID")
 	ctx := r.Context()
+	granularity := requestedGranularity(r, "package")
 
 	var repo models.Repository
 	err := h.DB.QueryRow(ctx, `
@@ -226,16 +659,17 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	if repo.MainCommitSHA == nil || *repo.MainCommitSHA == "" {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(models.RepoGraphResponse{
-			Repo:  repo,
-			Nodes: []models.GraphNode{},
-			Edges: []models.GraphEdge{},
+			Repo:        repo,
+			Granularity: granularity,
+			Nodes:       []models.GraphNode{},
+			Edges:       []models.GraphEdge{},
 		})
 		return
 	}
 
 	nodeRows, err := h.DB.Query(ctx, `
-		select id, name, full_name, file_path, line_start, line_end,
-		       signature, language, kind, coalesce(summary,'')
+		select id, full_name, file_path, line_start, line_end,
+		       inputs, outputs, language, kind, coalesce(summary,'')
 		from code_nodes
 		where repo_id=$1 and commit_sha=$2
 		order by file_path, line_start
@@ -252,22 +686,28 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	fallbackSeed := ""
 	for nodeRows.Next() {
 		var n models.GraphNode
+		var inputsRaw, outputsRaw []byte
 		var summary string
 		if err := nodeRows.Scan(
-			&n.ID, &n.Name, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&n.Signature, &n.Language, &n.Kind, &summary,
+			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &summary,
 		); err != nil {
 			continue
 		}
+		n.Inputs = decodeTypeRefs(inputsRaw)
+		n.Outputs = decodeTypeRefs(outputsRaw)
 		if summary != "" {
 			n.Summary = &summary
+		}
+		if isTestGraphNode(n) {
+			continue
 		}
 		n.Tests = []models.GraphNodeTest{}
 		nodeMap[n.ID] = n
 		if fallbackSeed == "" {
 			fallbackSeed = n.ID
 		}
-		if n.Name == "main" || n.FullName == "main" || strings.HasSuffix(n.FullName, ".main") {
+		if n.FullName == "main" || strings.HasSuffix(n.FullName, ".main") {
 			seedIDs = append(seedIDs, n.ID)
 		}
 	}
@@ -306,12 +746,50 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	selected, edges := selectVisibleGraph(seedIDs, allEdges, map[string]int{})
-	nodes := make([]models.GraphNode, 0, len(selected))
-	nodeIDs := make([]string, 0, len(selected))
+	allNodes := make([]models.GraphNode, 0, len(nodeMap))
 	seedSet := map[string]bool{}
 	for _, id := range seedIDs {
 		seedSet[id] = true
 	}
+	for id, n := range nodeMap {
+		if seedSet[id] {
+			n.NodeType = "entrypoint"
+		} else {
+			n.NodeType = "context"
+		}
+		n.Granularity = "function"
+		n.PackagePath = packagePathForNode(n)
+		nodeMap[id] = n
+		allNodes = append(allNodes, n)
+	}
+	if granularity != "function" {
+		projected := projectGraph(allNodes, allEdges, granularity)
+		selectedGroups, _ := selectVisibleGraph(projected.seedIDs, projected.edgeRows, projected.lineChanges)
+		nodes := make([]models.GraphNode, 0, len(selectedGroups))
+		for id, meta := range selectedGroups {
+			n, ok := projected.nodes[id]
+			if !ok {
+				continue
+			}
+			n.Weight = meta.weight
+			n.Degree = meta.degree
+			n.GraphDepth = meta.depth
+			n.Boundary = meta.boundary
+			nodes = append(nodes, n)
+		}
+		sortGraphNodes(nodes)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(models.RepoGraphResponse{
+			Repo:        repo,
+			Granularity: granularity,
+			Nodes:       nodes,
+			Edges:       projectedVisibleEdges(projected.edges, selectedGroups),
+		})
+		return
+	}
+
+	nodes := make([]models.GraphNode, 0, len(selected))
+	nodeIDs := make([]string, 0, len(selected))
 	for id, meta := range selected {
 		n, ok := nodeMap[id]
 		if !ok {
@@ -328,6 +806,13 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		n.Boundary = meta.boundary
 		nodes = append(nodes, n)
 		nodeIDs = append(nodeIDs, id)
+	}
+	resolveGraphTypeRefs(nodeMap)
+	for i := range nodes {
+		if resolved, ok := nodeMap[nodes[i].ID]; ok {
+			nodes[i].Inputs = resolved.Inputs
+			nodes[i].Outputs = resolved.Outputs
+		}
 	}
 	sortGraphNodes(nodes)
 
@@ -372,9 +857,10 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.RepoGraphResponse{
-		Repo:  repo,
-		Nodes: nodes,
-		Edges: edges,
+		Repo:        repo,
+		Granularity: granularity,
+		Nodes:       nodes,
+		Edges:       edges,
 	})
 }
 
@@ -412,6 +898,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	prID := chi.URLParam(r, "prID")
 	userID := r.Header.Get("X-User-ID")
 	ctx := r.Context()
+	granularity := requestedGranularity(r, "package")
 
 	// Verify repo ownership
 	var exists bool
@@ -423,23 +910,31 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// Load PR + main commit SHA
 	var pr models.GraphPR
-	var baseCommit, headCommit, mainCommitSHA string
+	var baseCommit, headCommit, mainCommitSHA, baseBranch string
 	err := h.DB.QueryRow(ctx, `
 		select pr.id, pr.number, pr.title, pr.html_url,
 		       coalesce(pr.base_commit_sha,''), coalesce(pr.head_commit_sha,''),
 		       coalesce(r.main_commit_sha,''),
-		       coalesce(pr.body,''), coalesce(pr.author_login,'')
+		       coalesce(pr.body,''), coalesce(pr.author_login,''), pr.base_branch
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
 		where pr.id=$1 and pr.repo_id=$2
 	`, prID, repoID).Scan(&pr.ID, &pr.Number, &pr.Title, &pr.HTMLURL, &baseCommit, &headCommit, &mainCommitSHA,
-		&pr.Body, &pr.AuthorLogin)
+		&pr.Body, &pr.AuthorLogin, &baseBranch)
 	if err != nil {
 		http.Error(w, "pr not found", http.StatusNotFound)
 		return
 	}
 	pr.BaseCommitSHA = baseCommit
 	pr.HeadCommitSHA = headCommit
+	if baseBranch != "main" {
+		http.Error(w, "PR graph only supports pull requests targeting main", http.StatusConflict)
+		return
+	}
+	if baseCommit == "" || mainCommitSHA == "" || baseCommit != mainCommitSHA {
+		http.Error(w, "PR base SHA does not match the indexed main SHA", http.StatusConflict)
+		return
+	}
 
 	// Load changed nodes from pr_node_changes
 	type rawChange struct {
@@ -475,9 +970,10 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	if len(changedIDs) == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(models.GraphResponse{
-			PR:    pr,
-			Nodes: []models.GraphNode{},
-			Edges: []models.GraphEdge{},
+			PR:          pr,
+			Granularity: granularity,
+			Nodes:       []models.GraphNode{},
+			Edges:       []models.GraphEdge{},
 		})
 		return
 	}
@@ -589,8 +1085,8 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nodeRows, err := h.DB.Query(ctx, `
-		select id, name, full_name, file_path, line_start, line_end,
-		       signature, language, kind, coalesce(summary,'')
+		select id, commit_sha, full_name, file_path, line_start, line_end,
+		       inputs, outputs, language, kind, coalesce(summary,'')
 		from code_nodes where id = any($1::uuid[])
 	`, idList)
 	if err != nil {
@@ -600,29 +1096,89 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	defer nodeRows.Close()
 
-	nodeMap := map[string]models.GraphNode{}
+	nodeMap := map[string]graphNodeRecord{}
 	for nodeRows.Next() {
 		var n models.GraphNode
+		var commitSHA string
+		var inputsRaw, outputsRaw []byte
 		var summary string
 		if err := nodeRows.Scan(
-			&n.ID, &n.Name, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&n.Signature, &n.Language, &n.Kind, &summary,
+			&n.ID, &commitSHA, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &summary,
 		); err != nil {
+			continue
+		}
+		n.Inputs = decodeTypeRefs(inputsRaw)
+		n.Outputs = decodeTypeRefs(outputsRaw)
+		if isTestGraphNode(n) {
 			continue
 		}
 		if summary != "" {
 			n.Summary = &summary
 		}
-		nodeMap[n.ID] = n
+		nodeMap[n.ID] = graphNodeRecord{node: n, commitSHA: commitSHA}
 	}
 
-	// Tag node types. For nodes that appear in both PR-head and main-branch forms,
-	// prefer the PR-head version (it has change info).
-	finalNodeMap := map[string]models.GraphNode{} // keyed by the ID we'll use in the response
 	changedIDSet := map[string]bool{}
 	for _, id := range changedIDs {
 		changedIDSet[id] = true
 	}
+	canonicalByKey := map[string]string{}
+	preferCanonical := func(candidateID, currentID string) bool {
+		if currentID == "" {
+			return true
+		}
+		if changedIDSet[candidateID] != changedIDSet[currentID] {
+			return changedIDSet[candidateID]
+		}
+		candidate := nodeMap[candidateID]
+		current := nodeMap[currentID]
+		if candidate.commitSHA == headCommit && current.commitSHA != headCommit {
+			return true
+		}
+		if current.commitSHA == headCommit && candidate.commitSHA != headCommit {
+			return false
+		}
+		if candidate.commitSHA == mainCommitSHA && current.commitSHA != mainCommitSHA {
+			return true
+		}
+		if current.commitSHA == mainCommitSHA && candidate.commitSHA != mainCommitSHA {
+			return false
+		}
+		return candidateID < currentID
+	}
+	for id, record := range nodeMap {
+		key := semanticGraphKey(record.node)
+		if preferCanonical(id, canonicalByKey[key]) {
+			canonicalByKey[key] = id
+		}
+	}
+	canonicalByID := map[string]string{}
+	for id, record := range nodeMap {
+		if canonicalID := canonicalByKey[semanticGraphKey(record.node)]; canonicalID != "" {
+			canonicalByID[id] = canonicalID
+		}
+	}
+	canonicalizeID := func(id string) string {
+		remapped := remapID(id)
+		if canonicalID, ok := canonicalByID[remapped]; ok {
+			return canonicalID
+		}
+		return remapped
+	}
+	selectedCanonical := map[string]graphCandidate{}
+	for id, meta := range selected {
+		canonicalID := canonicalizeID(id)
+		if _, ok := nodeMap[canonicalID]; !ok {
+			continue
+		}
+		selectedCanonical[canonicalID] = mergeGraphCandidate(selectedCanonical[canonicalID], meta, canonicalID)
+	}
+	edges = canonicalizeGraphEdges(edges, canonicalizeID, selectedCanonical)
+
+	// Tag node types. For nodes that appear in both PR-head and main-branch forms,
+	// prefer the PR-head version (it has change info).
+	finalNodeMap := map[string]models.GraphNode{} // keyed by the ID we'll use in the response
 	callerSet := map[string]bool{}
 	calleeSet := map[string]bool{}
 	for _, e := range edges {
@@ -636,14 +1192,16 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// First pass: add changed nodes (PR-head IDs) with change info
 	for _, id := range changedIDs {
-		meta, isSelected := selected[id]
+		canonicalID := canonicalizeID(id)
+		meta, isSelected := selectedCanonical[canonicalID]
 		if !isSelected {
 			continue
 		}
-		n, ok := nodeMap[id]
+		record, ok := nodeMap[canonicalID]
 		if !ok {
 			continue
 		}
+		n := record.node
 		n.NodeType = "changed"
 		c := changedSet[id]
 		n.ChangeSummary = c.changeSummary
@@ -659,23 +1217,20 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		n.Degree = meta.degree
 		n.GraphDepth = meta.depth
 		n.Boundary = meta.boundary
-		finalNodeMap[id] = n
+		finalNodeMap[canonicalID] = n
 	}
 
 	// Second pass: add context nodes (caller/callee) that aren't already included
-	for id, meta := range selected {
+	for id, meta := range selectedCanonical {
 		// Skip if it's a main-branch equivalent of a changed node
-		if prEquiv, ok := mainIDToPRID[id]; ok {
-			_ = prEquiv
-			continue
-		}
 		if _, already := finalNodeMap[id]; already {
 			continue
 		}
-		n, ok := nodeMap[id]
+		record, ok := nodeMap[id]
 		if !ok {
 			continue
 		}
+		n := record.node
 		if callerSet[id] {
 			n.NodeType = "caller"
 		} else {
@@ -706,7 +1261,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 				if err := testRows.Scan(&targetID, &t.Name, &t.FullName, &t.FilePath, &t.LineStart, &t.LineEnd); err != nil {
 					continue
 				}
-				responseNodeID := remapID(targetID)
+				responseNodeID := canonicalizeID(targetID)
 				n, ok := finalNodeMap[responseNodeID]
 				if !ok {
 					continue
@@ -725,11 +1280,15 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	resolveGraphTypeRefs(finalNodeMap)
+
 	nodes := make([]models.GraphNode, 0, len(finalNodeMap))
 	for _, n := range finalNodeMap {
 		if n.Tests == nil {
 			n.Tests = []models.GraphNodeTest{}
 		}
+		n.Granularity = "function"
+		n.PackagePath = packagePathForNode(n)
 		nodes = append(nodes, n)
 	}
 	sortGraphNodes(nodes)
@@ -744,7 +1303,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		if structNode.Kind != "struct" && structNode.Kind != "type" {
 			continue
 		}
-		prefix := structNode.Name + "."
+		prefix := structNode.FullName + "."
 		for methodID, methodNode := range finalNodeMap {
 			if methodID == structID || methodNode.Kind != "method" {
 				continue
@@ -753,17 +1312,41 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 				key := structID + "|" + methodID
 				if !seenEdges[key] {
 					seenEdges[key] = true
-					edges = append(edges, models.GraphEdge{CallerID: structID, CalleeID: methodID})
+					edges = append(edges, models.GraphEdge{CallerID: structID, CalleeID: methodID, Weight: 1, UnderlyingEdgeCount: 1})
 				}
 			}
 		}
 	}
 
+	if granularity != "function" {
+		rawEdges := make([]graphEdgeRow, 0, len(edges))
+		for _, edge := range edges {
+			rawEdges = append(rawEdges, graphEdgeRow{callerID: edge.CallerID, calleeID: edge.CalleeID})
+		}
+		projected := projectGraph(nodes, rawEdges, granularity)
+		selectedGroups, _ := selectVisibleGraph(projected.seedIDs, projected.edgeRows, projected.lineChanges)
+		nodes = make([]models.GraphNode, 0, len(selectedGroups))
+		for id, meta := range selectedGroups {
+			n, ok := projected.nodes[id]
+			if !ok {
+				continue
+			}
+			n.Weight = meta.weight
+			n.Degree = meta.degree
+			n.GraphDepth = meta.depth
+			n.Boundary = meta.boundary
+			nodes = append(nodes, n)
+		}
+		sortGraphNodes(nodes)
+		edges = projectedVisibleEdges(projected.edges, selectedGroups)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.GraphResponse{
-		PR:    pr,
-		Nodes: nodes,
-		Edges: edges,
+		PR:          pr,
+		Granularity: granularity,
+		Nodes:       nodes,
+		Edges:       edges,
 	})
 }
 

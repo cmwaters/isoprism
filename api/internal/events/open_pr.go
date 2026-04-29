@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"strconv"
 	"strings"
@@ -20,29 +21,42 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	log.Printf("OpenPR: starting for pr %s", prID)
 
 	// Load PR details
-	var repoID, fullName string
+	var repoID, fullName, baseBranch, mainCommitSHA string
 	var installationID int64
 	var headSHA, baseSHA, baseCommit string
 	var prNumber int
 	err := db.QueryRow(ctx, `
 		select pr.repo_id, pr.head_commit_sha, pr.base_commit_sha,
-		       pr.number, r.full_name, gi.installation_id,
-		       coalesce(r.main_commit_sha, pr.base_commit_sha, '') as base_commit
+		       pr.number, r.full_name, pr.base_branch, coalesce(r.main_commit_sha, ''),
+		       gi.installation_id
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
 		join github_installations gi on gi.id = r.installation_id
 		where pr.id = $1
-	`, prID).Scan(&repoID, &headSHA, &baseSHA, &prNumber, &fullName, &installationID, &baseCommit)
+	`, prID).Scan(&repoID, &headSHA, &baseSHA, &prNumber, &fullName, &baseBranch, &mainCommitSHA, &installationID)
 	if err != nil {
 		log.Printf("OpenPR: failed to load PR: %v", err)
 		return
 	}
 
-	if headSHA == "" || baseCommit == "" {
+	if baseBranch != "main" {
+		log.Printf("OpenPR: skipping pr %s: base branch %q is not main", prID, baseBranch)
+		db.Exec(ctx, `update pull_requests set graph_status='skipped' where id=$1`, prID)
+		return
+	}
+
+	if headSHA == "" || baseSHA == "" || mainCommitSHA == "" {
 		log.Printf("OpenPR: missing commit SHAs for pr %s", prID)
 		db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
 		return
 	}
+
+	if baseSHA != mainCommitSHA {
+		log.Printf("OpenPR: skipping pr %s: base sha %s does not match indexed main sha %s", prID, baseSHA, mainCommitSHA)
+		db.Exec(ctx, `update pull_requests set graph_status='skipped' where id=$1`, prID)
+		return
+	}
+	baseCommit = baseSHA
 
 	ghClient, err := appClient.ClientForInstallation(ctx, installationID)
 	if err != nil {
@@ -119,15 +133,19 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			}
 			// Insert head node (or update if body changed)
 			var nodeID string
+			inputs, _ := json.Marshal(n.Inputs)
+			outputs, _ := json.Marshal(n.Outputs)
 			err := db.QueryRow(ctx, `
-				insert into code_nodes (repo_id, commit_sha, name, full_name, file_path,
-					line_start, line_end, signature, language, kind, body_hash)
+				insert into code_nodes (repo_id, commit_sha, full_name, file_path,
+					line_start, line_end, inputs, outputs, language, kind, body_hash)
 				values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 				on conflict (repo_id, commit_sha, full_name, file_path) do update
-					set body_hash = excluded.body_hash
+					set body_hash = excluded.body_hash,
+					    inputs = excluded.inputs,
+					    outputs = excluded.outputs
 				returning id
-			`, repoID, headSHA, n.Name, n.FullName, n.FilePath,
-				n.LineStart, n.LineEnd, n.Signature, n.Language, n.Kind, n.BodyHash,
+			`, repoID, headSHA, n.FullName, n.FilePath,
+				n.LineStart, n.LineEnd, inputs, outputs, n.Language, n.Kind, n.BodyHash,
 			).Scan(&nodeID)
 			if err != nil {
 				continue
@@ -189,10 +207,9 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	for _, c := range changed {
 		if c.changeType != "deleted" {
 			aiInputs = append(aiInputs, ai.NodeInput{
-				FullName:  c.node.FullName,
-				Signature: c.node.Signature,
-				Body:      c.node.Body,
-				DiffHunk:  c.diffHunk,
+				FullName: c.node.FullName,
+				Body:     c.node.Body,
+				DiffHunk: c.diffHunk,
 			})
 		}
 	}

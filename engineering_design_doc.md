@@ -97,8 +97,8 @@ The prototype delivers exactly one flow:
 ```
 /api          Go backend (chi router, handlers, event handlers, parser, AI)
 /web          Next.js frontend (App Router)
-/db
-  /migrations Plain SQL migration files
+/supabase
+  /migrations Plain SQL migration files used by Supabase CLI
 ```
 
 ---
@@ -161,7 +161,7 @@ pull_requests
   opened_at           timestamptz
   merged_at           timestamptz
   last_activity_at    timestamptz
-  graph_status        text DEFAULT 'pending'  -- 'pending' | 'running' | 'ready' | 'failed'
+  graph_status        text DEFAULT 'pending'  -- 'pending' | 'running' | 'ready' | 'skipped' | 'failed'
   created_at          timestamptz
   UNIQUE (repo_id, github_pr_id)
 
@@ -176,12 +176,12 @@ code_nodes
   id               uuid PK
   repo_id          uuid FK → repositories
   commit_sha       text
-  name             text              -- bare name, e.g. "handleAuth"
   full_name        text              -- qualified name, e.g. "AuthService.handleAuth"
   file_path        text              -- relative path within repo
   line_start       int
   line_end         int
-  signature        text              -- full signature string
+  inputs           jsonb             -- [{name?: string, type: string}]
+  outputs          jsonb             -- [{name?: string, type: string}]
   language         text              -- 'go' | 'typescript' | 'javascript'
   kind             text              -- 'function' | 'method' | 'type' | 'struct' | 'interface'
   body_hash        text              -- SHA-256 of the node body; used for change detection
@@ -198,6 +198,23 @@ code_edges
   callee_id        uuid FK → code_nodes
   created_at       timestamptz
   UNIQUE (repo_id, commit_sha, caller_id, callee_id)
+
+Graph granularity is a query-time projection over this canonical function/type
+graph. `code_nodes` and `code_edges` remain the source of truth. The graph API
+accepts `granularity=function|object|package`:
+
+- `function` returns canonical function, method, and type nodes.
+- `object` collapses a Go type plus its receiver methods into one object node;
+  package-level functions remain function nodes.
+- `package` collapses all functions, objects, and types under a file directory
+  package path into one package node.
+
+Collapsed edges are derived from underlying function-level `code_edges`. If any
+member of package A calls any member of package B, the API returns one aggregate
+edge `A -> B` with `weight`, `changed_weight`, `underlying_edge_count`, and up to
+three `sample_edges` that preserve the concrete caller/callee evidence. Internal
+edges whose endpoints collapse into the same aggregate node are hidden from the
+canvas.
 
 -- Test references at a given commit. Test code is not inserted into
 -- code_nodes/code_edges; these rows attach test entrypoints to production nodes.
@@ -391,8 +408,8 @@ The backend is defined around three events. All other logic flows from them.
 2. Fetch the full file tree at that SHA via `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1`
 3. Filter to supported source files (`.go`, `.ts`, `.tsx`, `.js`, `.jsx`)
 4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse it to extract functions, methods, and types.
-5. Exclude test code from `code_nodes`/`code_edges`, then build production call/reference edges by resolving identifiers in function bodies against the production node set → insert `code_edges`.
-6. Extract test entrypoints and store the production nodes they exercise in `code_test_references`.
+5. Exclude test code from visible production call/reference edges, then build production call/reference edges by resolving identifiers in function bodies against the production node set → insert `code_edges`.
+6. Extract test entrypoints and store the production nodes they exercise in `code_test_references`. Test relationships remain indexed in the database but are exposed to the product only as `tests[]` on selected production nodes, not as visible graph cards.
 7. Generate AI summaries for production nodes in Claude batches of up to 30 nodes (see `ai.md`)
 8. Persist all `code_nodes`, `code_edges`, and `code_test_references` with `commit_sha = HEAD`
 9. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'`
@@ -405,18 +422,23 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 
 **Trigger:** `pull_request` webhook with action `opened` or `synchronize`
 
-**Purpose:** Compute which nodes changed between `main` and the PR's head commit, and generate change summaries.
+**Purpose:** Compute which nodes changed between indexed `main` and the PR's head commit, and generate change summaries. During beta, only PRs targeting `main` are processed.
 
 **Steps:**
 
-1. **Check cache:** Look up the PR's stored `head_commit_sha`. If the incoming webhook's `head_sha` matches → already processed, skip.
-2. **Fetch diff:** `GET /repos/{owner}/{repo}/compare/{base_commit}...{head_sha}` — returns a list of changed files with their unified diffs.
-3. **Parse head commit:** For each changed file at `head_sha`, fetch content and parse it. Insert new production `code_nodes` at `commit_sha = head_sha` if not already present. Reuse existing `summary` where `body_hash` is unchanged.
-4. **Identify changed nodes:** Compare `body_hash` for each node between `base_commit_sha` and `head_sha`. Nodes with a differing hash are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`.
-5. **Build component diffs:** `modified` nodes keep a component-scoped slice of the GitHub patch. `added` and `deleted` nodes use synthetic component hunks where every source line is marked `+` or `-`, so semantic node stats count the whole new/removed component even when Git's file diff treats moved/copied body lines as unchanged context.
-6. **Generate change summaries:** For all `modified` and `added` nodes, call Claude with the diff hunk and new function body to generate `change_summary`. Batch into a single API call.
-7. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`).
-8. **Update PR:** Set `pull_requests.head_commit_sha = head_sha` and `graph_status = 'ready'`.
+1. **Validate branch and SHA:** Require `pull_requests.base_branch = 'main'` and `pull_requests.base_commit_sha = repositories.main_commit_sha`. If either check fails, mark `graph_status = 'skipped'` so the PR is hidden instead of rendered against an approximate graph. Reserve `failed` for processing errors.
+2. **Check cache:** Look up the PR's stored `head_commit_sha`. If the incoming webhook's `head_sha` matches → already processed, skip.
+3. **Fetch diff:** `GET /repos/{owner}/{repo}/compare/{base_commit_sha}...{head_sha}` — returns a list of changed files with their unified diffs.
+4. **Parse head commit:** For each changed file at `head_sha`, fetch content and parse it. Insert new production `code_nodes` at `commit_sha = head_sha` if not already present. Reuse existing `summary` where `body_hash` is unchanged.
+5. **Identify changed nodes:** Compare `body_hash` for each node between `base_commit_sha` and `head_sha`. Nodes with a differing hash are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`.
+6. **Build component diffs:** `modified` nodes keep a component-scoped slice of the GitHub patch. `added` and `deleted` nodes use synthetic component hunks where every source line is marked `+` or `-`, so semantic node stats count the whole new/removed component even when Git's file diff treats moved/copied body lines as unchanged context.
+7. **Generate change summaries:** For all `modified` and `added` nodes, call Claude with the diff hunk and new function body to generate `change_summary`. Batch into a single API call.
+8. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`).
+9. **Update PR:** Set `pull_requests.head_commit_sha = head_sha` and `graph_status = 'ready'`.
+
+When serving a graph, the API returns `full_name` as the display name and structured `inputs[]`/`outputs[]` instead of a raw signature string. Each input/output item has an optional `name`, a `type`, and, when that type exists as a visible function-level graph node, a `node_id` so the frontend can link directly to the type node. Aggregate package/object nodes return `granularity`, `package_path`, `member_count`, `changed_member_count`, `collapsed_node_ids`, and `expandable` metadata instead of code-viewable source ranges.
+
+When serving a PR graph, the API treats `file_path + full_name` as the semantic identity for visible nodes. This collapses duplicate rows for the same function across indexed-main and PR-head commits into one visual node, preferring the changed PR-head row when available. After collapsing, the API rewrites and de-duplicates edges and removes any edge whose endpoints are not in the final production-node set. Test nodes are filtered from graph responses and test coverage is returned only through each production node's `tests[]` field.
 
 ---
 
@@ -517,10 +539,10 @@ GET    /api/v1/repos/{repoID}                             repo detail + index_st
 POST   /api/v1/repos/{repoID}/index                       trigger RepoInit
 GET    /api/v1/repos/{repoID}/status                      {index_status, pr_count, ready_count}
 GET    /api/v1/repos/{repoID}/queue                       top 5 PRs by urgency
-GET    /api/v1/repos/{repoID}/graph                       repo graph from main HEAD
+GET    /api/v1/repos/{repoID}/graph                       repo graph from main HEAD; optional ?granularity=package|object|function, default package
 GET    /api/v1/repos/{repoID}/nodes/{nodeID}/code         lazy repo node source
-GET    /api/v1/repos/{repoID}/prs/{prID}/graph            PR graph (nodes + edges + deltas)
-GET    /api/v1/repos/{repoID}/prs/number/{number}/graph   PR graph by GitHub PR number
+GET    /api/v1/repos/{repoID}/prs/{prID}/graph            PR graph (nodes + edges + deltas); optional ?granularity=package|object|function, default package
+GET    /api/v1/repos/{repoID}/prs/number/{number}/graph   PR graph by GitHub PR number; optional ?granularity=package|object|function, default package
 GET    /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code lazy PR node source/diff
 ```
 
@@ -632,7 +654,7 @@ GITHUB_FEEDBACK_REPO
 urgency = (wait_time_score × 0.4) + (risk_score × 0.35) + (nodes_changed_score × 0.25)
 ```
 
-Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` are excluded from the queue until processing completes.
+Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` are excluded from the queue until processing completes. During beta, the queue also excludes PRs that do not target `main` or whose `base_commit_sha` does not match the repository's indexed `main_commit_sha`.
 
 ---
 
@@ -666,9 +688,10 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 ### Graph Rendering
 
 React Flow (`@xyflow/react`) with a weighted hex-grid layout:
-- The API returns a bounded depth-2 neighborhood around weighted seed sets: Go repo graphs seed from `main`, and PR graphs seed from changed nodes.
+- The API returns a bounded depth-2 neighborhood around weighted seed sets. Repo graphs default to `granularity=package` and seed from packages containing entrypoints such as `main`; PR graphs seed from changed nodes or their collapsed package/object groups.
 - Node `weight` is `lines_added + lines_removed + caller_count + callee_count`; high-weight seeds are prioritized near the center.
 - The API caps initial graph responses at 150 visible nodes and marks nodes as `boundary=true` when more connected context exists outside the visible set.
+- The frontend exposes a package/object/function segmented control. Package view is for repo-scale navigation, object view is for subsystem inspection, and function view is for code/diff review.
 - The client places one node per hex cell, keeps boundary nodes near the outer ring, and runs small local swaps to shorten visible edges.
 - Node `kind` drives the card colour; `node_type` drives seed placement and changed-node diff pills
 - Edges use a custom smart Bezier renderer that attaches to natural points on the raw card body, excludes diff pills from edge geometry, keeps anchors at least 20px away from corners, separates multiple anchors on the same face by at least 20px when space allows, and makes curves leave and enter perpendicular to the chosen faces
@@ -742,7 +765,7 @@ NEXT_PUBLIC_GITHUB_APP_NAME    Used to construct GitHub install links
 
 ### Migrations
 
-Plain SQL files in `/db/migrations/`, applied via Supabase dashboard or CLI. No migration framework — manual sequencing is sufficient at this scale.
+Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply them directly. Use the Supabase CLI against the linked project or pass `--db-url "$DATABASE_URL"` when applying production migrations from a machine that is not logged into Supabase.
 
 ---
 

@@ -11,15 +11,28 @@ type AccountUser = {
   avatarURL?: string;
 };
 
-const hiddenPrefixes = ["/login", "/auth/callback"];
+const nonRepoRoutePrefixes = new Set([
+  "admin",
+  "api",
+  "auth",
+  "beta",
+  "login",
+  "onboarding",
+  "repos",
+]);
 
-export default function AccountPill() {
+export default function AccountPill({ variant = "fixed" }: { variant?: "fixed" | "panel" }) {
   const pathname = usePathname();
+  const showOnThisRoute = variant === "panel" || isRepoRoute(pathname);
   const supabase = useMemo(() => createClient(), []);
   const [user, setUser] = useState<AccountUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!showOnThisRoute) {
+      return;
+    }
+
     let active = true;
 
     async function loadUser() {
@@ -59,9 +72,9 @@ export default function AccountPill() {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [showOnThisRoute, supabase]);
 
-  if (hiddenPrefixes.some((prefix) => pathname?.startsWith(prefix))) {
+  if (!showOnThisRoute) {
     return null;
   }
 
@@ -70,11 +83,11 @@ export default function AccountPill() {
       <div
         aria-hidden="true"
         style={{
-          position: "fixed",
-          top: 18,
-          right: 24,
+          position: variant === "fixed" ? "fixed" : "relative",
+          top: variant === "fixed" ? 18 : "auto",
+          right: variant === "fixed" ? 24 : "auto",
           zIndex: 60,
-          width: 144,
+          width: variant === "fixed" ? 144 : "100%",
           height: 38,
           borderRadius: 999,
           background: "#DCDCDC",
@@ -91,15 +104,16 @@ export default function AccountPill() {
       href={`/${encodeURIComponent(user.login)}/settings`}
       aria-label="Open settings"
       style={{
-        position: "fixed",
-        top: 18,
-        right: 24,
+        position: variant === "fixed" ? "fixed" : "relative",
+        top: variant === "fixed" ? 18 : "auto",
+        right: variant === "fixed" ? 24 : "auto",
         zIndex: 60,
         display: "flex",
         alignItems: "center",
         gap: 8,
         height: 38,
-        maxWidth: "min(260px, calc(100vw - 48px))",
+        width: variant === "panel" ? "100%" : undefined,
+        maxWidth: variant === "panel" ? "100%" : "min(260px, calc(100vw - 48px))",
         padding: "4px 10px 4px 5px",
         border: "1px solid #E4E4E4",
         borderRadius: 999,
@@ -141,4 +155,12 @@ export default function AccountPill() {
       </span>
     </Link>
   );
+}
+
+function isRepoRoute(pathname: string | null) {
+  if (!pathname) return false;
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length !== 2) return false;
+  if (segments[1] === "settings") return false;
+  return !nonRepoRoutePrefixes.has(segments[0]);
 }

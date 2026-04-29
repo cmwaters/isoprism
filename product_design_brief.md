@@ -6,7 +6,7 @@
 
 ## 1. What We Are Validating
 
-**Hypothesis:** A graph representation of software changes — showing the functions affected, their signatures, and what changed about each — is faster and more effective than reading a code diff when trying to understand a pull request.
+**Hypothesis:** A graph representation of software changes — showing the functions affected, their inputs and outputs, and what changed about each — is faster and more effective than reading a code diff when trying to understand a pull request.
 
 This prototype exists to test that hypothesis with invited beta testers, real repos, and real PR review work. Nothing else.
 
@@ -81,7 +81,9 @@ After the tester selects one repository, Isoprism indexes that repository and sh
 
 ### Screen 4 — PR Queue
 
-Once indexing is complete, the user sees a list of the **top five open pull requests** for that repo, ranked by urgency (a combination of wait time, change size, and risk).
+Once indexing is complete, the user sees a list of the **top five open pull requests targeting `main`** for that repo, ranked by urgency (a combination of wait time, change size, and risk). During beta, Isoprism hides PRs whose base branch is not `main` or whose base SHA does not match the currently indexed main graph.
+
+PR graphs show production code only. Tests remain indexed as evidence for the affected production nodes, but they appear in node details rather than as separate graph cards.
 
 Each PR in the list shows:
 - PR title
@@ -102,7 +104,7 @@ The screen shows an **interactive graph** where each node is a **function** in t
 
 **Each node contains:**
 - Function name
-- Function signature (the full signature: name, parameters, return type)
+- Function full name, inputs, and outputs, with linked types when the type is present in the graph
 - A two-sentence summary of what the function does
 - A two-sentence summary of what changed in this function (or "unchanged — called by a changed function" if it was not directly modified)
 

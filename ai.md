@@ -87,7 +87,6 @@ The `--- {full_name} ---` block is repeated for each node in the batch.
 **Context sent to the model:**
 
 - changed node `full_name`
-- changed node `signature`
 - component-scoped `diff_hunk`
 - deleted nodes are persisted as deleted changes but are not sent to the model
 
@@ -106,7 +105,6 @@ risk_score is 1-10; risk_label is "low" (1-3), "medium" (4-6), or "high" (7-10).
 Changed functions and their diffs:
 
 --- {full_name} ---
-Signature: {signature}
 Diff:
 {diff_hunk}
 ```

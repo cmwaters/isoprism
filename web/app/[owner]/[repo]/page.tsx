@@ -35,7 +35,7 @@ export default async function CanonicalRepoPage({ params }: Props) {
   try {
     graph = await apiFetch<RepoGraphResponse>(`/api/v1/repos/${repo.id}/graph`, token);
   } catch {
-    graph = { repo, nodes: [], edges: [] };
+    graph = { repo, granularity: "package", nodes: [], edges: [] };
   }
 
   return <GraphCanvas graph={graph} prs={queue.prs} repoID={repo.id} repo={repo} token={token} />;

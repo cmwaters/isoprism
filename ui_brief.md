@@ -6,7 +6,7 @@
 
 ## Design Language
 
-**Typeface:** Inter (or equivalent geometric sans-serif). All body text 14–15px. Headings 20–28px. Monospace (JetBrains Mono or similar) for function signatures and code.
+**Typeface:** Inter (or equivalent geometric sans-serif). All body text 14–15px. Headings 20–28px. Monospace (JetBrains Mono or similar) for code node names, inputs, outputs, and source.
 
 **Palette:**
 - Background: `#EBE9E9` (warm off-white)
@@ -35,17 +35,16 @@
 **Layout:** Full viewport. Vertically and horizontally centred content column, max-width 640px.
 
 **Content (top to bottom):**
-1. Isoprism logo mark — a small abstract graph icon (3 nodes connected by 2 edges), 32×32px, `#111111`
-2. Product name "Isoprism" in 20px semibold, `#111111`, inline with the logo
-3. 32px gap
-4. Lead copy — 18px, `#333333`, line-height 1.65: "This is a prototype, not a fully fledged product. It serves to answer one simple question: is there a better way of understanding and reviewing code changes?"
-5. Beta expectation copy — 15px, `#555555`, line-height 1.7: "This is for beta testers. The expectation is to use this prototype where possible for reviewing PRs. You will connect this to your GitHub and select a single repository."
-6. Trial copy — 15px, `#555555`, line-height 1.7: "There will be a footer for submitting feature requests and bug reports. You are expected to trial this for a week and fill out a short questionnaire at the end."
-7. 36px gap
-8. Invite status line — only when entered through a beta link. Text: "Beta invite verified." — 12px, `#666666`
-9. **GitHub sign-in button** — full width, 48px height, `#111111` background, white text, 8px border-radius. GitHub Octocat icon (20px) left of text "Connect GitHub". On hover: `#333333` background.
-10. 48px gap below button
-11. Fine print: "By signing in you authorise read access to your repositories." — 12px, `#888888`, centered
+1. Product name "Isoprism" in 20px semibold, `#111111`
+2. 32px gap
+3. Lead copy — 18px, `#333333`, line-height 1.65: "This is a prototype, not a fully fledged product. It serves to answer one simple question: is there a better way of understanding and reviewing code changes?"
+4. Beta expectation copy — 15px, `#555555`, line-height 1.7: "This is for beta testers. The expectation is to use this prototype where possible for reviewing PRs. You will connect this to your GitHub and select a single repository."
+5. Trial copy — 15px, `#555555`, line-height 1.7: "There will be a footer for submitting feature requests and bug reports. You are expected to trial this for a week and fill out a short questionnaire at the end."
+6. 36px gap
+7. Invite status line — only when entered through a beta link. Text: "Beta invite verified." — 12px, `#666666`
+8. **GitHub sign-in button** — full width, 48px height, `#111111` background, white text, 8px border-radius. GitHub Octocat icon (20px) left of text "Connect GitHub". On hover: `#333333` background.
+9. 48px gap below button
+10. Fine print: "By signing in you authorise read access to your repositories." — 12px, `#888888`, centered
 
 If the beta token is invalid, expired, or already completed, replace the GitHub button with a quiet disabled state and the message: "This beta invite is no longer available."
 
@@ -60,7 +59,7 @@ If the beta token is invalid, expired, or already completed, replace the GitHub 
 - Main content area (remaining width, `#EBE9E9` background)
 
 **Left Sidebar:**
-- Isoprism logo mark + "Isoprism" wordmark at top, 20px padding
+- "Isoprism" wordmark at top, 20px padding. Do not show the abstract graph logo mark.
 
 **Main Content (centred column, max-width 560px, vertically centred in viewport):**
 1. Heading: "Select a repository" — 24px semibold, `#111111`

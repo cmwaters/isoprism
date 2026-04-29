@@ -122,10 +122,11 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		db.Exec(ctx, `
 			update pull_requests set
 				title = $1, body = $2, author_login = $3, author_avatar_url = $4,
-				state = $5, head_commit_sha = $6, base_commit_sha = $7
-			where id = $8
+				state = $5, head_commit_sha = $6, base_commit_sha = $7,
+				base_branch = $8, head_branch = $9
+			where id = $10
 		`, pr.Title, pr.Body, pr.User.Login, pr.User.AvatarURL,
-			pr.State, pr.Head.SHA, pr.Base.SHA, prID)
+			pr.State, pr.Head.SHA, pr.Base.SHA, pr.Base.Ref, pr.Head.Ref, prID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -144,6 +145,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	r.Get("/api/v1/auth/status", repoHandler.GetAuthStatus)
 	r.Get("/api/v1/admin/beta/testers", betaHandler.ListBetaTesters)
 	r.Post("/api/v1/admin/beta/testers", betaHandler.CreateBetaTester)
+	r.Post("/api/v1/admin/beta/testers/{testerID}/token", betaHandler.RegenerateBetaTesterToken)
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {

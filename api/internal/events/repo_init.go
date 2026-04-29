@@ -4,6 +4,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"strings"
 	"sync"
@@ -133,15 +134,19 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	nodeIDs := make(map[string]string) // full_name → db UUID
 	for _, n := range allNodes {
 		var id string
+		inputs, _ := json.Marshal(n.Inputs)
+		outputs, _ := json.Marshal(n.Outputs)
 		err := db.QueryRow(ctx, `
-			insert into code_nodes (repo_id, commit_sha, name, full_name, file_path,
-				line_start, line_end, signature, language, kind, body_hash)
+			insert into code_nodes (repo_id, commit_sha, full_name, file_path,
+				line_start, line_end, inputs, outputs, language, kind, body_hash)
 			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 			on conflict (repo_id, commit_sha, full_name, file_path) do update
-				set body_hash = excluded.body_hash
+				set body_hash = excluded.body_hash,
+				    inputs = excluded.inputs,
+				    outputs = excluded.outputs
 			returning id
-		`, repoID, headSHA, n.Name, n.FullName, n.FilePath,
-			n.LineStart, n.LineEnd, n.Signature, n.Language, n.Kind, n.BodyHash,
+		`, repoID, headSHA, n.FullName, n.FilePath,
+			n.LineStart, n.LineEnd, inputs, outputs, n.Language, n.Kind, n.BodyHash,
 		).Scan(&id)
 		if err != nil {
 			log.Printf("RepoInit: insert node %s: %v", n.FullName, err)
@@ -197,9 +202,8 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 				db.QueryRow(ctx, `select summary is not null from code_nodes where id=$1`, nodeIDs[n.FullName]).Scan(&hasSummary)
 				if !hasSummary {
 					inputs = append(inputs, ai.NodeInput{
-						FullName:  n.FullName,
-						Signature: n.Signature,
-						Body:      n.Body,
+						FullName: n.FullName,
+						Body:     n.Body,
 					})
 				}
 			}

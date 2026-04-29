@@ -34,7 +34,7 @@ export interface PullRequest {
   opened_at: string;
   merged_at?: string;
   last_activity_at?: string;
-  graph_status: "pending" | "running" | "ready" | "failed";
+  graph_status: "pending" | "running" | "ready" | "skipped" | "failed";
   created_at: string;
 }
 
@@ -56,14 +56,16 @@ export interface QueueResponse {
 
 export interface GraphNode {
   id: string;
-  name: string;
   full_name: string;
   file_path: string;
+  package_path?: string;
   line_start: number;
   line_end: number;
-  signature: string;
+  inputs: GraphNodeTypeRef[];
+  outputs: GraphNodeTypeRef[];
   language: string;
   kind: string;
+  granularity: "function" | "object" | "package";
   node_type: "changed" | "caller" | "callee" | "entrypoint" | "context";
   summary?: string;
   change_summary?: string;
@@ -76,6 +78,16 @@ export interface GraphNode {
   graph_depth: number;
   boundary: boolean;
   tests: GraphNodeTest[];
+  member_count?: number;
+  changed_member_count?: number;
+  collapsed_node_ids?: string[];
+  expandable: boolean;
+}
+
+export interface GraphNodeTypeRef {
+  name?: string;
+  type: string;
+  node_id?: string;
 }
 
 export interface GraphNodeTest {
@@ -89,6 +101,17 @@ export interface GraphNodeTest {
 export interface GraphEdge {
   caller_id: string;
   callee_id: string;
+  weight?: number;
+  changed_weight?: number;
+  underlying_edge_count?: number;
+  sample_edges?: GraphEdgeSample[];
+}
+
+export interface GraphEdgeSample {
+  caller_id: string;
+  callee_id: string;
+  caller_name: string;
+  callee_name: string;
 }
 
 export interface GraphPR {
@@ -104,12 +127,14 @@ export interface GraphPR {
 
 export interface GraphResponse {
   pr: GraphPR;
+  granularity: GraphNode["granularity"];
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
 
 export interface RepoGraphResponse {
   repo: Repository;
+  granularity: GraphNode["granularity"];
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
