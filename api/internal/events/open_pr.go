@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -12,6 +13,13 @@ import (
 	"github.com/isoprism/api/internal/github"
 	"github.com/isoprism/api/internal/parser"
 	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	maxPRChangedFiles = 300
+	maxPRAdditions    = 20000
+	maxPRDeletions    = 20000
+	maxPRChangedLines = 30000
 )
 
 // OpenPR processes a newly opened or synchronised pull request.
@@ -70,6 +78,19 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		return
 	}
 	owner, repo := parts[0], parts[1]
+
+	ghPR, err := ghClient.GetPullRequest(ctx, owner, repo, prNumber)
+	if err != nil {
+		log.Printf("OpenPR: fetch PR metadata error: %v", err)
+		db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
+		return
+	}
+	if shouldSkipPRForSize(ghPR) {
+		reason := prSizeSkipReason(ghPR)
+		log.Printf("OpenPR: skipping pr %s because %s", prID, reason)
+		markPRSkipped(ctx, db, prID, reason)
+		return
+	}
 
 	// Mark running
 	db.Exec(ctx, `update pull_requests set graph_status='running' where id=$1`, prID)
@@ -379,6 +400,43 @@ func nullIfZero(n int) interface{} {
 		return nil
 	}
 	return n
+}
+
+func shouldSkipPRForSize(pr *github.GHPullRequest) bool {
+	return pr.ChangedFiles > maxPRChangedFiles ||
+		pr.Additions > maxPRAdditions ||
+		pr.Deletions > maxPRDeletions ||
+		pr.Additions+pr.Deletions > maxPRChangedLines
+}
+
+func prSizeSkipReason(pr *github.GHPullRequest) string {
+	return fmt.Sprintf(
+		"PR size exceeds beta processing limits (%d files changed, %d additions, %d deletions; limits: %d files, %d additions, %d deletions, or %d changed lines).",
+		pr.ChangedFiles,
+		pr.Additions,
+		pr.Deletions,
+		maxPRChangedFiles,
+		maxPRAdditions,
+		maxPRDeletions,
+		maxPRChangedLines,
+	)
+}
+
+func markPRSkipped(ctx context.Context, db *pgxpool.Pool, prID, reason string) {
+	now := time.Now()
+	_, _ = db.Exec(ctx, `delete from pr_node_changes where pull_request_id=$1`, prID)
+	_, _ = db.Exec(ctx, `
+		insert into pr_analyses (pull_request_id, summary, nodes_changed, risk_score, risk_label, ai_model, generated_at)
+		values ($1,$2,$3,$4,$5,$6,$7)
+		on conflict (pull_request_id) do update set
+			summary       = excluded.summary,
+			nodes_changed = excluded.nodes_changed,
+			risk_score    = excluded.risk_score,
+			risk_label    = excluded.risk_label,
+			ai_model      = excluded.ai_model,
+			generated_at  = excluded.generated_at
+	`, prID, reason, 0, nil, nil, "pr-size-limit", now)
+	_, _ = db.Exec(ctx, `update pull_requests set graph_status='skipped' where id=$1`, prID)
 }
 
 // componentDiffHunk returns the diff shown for a parsed component. Modified

@@ -123,10 +123,10 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 			update pull_requests set
 				title = $1, body = $2, author_login = $3, author_avatar_url = $4,
 				state = $5, head_commit_sha = $6, base_commit_sha = $7,
-				base_branch = $8, head_branch = $9
-			where id = $10
+				base_branch = $8, head_branch = $9, draft = $10
+			where id = $11
 		`, pr.Title, pr.Body, pr.User.Login, pr.User.AvatarURL,
-			pr.State, pr.Head.SHA, pr.Base.SHA, pr.Base.Ref, pr.Head.Ref, prID)
+			pr.State, pr.Head.SHA, pr.Base.SHA, pr.Base.Ref, pr.Head.Ref, pr.Draft, prID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -136,6 +136,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 			"body_length": len(pr.Body),
 			"additions":   pr.Additions,
 			"deletions":   pr.Deletions,
+			"draft":       pr.Draft,
 		})
 	})
 
