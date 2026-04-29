@@ -4,7 +4,7 @@ create table if not exists beta_invites (
   id               uuid primary key default gen_random_uuid(),
   beta_id          text not null unique,
   name             text not null,
-  token_hash       text not null unique,
+  token            text not null unique,
   email            text,
   status           text not null default 'new',
   invited_at       timestamptz not null default now(),

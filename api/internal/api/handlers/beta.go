@@ -4,16 +4,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -74,6 +73,7 @@ type BetaTester struct {
 	TrialEndsAt              *time.Time              `json:"trial_ends_at"`
 	QuestionnaireSubmittedAt *time.Time              `json:"questionnaire_submitted_at"`
 	Questionnaire            *BetaQuestionnaireAdmin `json:"questionnaire"`
+	Token                    *string                 `json:"token,omitempty"`
 	Link                     string                  `json:"link"`
 }
 
@@ -95,7 +95,7 @@ func (h *BetaHandler) ListBetaTesters(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.DB.Query(r.Context(), `
 		select
-			b.id, b.beta_id, b.name, b.email, b.status, b.invited_at,
+			b.id, b.beta_id, b.name, b.email, b.status, b.invited_at, b.token,
 			b.accepted_at, b.completed_at, b.user_id, b.selected_repo_id,
 			r.full_name, b.trial_starts_at, b.trial_ends_at,
 			q.submitted_at, q.faster_rating, q.risk_clarity_rating,
@@ -144,7 +144,7 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, tokenHash, err := newInviteToken()
+	token, err := newInviteToken()
 	if err != nil {
 		http.Error(w, "failed to generate token", http.StatusInternalServerError)
 		return
@@ -162,14 +162,14 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 
 	var tester BetaTester
 	err = h.DB.QueryRow(r.Context(), `
-		insert into beta_invites (beta_id, name, email, token_hash)
+		insert into beta_invites (beta_id, name, email, token)
 		values ($1, $2, $3, $4)
-		returning id, beta_id, name, email, status, invited_at,
+		returning id, beta_id, name, email, status, invited_at, token,
 			accepted_at, completed_at, user_id, selected_repo_id,
 			trial_starts_at, trial_ends_at
-	`, betaID, req.Name, email, tokenHash).Scan(
+	`, betaID, req.Name, email, token).Scan(
 		&tester.ID, &tester.BetaID, &tester.Name, &tester.Email, &tester.Status,
-		&tester.InvitedAt, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
+		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
 		&tester.SelectedRepoID, &tester.TrialStartsAt, &tester.TrialEndsAt,
 	)
 	if err != nil {
@@ -180,6 +180,52 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(CreateBetaTesterResponse{
+		BetaTester: tester,
+		Token:      token,
+		Link:       tester.Link,
+	})
+}
+
+// POST /api/v1/admin/beta/testers/{testerID}/token
+func (h *BetaHandler) RegenerateBetaTesterToken(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizedAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	testerID := strings.TrimSpace(chi.URLParam(r, "testerID"))
+	if testerID == "" {
+		http.Error(w, "tester id is required", http.StatusBadRequest)
+		return
+	}
+
+	token, err := newInviteToken()
+	if err != nil {
+		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	var tester BetaTester
+	err = h.DB.QueryRow(r.Context(), `
+		update beta_invites
+		set token = $1
+		where id = $2
+		returning id, beta_id, name, email, status, invited_at, token,
+			accepted_at, completed_at, user_id, selected_repo_id,
+			trial_starts_at, trial_ends_at
+	`, token, testerID).Scan(
+		&tester.ID, &tester.BetaID, &tester.Name, &tester.Email, &tester.Status,
+		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
+		&tester.SelectedRepoID, &tester.TrialStartsAt, &tester.TrialEndsAt,
+	)
+	if err != nil {
+		http.Error(w, "failed to regenerate token", http.StatusInternalServerError)
+		return
+	}
+	tester.Link = inviteLink(h.FrontendURL, token)
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(CreateBetaTesterResponse{
 		BetaTester: tester,
 		Token:      token,
@@ -339,7 +385,7 @@ func scanBetaTester(row betaTesterScanner, frontendURL string) (BetaTester, erro
 	var questionnaire BetaQuestionnaireAdmin
 	err := row.Scan(
 		&tester.ID, &tester.BetaID, &tester.Name, &tester.Email, &tester.Status,
-		&tester.InvitedAt, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
+		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
 		&tester.SelectedRepoID, &tester.SelectedRepoFullName, &tester.TrialStartsAt,
 		&tester.TrialEndsAt, &submittedAt, &questionnaire.FasterRating,
 		&questionnaire.RiskClarityRating, &questionnaire.ConfusingOrMissing,
@@ -352,18 +398,18 @@ func scanBetaTester(row betaTesterScanner, frontendURL string) (BetaTester, erro
 	if submittedAt != nil {
 		tester.Questionnaire = &questionnaire
 	}
-	tester.Link = inviteLink(frontendURL, "")
+	if tester.Token != nil && strings.TrimSpace(*tester.Token) != "" {
+		tester.Link = inviteLink(frontendURL, *tester.Token)
+	}
 	return tester, nil
 }
 
-func newInviteToken() (string, string, error) {
+func newInviteToken() (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return "", "", err
+		return "", err
 	}
-	token := base64.RawURLEncoding.EncodeToString(raw)
-	hash := sha256.Sum256([]byte(token))
-	return token, hex.EncodeToString(hash[:]), nil
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func newBetaID(ctx context.Context, db *pgxpool.Pool) (string, error) {
