@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -47,8 +48,7 @@ type createIssueRequest struct {
 }
 
 type CreateBetaTesterRequest struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name string `json:"name"`
 }
 
 type CreateBetaTesterResponse struct {
@@ -138,7 +138,6 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
-	req.Email = strings.TrimSpace(req.Email)
 	if req.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
@@ -155,19 +154,14 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var email *string
-	if req.Email != "" {
-		email = &req.Email
-	}
-
 	var tester BetaTester
 	err = h.DB.QueryRow(r.Context(), `
-		insert into beta_invites (beta_id, name, email, token)
-		values ($1, $2, $3, $4)
+		insert into beta_invites (beta_id, name, token)
+		values ($1, $2, $3)
 		returning id, beta_id, name, email, status, invited_at, token,
 			accepted_at, completed_at, user_id, selected_repo_id,
 			trial_starts_at, trial_ends_at
-	`, betaID, req.Name, email, token).Scan(
+	`, betaID, req.Name, token).Scan(
 		&tester.ID, &tester.BetaID, &tester.Name, &tester.Email, &tester.Status,
 		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
 		&tester.SelectedRepoID, &tester.TrialStartsAt, &tester.TrialEndsAt,
@@ -185,6 +179,32 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 		Token:      token,
 		Link:       tester.Link,
 	})
+}
+
+// DELETE /api/v1/admin/beta/testers/{testerID}
+func (h *BetaHandler) DeleteBetaTester(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizedAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	testerID := strings.TrimSpace(chi.URLParam(r, "testerID"))
+	if testerID == "" {
+		http.Error(w, "tester id is required", http.StatusBadRequest)
+		return
+	}
+
+	tag, err := h.DB.Exec(r.Context(), `delete from beta_invites where id = $1`, testerID)
+	if err != nil {
+		http.Error(w, "failed to delete tester", http.StatusInternalServerError)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		http.Error(w, "tester not found", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // POST /api/v1/beta/feedback
