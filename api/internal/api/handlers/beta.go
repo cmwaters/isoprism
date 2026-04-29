@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -29,6 +28,7 @@ type FeedbackRequest struct {
 	Title           string `json:"title"`
 	Details         string `json:"details"`
 	BetaID          string `json:"beta_id"`
+	UserID          string `json:"user_id"`
 	RepoFullName    string `json:"repo_full_name"`
 	RepoID          string `json:"repo_id"`
 	PRNumber        *int   `json:"pr_number"`
@@ -187,52 +187,6 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/v1/admin/beta/testers/{testerID}/token
-func (h *BetaHandler) RegenerateBetaTesterToken(w http.ResponseWriter, r *http.Request) {
-	if !h.authorizedAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	testerID := strings.TrimSpace(chi.URLParam(r, "testerID"))
-	if testerID == "" {
-		http.Error(w, "tester id is required", http.StatusBadRequest)
-		return
-	}
-
-	token, err := newInviteToken()
-	if err != nil {
-		http.Error(w, "failed to generate token", http.StatusInternalServerError)
-		return
-	}
-
-	var tester BetaTester
-	err = h.DB.QueryRow(r.Context(), `
-		update beta_invites
-		set token = $1
-		where id = $2
-		returning id, beta_id, name, email, status, invited_at, token,
-			accepted_at, completed_at, user_id, selected_repo_id,
-			trial_starts_at, trial_ends_at
-	`, token, testerID).Scan(
-		&tester.ID, &tester.BetaID, &tester.Name, &tester.Email, &tester.Status,
-		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
-		&tester.SelectedRepoID, &tester.TrialStartsAt, &tester.TrialEndsAt,
-	)
-	if err != nil {
-		http.Error(w, "failed to regenerate token", http.StatusInternalServerError)
-		return
-	}
-	tester.Link = inviteLink(h.FrontendURL, token)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(CreateBetaTesterResponse{
-		BetaTester: tester,
-		Token:      token,
-		Link:       tester.Link,
-	})
-}
-
 // POST /api/v1/beta/feedback
 func (h *BetaHandler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 	if h.FeedbackToken == "" || h.FeedbackRepo == "" {
@@ -258,14 +212,14 @@ func (h *BetaHandler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	betaID := strings.TrimSpace(req.BetaID)
-	if betaID == "" {
-		betaID = r.Header.Get("X-User-ID")
+	userID := strings.TrimSpace(req.UserID)
+	if userID == "" {
+		userID = r.Header.Get("X-User-ID")
 	}
 
 	issue := createIssueRequest{
 		Title:  fmt.Sprintf("[%s] %s", req.Type, req.Title),
-		Body:   feedbackIssueBody(req, betaID),
+		Body:   feedbackIssueBody(req, userID),
 		Labels: []string{req.Type},
 	}
 
@@ -319,7 +273,7 @@ func (h *BetaHandler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func feedbackIssueBody(req FeedbackRequest, betaID string) string {
+func feedbackIssueBody(req FeedbackRequest, userID string) string {
 	pr := "none"
 	if req.PRNumber != nil {
 		pr = fmt.Sprintf("#%d", *req.PRNumber)
@@ -335,6 +289,7 @@ func feedbackIssueBody(req FeedbackRequest, betaID string) string {
 ## Context
 
 - Beta ID: %s
+- User ID: %s
 - Repository: %s
 - Repository ID: %s
 - PR: %s
@@ -345,7 +300,8 @@ func feedbackIssueBody(req FeedbackRequest, betaID string) string {
 - Source commit: %s
 `,
 		req.Details,
-		valueOrUnknown(betaID),
+		valueOrUnknown(req.BetaID),
+		valueOrUnknown(userID),
 		valueOrUnknown(req.RepoFullName),
 		valueOrUnknown(req.RepoID),
 		pr,

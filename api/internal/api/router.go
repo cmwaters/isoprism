@@ -144,7 +144,6 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	r.Get("/api/v1/auth/status", repoHandler.GetAuthStatus)
 	r.Get("/api/v1/admin/beta/testers", betaHandler.ListBetaTesters)
 	r.Post("/api/v1/admin/beta/testers", betaHandler.CreateBetaTester)
-	r.Post("/api/v1/admin/beta/testers/{testerID}/token", betaHandler.RegenerateBetaTesterToken)
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
