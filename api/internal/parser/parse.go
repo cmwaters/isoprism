@@ -1,32 +1,32 @@
 // Package parser extracts function-level code nodes from source files.
-// For Go it uses the standard go/parser and go/ast packages.
-// For TypeScript/JavaScript it uses a lightweight regex approach.
+// It uses tree-sitter grammars for Go, TypeScript, TSX, JavaScript, and JSX.
 package parser
 
 import (
 	"crypto/sha256"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	tree_sitter_javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
+	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
 // Node represents one extracted code element (function, method, type, etc.).
 type Node struct {
 	Name             string
-	FullName         string // e.g. "MyStruct.MyMethod" or bare "myFunc"
+	FullName         string
 	FilePath         string
 	LineStart        int
 	LineEnd          int
 	Inputs           []Param
 	Outputs          []Param
 	Language         string
-	Kind             string // function | method | type
+	Kind             string
 	BodyHash         string
-	Body             string // raw source text of the node body (for AI enrichment)
+	Body             string
 	IsTestCode       bool
 	IsTestEntrypoint bool
 }
@@ -36,15 +36,26 @@ type Param struct {
 	Type string `json:"type"`
 }
 
+type parsedFile struct {
+	tree *sitter.Tree
+	root *sitter.Node
+}
+
 // Parse extracts code nodes from the given source bytes.
 // language is derived from the file extension passed in filePath.
 func Parse(src []byte, filePath string) []Node {
 	lang := languageFor(filePath)
+	pf, ok := parseTree(src, filePath)
+	if !ok {
+		return nil
+	}
+	defer pf.tree.Close()
+
 	switch lang {
 	case "go":
-		return parseGo(src, filePath)
+		return parseGoTree(src, filePath, pf.root)
 	case "typescript", "javascript":
-		return parseTS(src, filePath, lang)
+		return parseScriptTree(src, filePath, lang, pf.root)
 	default:
 		return nil
 	}
@@ -93,216 +104,350 @@ func bodyHash(src []byte) string {
 	return fmt.Sprintf("%x", h)[:16]
 }
 
-// ── Go parser ─────────────────────────────────────────────────────────────────
-
-func parseGo(src []byte, filePath string) []Node {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filePath, src, 0)
-	if err != nil {
-		return nil
+func parseTree(src []byte, filePath string) (parsedFile, bool) {
+	var lang *sitter.Language
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".go":
+		lang = sitter.NewLanguage(tree_sitter_go.Language())
+	case ".ts":
+		lang = sitter.NewLanguage(tree_sitter_typescript.LanguageTypescript())
+	case ".tsx":
+		lang = sitter.NewLanguage(tree_sitter_typescript.LanguageTSX())
+	case ".js", ".jsx":
+		lang = sitter.NewLanguage(tree_sitter_javascript.Language())
+	default:
+		return parsedFile{}, false
 	}
 
+	p := sitter.NewParser()
+	defer p.Close()
+	if err := p.SetLanguage(lang); err != nil {
+		return parsedFile{}, false
+	}
+	tree := p.Parse(src, nil)
+	if tree == nil {
+		return parsedFile{}, false
+	}
+	return parsedFile{tree: tree, root: tree.RootNode()}, true
+}
+
+func parseGoTree(src []byte, filePath string, root *sitter.Node) []Node {
+	pkg := goPackageName(src, root)
+	prefix := goPackagePrefix(filePath, pkg)
 	isTestFile := IsTestFile(filePath)
-	isTestPackage := f.Name != nil && strings.HasSuffix(f.Name.Name, "_test")
-	srcStr := string(src)
-	lines := strings.Split(srcStr, "\n")
+	isTestPackage := strings.HasSuffix(pkg, "_test")
 
 	var nodes []Node
-
-	for _, decl := range f.Decls {
-		switch d := decl.(type) {
-		case *ast.FuncDecl:
-			if d.Name == nil || d.Body == nil {
-				continue
+	walk(root, func(n *sitter.Node) bool {
+		switch n.Kind() {
+		case "function_declaration":
+			nameNode := n.ChildByFieldName("name")
+			bodyNode := n.ChildByFieldName("body")
+			if nameNode == nil || bodyNode == nil {
+				return true
 			}
-
-			start := fset.Position(d.Pos())
-			end := fset.Position(d.End())
-
-			// Extract raw body text
-			startLine := start.Line - 1
-			endLine := end.Line - 1
-			if startLine < 0 {
-				startLine = 0
+			name := text(src, nameNode)
+			nodes = append(nodes, makeGoNode(src, filePath, n, name, prefix+"."+name, "function", isTestFile || isTestPackage || strings.HasPrefix(name, "Test")))
+		case "method_declaration":
+			nameNode := n.ChildByFieldName("name")
+			bodyNode := n.ChildByFieldName("body")
+			if nameNode == nil || bodyNode == nil {
+				return true
 			}
-			if endLine >= len(lines) {
-				endLine = len(lines) - 1
+			name := text(src, nameNode)
+			recv := goReceiverName(src, n.ChildByFieldName("receiver"))
+			fullName := prefix + "." + name
+			if recv != "" {
+				fullName = prefix + "." + recv + "." + name
 			}
-			bodyLines := lines[startLine : endLine+1]
-			body := strings.Join(bodyLines, "\n")
-
-			name := d.Name.Name
-			fullName := name
-			kind := "function"
-			isTestEntrypoint := strings.HasPrefix(name, "Test")
-			isTestCode := isTestFile || isTestPackage || isTestEntrypoint
-
-			if d.Recv != nil && len(d.Recv.List) > 0 {
-				recv := d.Recv.List[0]
-				typeName := exprToString(recv.Type)
-				// Strip pointer: *MyStruct → MyStruct
-				typeName = strings.TrimPrefix(typeName, "*")
-				fullName = typeName + "." + name
-				kind = "method"
-			}
-
-			nodes = append(nodes, Node{
-				Name:             name,
-				FullName:         fullName,
-				FilePath:         filePath,
-				LineStart:        start.Line,
-				LineEnd:          end.Line,
-				Inputs:           goFieldParams(d.Type.Params),
-				Outputs:          goFieldParams(d.Type.Results),
-				Language:         "go",
-				Kind:             kind,
-				BodyHash:         bodyHash([]byte(body)),
-				Body:             body,
-				IsTestCode:       isTestCode,
-				IsTestEntrypoint: isTestEntrypoint,
-			})
-
-		case *ast.GenDecl:
-			if d.Tok != token.TYPE {
-				continue
-			}
-			for _, spec := range d.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok || ts.Name == nil {
-					continue
+			nodes = append(nodes, makeGoNode(src, filePath, n, name, fullName, "method", isTestFile || isTestPackage || strings.HasPrefix(name, "Test")))
+		case "type_declaration":
+			forEachDescendant(n, "type_spec", func(spec *sitter.Node) {
+				nameNode := spec.ChildByFieldName("name")
+				if nameNode == nil {
+					return
 				}
-				start := fset.Position(ts.Pos())
-				end := fset.Position(ts.End())
-
-				startLine := start.Line - 1
-				endLine := end.Line - 1
-				if startLine < 0 {
-					startLine = 0
-				}
-				if endLine >= len(lines) {
-					endLine = len(lines) - 1
-				}
-				bodyLines := lines[startLine : endLine+1]
-				body := strings.Join(bodyLines, "\n")
-
 				kind := "type"
-				switch ts.Type.(type) {
-				case *ast.StructType:
-					kind = "struct"
-				case *ast.InterfaceType:
-					kind = "interface"
+				if typeNode := spec.ChildByFieldName("type"); typeNode != nil {
+					switch typeNode.Kind() {
+					case "struct_type":
+						kind = "struct"
+					case "interface_type":
+						kind = "interface"
+					}
 				}
-
-				isTestCode := isTestFile || isTestPackage
-				nodes = append(nodes, Node{
-					Name:       ts.Name.Name,
-					FullName:   ts.Name.Name,
-					FilePath:   filePath,
-					LineStart:  start.Line,
-					LineEnd:    end.Line,
-					Language:   "go",
-					Kind:       kind,
-					BodyHash:   bodyHash([]byte(body)),
-					Body:       body,
-					IsTestCode: isTestCode,
-				})
-			}
+				name := text(src, nameNode)
+				nodes = append(nodes, makeBaseNode(src, filePath, spec, name, prefix+"."+name, "go", kind, isTestFile || isTestPackage, false))
+			})
+			return false
 		}
-	}
-
+		return true
+	})
 	return nodes
 }
 
-func exprToString(e ast.Expr) string {
-	switch t := e.(type) {
-	case *ast.Ident:
-		return t.Name
-	case *ast.StarExpr:
-		return "*" + exprToString(t.X)
-	case *ast.SelectorExpr:
-		return exprToString(t.X) + "." + t.Sel.Name
-	case *ast.ArrayType:
-		return "[]" + exprToString(t.Elt)
-	case *ast.MapType:
-		return "map[" + exprToString(t.Key) + "]" + exprToString(t.Value)
-	default:
-		return "..."
+func makeGoNode(src []byte, filePath string, n *sitter.Node, name, fullName, kind string, isTestCode bool) Node {
+	return Node{
+		Name:             name,
+		FullName:         fullName,
+		FilePath:         filePath,
+		LineStart:        int(n.StartPosition().Row) + 1,
+		LineEnd:          int(n.EndPosition().Row) + 1,
+		Inputs:           goParams(src, n.ChildByFieldName("parameters")),
+		Outputs:          goOutputs(src, n.ChildByFieldName("result")),
+		Language:         "go",
+		Kind:             kind,
+		BodyHash:         bodyHash(nodeBytes(src, n)),
+		Body:             text(src, n),
+		IsTestCode:       isTestCode,
+		IsTestEntrypoint: strings.HasPrefix(name, "Test"),
 	}
 }
 
-func goFieldParams(fields *ast.FieldList) []Param {
-	if fields == nil {
+func makeBaseNode(src []byte, filePath string, n *sitter.Node, name, fullName, lang, kind string, isTestCode, isTestEntrypoint bool) Node {
+	return Node{
+		Name:             name,
+		FullName:         fullName,
+		FilePath:         filePath,
+		LineStart:        int(n.StartPosition().Row) + 1,
+		LineEnd:          int(n.EndPosition().Row) + 1,
+		Language:         lang,
+		Kind:             kind,
+		BodyHash:         bodyHash(nodeBytes(src, n)),
+		Body:             text(src, n),
+		IsTestCode:       isTestCode,
+		IsTestEntrypoint: isTestEntrypoint,
+	}
+}
+
+func goPackageName(src []byte, root *sitter.Node) string {
+	var pkg string
+	walk(root, func(n *sitter.Node) bool {
+		if n.Kind() != "package_clause" {
+			return true
+		}
+		for i := uint(0); i < n.NamedChildCount(); i++ {
+			child := n.NamedChild(i)
+			if child != nil && child.Kind() == "package_identifier" {
+				pkg = text(src, child)
+				return false
+			}
+		}
+		return false
+	})
+	return pkg
+}
+
+func goPackagePrefix(filePath, pkg string) string {
+	dir := filepath.ToSlash(filepath.Dir(filePath))
+	if dir == "." || dir == "" {
+		return pkg
+	}
+	return dir + ":" + pkg
+}
+
+func goReceiverName(src []byte, receiver *sitter.Node) string {
+	if receiver == nil {
+		return ""
+	}
+	var names []string
+	walk(receiver, func(n *sitter.Node) bool {
+		if n.Kind() == "type_identifier" || n.Kind() == "qualified_type" {
+			names = append(names, strings.TrimPrefix(text(src, n), "*"))
+		}
+		return true
+	})
+	if len(names) == 0 {
+		return ""
+	}
+	return strings.TrimPrefix(names[len(names)-1], "*")
+}
+
+func goParams(src []byte, params *sitter.Node) []Param {
+	if params == nil {
 		return nil
 	}
-	var params []Param
-	for _, field := range fields.List {
-		typeName := exprToString(field.Type)
-		if len(field.Names) == 0 {
-			params = append(params, Param{Type: typeName})
-			continue
+	var out []Param
+	forEachDescendant(params, "parameter_declaration", func(n *sitter.Node) {
+		typeNode := n.ChildByFieldName("type")
+		if typeNode == nil {
+			return
 		}
-		for _, name := range field.Names {
-			params = append(params, Param{Name: name.Name, Type: typeName})
+		typ := text(src, typeNode)
+		names := childTextsByKinds(src, n, "identifier")
+		if len(names) == 0 {
+			out = append(out, Param{Type: typ})
+			return
 		}
+		for _, name := range names {
+			out = append(out, Param{Name: name, Type: typ})
+		}
+	})
+	return out
+}
+
+func goOutputs(src []byte, result *sitter.Node) []Param {
+	if result == nil {
+		return nil
 	}
-	return params
+	if result.Kind() != "parameter_list" {
+		return []Param{{Type: text(src, result)}}
+	}
+	return goParams(src, result)
 }
 
-// ── TypeScript / JavaScript parser (regex-based) ──────────────────────────────
-
-var tsFuncPatterns = []*regexp.Regexp{
-	// export async function foo(...)
-	regexp.MustCompile(`(?m)^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(`),
-	// export const foo = async (...) =>
-	regexp.MustCompile(`(?m)^(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s+)?\(`),
-	// class method: methodName(...)
-	regexp.MustCompile(`(?m)^\s+(?:async\s+)?(\w+)\s*\([^)]*\)\s*(?::\s*\S+\s*)?\{`),
-}
-
-func parseTS(src []byte, filePath, lang string) []Node {
-	srcStr := string(src)
-	lines := strings.Split(srcStr, "\n")
+func parseScriptTree(src []byte, filePath, lang string, root *sitter.Node) []Node {
+	prefix := scriptModulePrefix(filePath)
+	isTestFile := IsTestFile(filePath)
 	var nodes []Node
 	seen := map[string]bool{}
-	isTestFile := IsTestFile(filePath)
 
-	for _, pat := range tsFuncPatterns {
-		matches := pat.FindAllStringSubmatchIndex(srcStr, -1)
-		for _, m := range matches {
-			if len(m) < 4 {
-				continue
+	walk(root, func(n *sitter.Node) bool {
+		name := ""
+		kind := "function"
+		switch n.Kind() {
+		case "function_declaration":
+			name = childText(src, n, "name")
+		case "lexical_declaration", "variable_declaration":
+			for i := uint(0); i < n.NamedChildCount(); i++ {
+				decl := n.NamedChild(i)
+				if decl == nil || decl.Kind() != "variable_declarator" {
+					continue
+				}
+				value := decl.ChildByFieldName("value")
+				if value == nil || (value.Kind() != "arrow_function" && value.Kind() != "function") {
+					continue
+				}
+				name = childText(src, decl, "name")
+				if name != "" && !seen[name] {
+					seen[name] = true
+					nodes = append(nodes, makeScriptNode(src, filePath, value, name, prefix+"."+name, lang, kind, isTestFile))
+				}
 			}
-			nameStart, nameEnd := m[2], m[3]
-			name := srcStr[nameStart:nameEnd]
-
-			if seen[name] {
-				continue
+			return false
+		case "method_definition", "public_field_definition":
+			name = childText(src, n, "name")
+			kind = "method"
+			if className := enclosingClassName(src, n); className != "" {
+				name = className + "." + name
 			}
-			seen[name] = true
+		}
+		if name == "" || seen[name] {
+			return true
+		}
+		seen[name] = true
+		nodes = append(nodes, makeScriptNode(src, filePath, n, leafName(name), prefix+"."+name, lang, kind, isTestFile))
+		return true
+	})
+	return nodes
+}
 
-			// Find the line number
-			startByte := m[0]
-			lineNum := strings.Count(srcStr[:startByte], "\n") + 1
-			lineEnd := lineNum + 10
-			if lineEnd >= len(lines) {
-				lineEnd = len(lines)
+func makeScriptNode(src []byte, filePath string, n *sitter.Node, name, fullName, lang, kind string, isTestCode bool) Node {
+	node := makeBaseNode(src, filePath, n, name, fullName, lang, kind, isTestCode, false)
+	node.Inputs = scriptParams(src, n.ChildByFieldName("parameters"))
+	return node
+}
+
+func scriptModulePrefix(filePath string) string {
+	ext := filepath.Ext(filePath)
+	noExt := strings.TrimSuffix(filepath.ToSlash(filePath), ext)
+	return noExt
+}
+
+func scriptParams(src []byte, params *sitter.Node) []Param {
+	if params == nil {
+		return nil
+	}
+	var out []Param
+	for i := uint(0); i < params.NamedChildCount(); i++ {
+		child := params.NamedChild(i)
+		if child == nil {
+			continue
+		}
+		switch child.Kind() {
+		case "required_parameter", "optional_parameter":
+			name := childText(src, child, "pattern")
+			if name == "" {
+				name = childText(src, child, "name")
 			}
-
-			body := strings.Join(lines[lineNum-1:lineEnd], "\n")
-
-			nodes = append(nodes, Node{
-				Name:       name,
-				FullName:   name,
-				FilePath:   filePath,
-				LineStart:  lineNum,
-				LineEnd:    lineEnd,
-				Language:   lang,
-				Kind:       "function",
-				BodyHash:   bodyHash([]byte(body)),
-				Body:       body,
-				IsTestCode: isTestFile,
-			})
+			typ := childText(src, child, "type")
+			out = append(out, Param{Name: name, Type: strings.TrimPrefix(typ, ":")})
+		case "identifier":
+			out = append(out, Param{Name: text(src, child)})
 		}
 	}
-	return nodes
+	return out
+}
+
+func enclosingClassName(src []byte, n *sitter.Node) string {
+	for p := n.Parent(); p != nil; p = p.Parent() {
+		if p.Kind() == "class_declaration" {
+			return childText(src, p, "name")
+		}
+	}
+	return ""
+}
+
+func childText(src []byte, n *sitter.Node, field string) string {
+	child := n.ChildByFieldName(field)
+	if child == nil {
+		return ""
+	}
+	return text(src, child)
+}
+
+func childTextsByKinds(src []byte, n *sitter.Node, kinds ...string) []string {
+	allowed := map[string]bool{}
+	for _, kind := range kinds {
+		allowed[kind] = true
+	}
+	var out []string
+	for i := uint(0); i < n.NamedChildCount(); i++ {
+		child := n.NamedChild(i)
+		if child != nil && allowed[child.Kind()] {
+			out = append(out, text(src, child))
+		}
+	}
+	return out
+}
+
+func nodeBytes(src []byte, n *sitter.Node) []byte {
+	start, end := int(n.StartByte()), int(n.EndByte())
+	if start < 0 || end > len(src) || start > end {
+		return nil
+	}
+	return src[start:end]
+}
+
+func text(src []byte, n *sitter.Node) string {
+	return string(nodeBytes(src, n))
+}
+
+func walk(n *sitter.Node, visit func(*sitter.Node) bool) {
+	if n == nil {
+		return
+	}
+	if !visit(n) {
+		return
+	}
+	for i := uint(0); i < n.NamedChildCount(); i++ {
+		walk(n.NamedChild(i), visit)
+	}
+}
+
+func forEachDescendant(n *sitter.Node, kind string, fn func(*sitter.Node)) {
+	walk(n, func(child *sitter.Node) bool {
+		if child.Kind() == kind {
+			fn(child)
+			return false
+		}
+		return true
+	})
+}
+
+func leafName(name string) string {
+	if idx := strings.LastIndex(name, "."); idx >= 0 {
+		return name[idx+1:]
+	}
+	return name
 }

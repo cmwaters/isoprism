@@ -51,7 +51,7 @@ The prototype delivers exactly one flow:
 | Auth | Supabase Auth (GitHub OAuth) | Supabase |
 | AI | Anthropic Claude (`claude-sonnet-4-6`) | Anthropic API |
 | GitHub Integration | GitHub App (webhooks + REST API v3) | — |
-| Code Parsing | Go AST + lightweight TypeScript/JavaScript parser | In-process |
+| Code Parsing | Tree-sitter-backed Go, TypeScript, TSX, JavaScript, and JSX parser | In-process Go API with CGO |
 | Graph Rendering | React Flow (`@xyflow/react`) | Frontend |
 
 ### System Diagram
@@ -484,19 +484,27 @@ This keeps the base graph current without re-indexing the entire repo on every m
 
 ### Parsing
 
-The current parser supports Go, TypeScript, and JavaScript.
+The current parser supports Go, TypeScript, TSX, JavaScript, and JSX through tree-sitter. The parser public API remains:
+
+- `parser.Parse(content []byte, filePath string) []Node`
+- `parser.ExtractCallEdges(content []byte, filePath string, nodeSet map[string]bool) []CallEdge`
+- `parser.ExtractTestReferences(content []byte, filePath string, nodeSet map[string]bool) []TestReference`
 
 | Language | Parser | Extracted production nodes | Test code handling |
 |---|---|---|---|
-| Go | Standard `go/parser` + `go/ast` | functions, methods, type specs, structs, interfaces | Excludes `*_test.go`, packages ending `_test`, and functions beginning `Test`; indexes `Test*` references to production nodes |
-| TypeScript | Lightweight regex parser | function declarations, exported const arrow functions, class methods | Excludes `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`, and `__tests__/`; indexes `test(...)` / `it(...)` references |
-| JavaScript | Lightweight regex parser | function declarations, exported const arrow functions, class methods | Excludes `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx`, and `__tests__/`; indexes `test(...)` / `it(...)` references |
+| Go | `tree-sitter-go` | functions, methods, type specs, structs, interfaces | Excludes `*_test.go`, packages ending `_test`, and functions beginning `Test`; indexes `Test*` references to production nodes |
+| TypeScript / TSX | `tree-sitter-typescript` / `tree-sitter-tsx` | function declarations, const/let arrow functions, class methods | Excludes `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`, and `__tests__/`; indexes `test(...)` / `it(...)` references |
+| JavaScript / JSX | `tree-sitter-javascript` | function declarations, const/let arrow functions, class methods | Excludes `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx`, and `__tests__/`; indexes `test(...)` / `it(...)` references |
 
 Rust and Python are not currently indexed.
 
-**Call graph extraction:** After extracting production node boundaries, function bodies are walked for calls and resolved against the full production node set for the same commit. Unresolvable names (stdlib, external packages, or ambiguous methods) are discarded.
+**Symbol identity:** Go full names include directory and package context (`path/to/package:package.Symbol`, or `path/to/package:package.Receiver.Method`) so repeated package-level names like `New` do not collide across packages. TypeScript/JavaScript full names include module path context (`path/to/module.Symbol`).
+
+**Call graph extraction:** After extracting production node boundaries, function bodies are walked for calls and resolved against the full production node set for the same commit. Resolution is intentionally conservative: unresolvable names, stdlib/external package calls, ambiguous suffix matches, and selector calls whose receiver type is unknown are discarded. Go selector calls are never resolved by selector name alone; for example `sha256.New()` does not link to an internal `client.New` node.
 
 **Test reference extraction:** Test files are parsed separately from the production graph. Test functions/cases never become `code_nodes`; instead, each test entrypoint that reaches a production node writes a `code_test_references` row. The graph API attaches those rows to each returned production node so the detail panel can show callers, callees, and tests without rendering tests as graph nodes.
+
+**Build note:** Tree-sitter grammar bindings use CGO. Local and Railway API builds must run with CGO enabled and a working C compiler available.
 
 ---
 
@@ -818,7 +826,7 @@ Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply 
 
 ### Phase 2 — Parsing *(~1.5 days)*
 
-1. Implement Go parsing with `go/parser` + `go/ast`; implement lightweight TypeScript/JavaScript parsing for function declarations, exported const arrow functions, and class methods.
+1. Implement tree-sitter parsing for Go, TypeScript, TSX, JavaScript, and JSX function declarations, const/let arrow functions, methods, and Go type declarations.
 2. Implement `parser.Parse(content []byte, filePath string) []CodeNode` — returns node boundaries + signatures and flags test code.
 3. Implement `parser.ExtractCallEdges(content []byte, filePath string, nodeSet map[string]uuid) []CallEdge` — walks call expressions, resolves against nodeSet
 4. Implement `parser.ExtractTestReferences(content []byte, filePath string, nodeSet map[string]uuid) []TestReference` for Go, TypeScript, and JavaScript tests.
@@ -898,7 +906,7 @@ Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply 
 
 1. Run the full flow against 5–10 real PRs from at least two different repos and languages
 2. Check: graph size reasonable (≤20 nodes), summaries accurate, change summaries specific, call edges not overloaded with false positives
-3. Adjust parser call graph resolution if false positive rate is high (e.g. add file-scoped name filtering)
+3. Adjust parser call graph resolution if false positive rate is high; keep resolution conservative and avoid selector-name-only matching.
 4. Adjust AI prompt if summaries are too vague or too verbose
 
 ---
@@ -908,7 +916,7 @@ Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Railway over Fly.io | Railway | Simpler deploy config; no fly.toml; Railway detects Dockerfile automatically |
-| Current parser scope | Go + TypeScript + JavaScript | Matches the implemented parser. Rust and Python should be documented only when production parsing exists. |
+| Current parser scope | Go + TypeScript/TSX + JavaScript/JSX via tree-sitter | Matches the implemented parser. Rust and Python should be documented only when production parsing exists. Tree-sitter introduces CGO in API builds. |
 | `node_type` computed at query time | Not stored | It is a PR-relative property, not a property of a node. Storing it would couple the base graph to PR state. |
 | `code_nodes` keyed by `(repo, commit_sha, full_name, file_path)` | Snapshot per commit | Allows change detection by `body_hash` comparison without storing diffs. Summaries are reused across commits when body is unchanged. |
 | One-hop graph depth | Depth 1 from changed nodes | Deeper traversal produces unreadable graphs. One hop gives immediate structural context. |
@@ -939,3 +947,4 @@ Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply 
 | v0.7 | 2026-04-21 | Railway; clean schema; graph parser pipeline; three-event backend model (RepoInit/OpenPR/MergePR); `code_nodes` keyed by commit SHA; `node_type` derived at query time |
 | v0.8 | 2026-04-26 | Test code excluded from production graph; `code_test_references` records tests that exercise production nodes; parser docs reflect Go/TypeScript/JavaScript implementation |
 | v0.9 | 2026-04-29 | Documented invite-only beta loop: unique access tokens, one selected repo, one-week trial, in-product feedback, and end-of-week questionnaire |
+| v0.10 | 2026-05-04 | Parser migrated to tree-sitter with package/module-aware symbol names and conservative call edge resolution |

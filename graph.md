@@ -21,7 +21,9 @@ boundary
 
 Clustering and interactive boundary expansion are still design targets; the current client marks boundary nodes through metadata and keeps them on the outer hex ring, but it does not yet request incremental expansion from a clicked boundary node.
 
-The canonical graph remains function-level. The API projects that graph into:
+The canonical graph remains function-level. Production nodes and call edges are extracted by the API parser with tree-sitter. Call edge resolution is conservative: unresolved external calls, ambiguous names, and Go selectors with unknown receiver types are omitted instead of guessed.
+
+The API projects that graph into:
 
 ```text
 function: function/method/type cards
