@@ -116,6 +116,22 @@ class UserService {
 	}
 }
 
+func TestScriptMemberCallsDoNotResolveByPropertyName(t *testing.T) {
+	src := []byte(`export function run(client: Client) {
+  return client.save();
+}
+`)
+
+	nodeByName := map[string]bool{
+		"web/users.run":  true,
+		"web/users.save": true,
+	}
+	edges := ExtractCallEdges(src, "web/users.ts", nodeByName)
+	if hasEdge(edges, "web/users.run", "web/users.save") {
+		t.Fatalf("member call resolved by property name: %#v", edges)
+	}
+}
+
 func hasNode(nodes []Node, fullName string) bool {
 	for _, node := range nodes {
 		if node.FullName == fullName {

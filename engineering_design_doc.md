@@ -500,7 +500,7 @@ Rust and Python are not currently indexed.
 
 **Symbol identity:** Go full names include directory and package context (`path/to/package:package.Symbol`, or `path/to/package:package.Receiver.Method`) so repeated package-level names like `New` do not collide across packages. TypeScript/JavaScript full names include module path context (`path/to/module.Symbol`).
 
-**Call graph extraction:** After extracting production node boundaries, function bodies are walked for calls and resolved against the full production node set for the same commit. Resolution is intentionally conservative: unresolvable names, stdlib/external package calls, ambiguous suffix matches, and selector calls whose receiver type is unknown are discarded. Go selector calls are never resolved by selector name alone; for example `sha256.New()` does not link to an internal `client.New` node.
+**Call graph extraction:** After extracting production node boundaries, function bodies are walked for calls and resolved against the full production node set for the same commit. Resolution is intentionally conservative: unresolvable names, stdlib/external package calls, ambiguous suffix matches, and selector/member calls whose receiver type is unknown are discarded. Go selector calls are never resolved by selector name alone; for example `sha256.New()` does not link to an internal `client.New` node.
 
 **Test reference extraction:** Test files are parsed separately from the production graph. Test functions/cases never become `code_nodes`; instead, each test entrypoint that reaches a production node writes a `code_test_references` row. The graph API attaches those rows to each returned production node so the detail panel can show callers, callees, and tests without rendering tests as graph nodes.
 

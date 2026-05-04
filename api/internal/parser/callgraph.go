@@ -392,8 +392,6 @@ func scriptCallName(src []byte, fun *sitter.Node) string {
 	switch fun.Kind() {
 	case "identifier":
 		return text(src, fun)
-	case "member_expression":
-		return selectorName(src, fun)
 	default:
 		return ""
 	}
