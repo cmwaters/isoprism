@@ -125,11 +125,22 @@ export interface GraphPR {
   author_login: string;
 }
 
+export interface PRFileDiff {
+  filename: string;
+  previous_filename?: string;
+  status: "added" | "modified" | "removed" | "renamed" | string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
 export interface GraphResponse {
   pr: GraphPR;
   granularity: GraphNode["granularity"];
   nodes: GraphNode[];
   edges: GraphEdge[];
+  files: PRFileDiff[];
 }
 
 export interface RepoGraphResponse {

@@ -807,6 +807,7 @@ function InnerCanvas({
   const maxNodes = 20;
   const activeRepo = repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo);
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
+  const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", position: "relative" }}>
@@ -820,6 +821,7 @@ function InnerCanvas({
         repoID={repoID}
         repo={activeRepo}
         pr={activePR}
+        prFiles={activePRFiles}
         prs={prs}
         loadingPRNumber={loadingPRNumber}
         onSelectPR={onSelectPR}
