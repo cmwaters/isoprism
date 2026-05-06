@@ -111,10 +111,41 @@ The API creates a GitHub issue in the configured feedback repository with either
 
 The side panel has two modes:
 
-- `Overview`: repo, PR, or node summary, calls, callers, and tests. PR context additionally shows change explanations and diff stats.
+- `Overview`: repo, PR, or node summary, calls, callers, and tests. PR context shows GitHub-equivalent file diffs from the PR files API, including test files, plus a separate semantic graph-change list when graph nodes are available.
 - `Code`: a lazy-loaded source viewer for the selected function or struct. PR changed nodes automatically show the full component with changed lines highlighted. Repo nodes and unchanged context nodes show plain source.
 
 The overview/code icon controls switch the side panel mode without changing the selected graph node.
+
+## API contract used by the PR overview
+
+PR graph responses include the semantic graph and the GitHub file-level diff used by the PR overview:
+
+```http
+GET /api/v1/repos/{repoID}/prs/{prID}/graph
+GET /api/v1/repos/{repoID}/prs/number/{number}/graph
+```
+
+```ts
+interface GraphResponse {
+  pr: GraphPR;
+  granularity: "function" | "object" | "package";
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  files: PRFileDiff[];
+}
+
+interface PRFileDiff {
+  filename: string;
+  previous_filename?: string;
+  status: "added" | "modified" | "removed" | "renamed" | string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+```
+
+`files[]` is fetched from GitHub's pull request files endpoint and is the source of truth for PR-level diff totals and rendered patches. It includes tests and non-graph files. `nodes[]` remains the semantic production graph; tests are not rendered as graph nodes.
 
 ## API contract used by the code panel
 

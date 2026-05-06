@@ -1,6 +1,6 @@
 "use client";
 
-import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, QueuePR, Repository } from "@/lib/types";
+import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, PRFileDiff, QueuePR, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import type { PanelMode } from "./graph-canvas";
 import { ArrowLeft, BookOpenText, Code2, Settings } from "lucide-react";
@@ -16,6 +16,7 @@ interface Props {
   repoID: string;
   repo: Repository;
   pr?: GraphPR;
+  prFiles?: PRFileDiff[];
   prs?: QueuePR[];
   loadingPRNumber?: number | null;
   onSelectPR: (prNumber: number) => void;
@@ -58,6 +59,7 @@ export default function NodeDetailPanel({
   repoID,
   repo,
   pr,
+  prFiles,
   prs,
   loadingPRNumber,
   onSelectPR,
@@ -109,7 +111,7 @@ export default function NodeDetailPanel({
         {!node || mode === "overview" ? (
           !node ? (
             pr ? (
-              <PRSummaryPanel pr={pr} allNodes={allNodes} onSelectNode={onSelectNode} onBackToRepo={onBackToRepo} />
+              <PRSummaryPanel pr={pr} files={prFiles ?? []} allNodes={allNodes} onSelectNode={onSelectNode} onBackToRepo={onBackToRepo} />
             ) : (
               <RepoSummaryPanel
                 repo={repo}
@@ -314,19 +316,21 @@ const repoPRBadgeStyle: CSSProperties = {
 
 function PRSummaryPanel({
   pr,
+  files,
   allNodes,
   onSelectNode,
   onBackToRepo,
 }: {
   pr: GraphPR;
+  files: PRFileDiff[];
   allNodes: GraphNode[];
   onSelectNode: (id: string) => void;
   onBackToRepo: () => void;
 }) {
   const changedNodes = allNodes.filter((n) => n.node_type === "changed");
   const prTests = uniqueGraphTests(changedNodes.flatMap((node) => node.tests ?? []));
-  const totalAdded = changedNodes.reduce((s, n) => s + (n.lines_added || 0), 0);
-  const totalRemoved = changedNodes.reduce((s, n) => s + (n.lines_removed || 0), 0);
+  const totalAdded = files.reduce((s, file) => s + (file.additions || 0), 0);
+  const totalRemoved = files.reduce((s, file) => s + (file.deletions || 0), 0);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
@@ -375,10 +379,23 @@ function PRSummaryPanel({
       )}
 
       {/* Changes list */}
+      {files.length > 0 && (
+        <>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            Files
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+            {files.map((file) => (
+              <FileDiffCard key={`${file.status}:${file.filename}`} file={file} />
+            ))}
+          </div>
+        </>
+      )}
+
       {changedNodes.length > 0 && (
         <>
           <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-            Changes
+            Graph changes
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 20 }}>
             {changedNodes.map((n) => {
@@ -417,6 +434,49 @@ function PRSummaryPanel({
         View on GitHub →
       </a>
     </div>
+  );
+}
+
+function FileDiffCard({ file }: { file: PRFileDiff }) {
+  const fileLabel = file.previous_filename
+    ? `${file.previous_filename} -> ${file.filename}`
+    : file.filename;
+
+  return (
+    <details
+      open
+      style={{
+        background: "#F0F0F0",
+        border: "1px solid #D0D0D0",
+        borderRadius: 4,
+        overflow: "hidden",
+      }}
+    >
+      <summary
+        style={{
+          alignItems: "center",
+          cursor: "pointer",
+          display: "flex",
+          gap: 8,
+          listStyle: "none",
+          padding: "8px 10px",
+        }}
+      >
+        <span style={{ ...repoPRBadgeStyle, textTransform: "capitalize" }}>{file.status}</span>
+        <span style={{ color: "#222222", flex: 1, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, minWidth: 0, overflowWrap: "anywhere" }}>
+          {fileLabel}
+        </span>
+        <span style={{ color: "#16A34A", fontSize: 11, fontWeight: 600 }}>+{file.additions}</span>
+        <span style={{ color: "#EF4444", fontSize: 11, fontWeight: 600 }}>-{file.deletions}</span>
+      </summary>
+      {file.patch ? (
+        <UnifiedDiffViewer patch={file.patch} />
+      ) : (
+        <div style={{ color: "#666666", fontSize: 12, padding: "0 10px 10px" }}>
+          Diff unavailable
+        </div>
+      )}
+    </details>
   );
 }
 
