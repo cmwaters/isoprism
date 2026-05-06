@@ -194,10 +194,11 @@ type GraphEdgeSample struct {
 }
 
 type GraphResponse struct {
-	PR          GraphPR     `json:"pr"`
-	Granularity string      `json:"granularity"`
-	Nodes       []GraphNode `json:"nodes"`
-	Edges       []GraphEdge `json:"edges"`
+	PR          GraphPR      `json:"pr"`
+	Granularity string       `json:"granularity"`
+	Nodes       []GraphNode  `json:"nodes"`
+	Edges       []GraphEdge  `json:"edges"`
+	Files       []PRFileDiff `json:"files"`
 }
 
 type RepoGraphResponse struct {
@@ -216,6 +217,16 @@ type GraphPR struct {
 	HeadCommitSHA string `json:"head_commit_sha"`
 	Body          string `json:"body"`
 	AuthorLogin   string `json:"author_login"`
+}
+
+type PRFileDiff struct {
+	Filename         string  `json:"filename"`
+	PreviousFilename *string `json:"previous_filename,omitempty"`
+	Status           string  `json:"status"`
+	Additions        int     `json:"additions"`
+	Deletions        int     `json:"deletions"`
+	Changes          int     `json:"changes"`
+	Patch            *string `json:"patch,omitempty"`
 }
 
 // ── Node code API response ───────────────────────────────────────────────────

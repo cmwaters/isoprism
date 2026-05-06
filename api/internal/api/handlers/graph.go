@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sort"
@@ -910,23 +912,31 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// Load PR + main commit SHA
 	var pr models.GraphPR
-	var baseCommit, headCommit, mainCommitSHA, baseBranch, defaultBranch string
+	var baseCommit, headCommit, mainCommitSHA, baseBranch, defaultBranch, fullName string
+	var installationID int64
 	err := h.DB.QueryRow(ctx, `
 		select pr.id, pr.number, pr.title, pr.html_url,
 		       coalesce(pr.base_commit_sha,''), coalesce(pr.head_commit_sha,''),
 		       coalesce(r.main_commit_sha,''),
-		       coalesce(pr.body,''), coalesce(pr.author_login,''), pr.base_branch, r.default_branch
+		       coalesce(pr.body,''), coalesce(pr.author_login,''), pr.base_branch, r.default_branch,
+		       r.full_name, gi.installation_id
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
+		join github_installations gi on gi.id = r.installation_id
 		where pr.id=$1 and pr.repo_id=$2
 	`, prID, repoID).Scan(&pr.ID, &pr.Number, &pr.Title, &pr.HTMLURL, &baseCommit, &headCommit, &mainCommitSHA,
-		&pr.Body, &pr.AuthorLogin, &baseBranch, &defaultBranch)
+		&pr.Body, &pr.AuthorLogin, &baseBranch, &defaultBranch, &fullName, &installationID)
 	if err != nil {
 		http.Error(w, "pr not found", http.StatusNotFound)
 		return
 	}
 	pr.BaseCommitSHA = baseCommit
 	pr.HeadCommitSHA = headCommit
+	files, filesErr := h.loadPRFileDiffs(ctx, fullName, installationID, pr.Number)
+	if filesErr != nil {
+		log.Printf("GetGraph: PR file diffs unavailable for %s#%d: %v", fullName, pr.Number, filesErr)
+		files = []models.PRFileDiff{}
+	}
 	if baseBranch != defaultBranch {
 		http.Error(w, "PR graph only supports pull requests targeting the indexed default branch", http.StatusConflict)
 		return
@@ -974,6 +984,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 			Granularity: granularity,
 			Nodes:       []models.GraphNode{},
 			Edges:       []models.GraphEdge{},
+			Files:       files,
 		})
 		return
 	}
@@ -1347,7 +1358,40 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		Granularity: granularity,
 		Nodes:       nodes,
 		Edges:       edges,
+		Files:       files,
 	})
+}
+
+func (h *GraphHandler) loadPRFileDiffs(ctx context.Context, fullName string, installationID int64, prNumber int) ([]models.PRFileDiff, error) {
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid repo name %q", fullName)
+	}
+	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	files, err := ghClient.ListPullRequestFiles(ctx, parts[0], parts[1], prNumber)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]models.PRFileDiff, 0, len(files))
+	for _, file := range files {
+		changes := file.Changes
+		if changes == 0 {
+			changes = file.Additions + file.Deletions
+		}
+		out = append(out, models.PRFileDiff{
+			Filename:         file.Filename,
+			PreviousFilename: file.PreviousFilename,
+			Status:           file.Status,
+			Additions:        file.Additions,
+			Deletions:        file.Deletions,
+			Changes:          changes,
+			Patch:            file.Patch,
+		})
+	}
+	return out, nil
 }
 
 func countDiffLines(patch string) (added, removed int) {

@@ -451,7 +451,7 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 1. **Validate branch and SHA:** Require `pull_requests.base_branch = repositories.default_branch` and `pull_requests.base_commit_sha = repositories.main_commit_sha`. If either check fails, mark `graph_status = 'skipped'` so the PR is hidden instead of rendered against an approximate graph. Reserve `failed` for processing errors.
 2. **Check PR size limits:** Fetch GitHub PR metadata and skip oversized PRs before expensive file fetching. During beta the limits are 300 changed files, 20,000 additions, 20,000 deletions, or 30,000 total changed lines. Oversized PRs are marked `graph_status = 'skipped'`, stale `pr_node_changes` are cleared, and `pr_analyses.summary` stores the reason.
 3. **Check cache:** Look up the PR's stored `head_commit_sha`. If the incoming webhook's `head_sha` matches → already processed, skip.
-4. **Fetch diff:** `GET /repos/{owner}/{repo}/compare/{base_commit_sha}...{head_sha}` — returns a list of changed files with their unified diffs.
+4. **Fetch semantic diff:** `GET /repos/{owner}/{repo}/compare/{base_commit_sha}...{head_sha}` — returns changed files with unified diffs for semantic node processing.
 5. **Parse head commit:** For each changed file at `head_sha`, fetch content and parse it. Insert new production `code_nodes` at `commit_sha = head_sha` if not already present. Reuse existing `summary` where `body_hash` is unchanged.
 6. **Identify changed nodes:** Compare `body_hash` for each node between `base_commit_sha` and `head_sha`. Nodes with a differing hash are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`.
 7. **Build component diffs:** `modified` nodes keep a component-scoped slice of the GitHub patch. `added` and `deleted` nodes use synthetic component hunks where every source line is marked `+` or `-`, so semantic node stats count the whole new/removed component even when Git's file diff treats moved/copied body lines as unchanged context.
@@ -461,7 +461,7 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 
 When serving a graph, the API returns `full_name` as the display name and structured `inputs[]`/`outputs[]` instead of a raw signature string. Each input/output item has an optional `name`, a `type`, and, when that type exists as a visible function-level graph node, a `node_id` so the frontend can link directly to the type node. Aggregate package/object nodes return `granularity`, `package_path`, `member_count`, `changed_member_count`, `collapsed_node_ids`, and `expandable` metadata instead of code-viewable source ranges.
 
-When serving a PR graph, the API treats `file_path + full_name` as the semantic identity for visible nodes. This collapses duplicate rows for the same function across indexed-main and PR-head commits into one visual node, preferring the changed PR-head row when available. After collapsing, the API rewrites and de-duplicates edges and removes any edge whose endpoints are not in the final production-node set. Test nodes are filtered from graph responses and test coverage is returned only through each production node's `tests[]` field.
+When serving a PR graph, the API also fetches `GET /repos/{owner}/{repo}/pulls/{number}/files` and returns those file-level diffs as `files[]`. The PR overview uses `files[]` as the source of truth for rendered patches and total additions/deletions, matching GitHub's PR files view and including tests, changelogs, and other non-graph files. The semantic graph still treats `file_path + full_name` as the identity for visible nodes. This collapses duplicate rows for the same function across indexed-main and PR-head commits into one visual node, preferring the changed PR-head row when available. After collapsing, the API rewrites and de-duplicates edges and removes any edge whose endpoints are not in the final production-node set. Test nodes are filtered from graph responses and test coverage is returned only through each production node's `tests[]` field.
 
 ---
 
@@ -636,44 +636,76 @@ GITHUB_FEEDBACK_REPO
     "title": "...",
     "html_url": "...",
     "base_commit_sha": "abc123",
-    "head_commit_sha": "def456"
+    "head_commit_sha": "def456",
+    "body": "...",
+    "author_login": "octocat"
   },
+  "granularity": "package",
   "nodes": [
     {
       "id": "...",
-      "name": "handleAuth",
       "full_name": "AuthService.handleAuth",
       "file_path": "internal/auth/service.go",
+      "package_path": "internal/auth",
       "line_start": 42,
       "line_end": 78,
-      "signature": "func (s *AuthService) handleAuth(ctx context.Context, token string) (*User, error)",
+      "inputs": [{"name": "token", "type": "string"}],
+      "outputs": [{"type": "*User"}, {"type": "error"}],
       "language": "go",
       "kind": "method",
+      "granularity": "function",
       "node_type": "changed",
       "summary": "Validates a JWT token and returns the associated user. Returns an error if the token is expired or malformed.",
       "change_summary": "Now validates token expiry against a configurable grace period instead of hard-coding 5 minutes. Adds a new error type for expired tokens.",
-      "diff_hunk": "@@ -42,10 +42,14 @@ ..."
+      "diff_hunk": "@@ -42,10 +42,14 @@ ...",
+      "change_type": "modified",
+      "lines_added": 4,
+      "lines_removed": 1,
+      "tests": []
     },
     {
       "id": "...",
-      "name": "middleware",
       "full_name": "authMiddleware",
       "file_path": "internal/api/middleware.go",
+      "package_path": "internal/api",
       "line_start": 12,
       "line_end": 34,
-      "signature": "func authMiddleware(next http.Handler) http.Handler",
+      "inputs": [],
+      "outputs": [],
       "language": "go",
       "kind": "function",
+      "granularity": "function",
       "node_type": "caller",
       "summary": "HTTP middleware that extracts the Bearer token from the Authorization header and calls handleAuth.",
       "change_summary": null,
-      "diff_hunk": null
+      "diff_hunk": null,
+      "lines_added": 0,
+      "lines_removed": 0,
+      "tests": []
     }
   ],
   "edges": [
     {
       "caller_id": "...",
       "callee_id": "..."
+    }
+  ],
+  "files": [
+    {
+      "filename": "internal/auth/service.go",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 1,
+      "changes": 5,
+      "patch": "@@ -42,10 +42,14 @@ ..."
+    },
+    {
+      "filename": "internal/auth/service_test.go",
+      "status": "added",
+      "additions": 80,
+      "deletions": 0,
+      "changes": 80,
+      "patch": "@@ -0,0 +1,80 @@ ..."
     }
   ]
 }
@@ -883,6 +915,7 @@ Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply 
    - Query `pr_node_changes` → changed node IDs
    - Traverse `code_edges` one hop from changed nodes → caller and callee IDs
    - Fetch all node records; tag each with computed `node_type`
+   - Fetch GitHub PR files and return them as `files[]` for GitHub-equivalent PR overview diffs
    - Cap at 20 nodes: keep all changed nodes, fill remaining slots by proximity
    - Serialise to graph JSON response (see §6)
 2. Update queue handler to include `nodes_changed` and `risk_label` from `pr_analyses`

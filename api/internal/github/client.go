@@ -127,6 +127,17 @@ type GHCompareFile struct {
 	Patch     string `json:"patch"` // unified diff
 }
 
+// GHPullRequestFile is one file returned by the GitHub PR files endpoint.
+type GHPullRequestFile struct {
+	Filename         string  `json:"filename"`
+	PreviousFilename *string `json:"previous_filename"`
+	Status           string  `json:"status"` // added | modified | removed | renamed
+	Additions        int     `json:"additions"`
+	Deletions        int     `json:"deletions"`
+	Changes          int     `json:"changes"`
+	Patch            *string `json:"patch"` // omitted by GitHub for binary or very large files
+}
+
 // ── Methods ───────────────────────────────────────────────────────────────────
 
 func (c *Client) ListInstallationRepos(ctx context.Context) ([]InstallationRepo, error) {
@@ -159,6 +170,22 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		return nil, err
 	}
 	return &pr, nil
+}
+
+func (c *Client) ListPullRequestFiles(ctx context.Context, owner, repo string, number int) ([]GHPullRequestFile, error) {
+	var all []GHPullRequestFile
+	for page := 1; ; page++ {
+		var files []GHPullRequestFile
+		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/files?per_page=100&page=%d", owner, repo, number, page)
+		if err := c.do(ctx, "GET", path, &files); err != nil {
+			return nil, err
+		}
+		all = append(all, files...)
+		if len(files) < 100 {
+			break
+		}
+	}
+	return all, nil
 }
 
 func (c *Client) GetAuthenticatedUser(ctx context.Context) (*GHUser, error) {
