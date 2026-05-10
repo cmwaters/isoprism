@@ -31,8 +31,6 @@ function Divider({ color }: { color: string }) {
 }
 
 function inferPackageLabel(node: GraphNode): string {
-  if (node.granularity === "package") return "package";
-  if (node.granularity === "object") return node.package_path || "object";
   const parts = node.file_path.split("/");
   // Use directory name as package; fall back to filename stem for root-level files
   const pkg = parts.length >= 2
@@ -46,18 +44,13 @@ function inferPackageLabel(node: GraphNode): string {
 }
 
 function DiffPills({ node }: { node: GraphNode }) {
-  if (!node.change_type && !node.changed_member_count) return null;
+  if (!node.change_type) return null;
   const pillBase: React.CSSProperties = {
     display: "inline-flex", alignItems: "center",
     borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 500,
   };
   return (
     <div style={{ display: "flex", gap: 6, marginTop: 6, paddingLeft: 2 }}>
-      {!node.change_type && Boolean(node.changed_member_count) && (
-        <span style={{ ...pillBase, background: "#F0FFF4", color: "#166534" }}>
-          {node.changed_member_count} changed
-        </span>
-      )}
       {node.change_type === "added" && (
         <span style={{ ...pillBase, background: "#DCFCE7", color: "#16A34A" }}>
           Added {node.lines_added > 0 ? `+${node.lines_added}` : ""}
@@ -87,7 +80,6 @@ function GraphNodeComponent({ data, selected }: Props) {
   const pkgLabel = inferPackageLabel(node);
   const inputs = node.inputs ?? [];
   const outputs = node.outputs ?? [];
-  const hasAggregateMeta = node.granularity !== "function" && Boolean(node.member_count);
   const hasIO = inputs.length > 0 || outputs.length > 0;
 
   const handleStyle = { opacity: 0, width: 8, height: 8 };
@@ -114,7 +106,7 @@ function GraphNodeComponent({ data, selected }: Props) {
           </div>
         )}
 
-        {/* Function / aggregate name */}
+        {/* Function name */}
         <div style={{
           fontSize: 13,
           fontWeight: 600,
@@ -124,13 +116,6 @@ function GraphNodeComponent({ data, selected }: Props) {
         }}>
           {node.full_name}
         </div>
-
-        {hasAggregateMeta && (
-          <div style={{ fontSize: 11, color: "#666666", lineHeight: 1.45 }}>
-            {node.member_count} {node.member_count === 1 ? "member" : "members"}
-            {node.changed_member_count ? ` · ${node.changed_member_count} changed` : ""}
-          </div>
-        )}
 
         {hasIO && <Divider color={dividerColor} />}
 

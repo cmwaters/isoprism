@@ -141,25 +141,6 @@ export default function NodeDetailPanel({
           onCacheNodeCode={onCacheNodeCode}
         />
         )
-      ) : node.granularity !== "function" ? (
-        <NodeDetail
-          node={node}
-          allNodes={allNodes}
-          edges={edges}
-          onSelectNode={onSelectNode}
-          onBackToOverview={() => {
-            onSelectNode("");
-            onModeChange("overview");
-          }}
-          mode="overview"
-          onModeChange={onModeChange}
-          onViewCode={onViewCode}
-          repoID={repoID}
-          prID={pr?.id}
-          token={token}
-          nodeCodeCache={nodeCodeCache}
-          onCacheNodeCode={onCacheNodeCode}
-        />
       ) : (
         <CodePanel
           node={node}
@@ -412,7 +393,9 @@ function PRSummaryPanel({
                 >
                   <span style={{ minWidth: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
                     {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
-                    <span style={{ fontSize: 13, color: "#222222" }}>{n.full_name}</span>
+                    <span style={{ fontSize: 13, color: "#222222" }}>
+                      {n.change_type === "renamed" && n.old_full_name ? `${n.old_full_name} -> ${n.full_name}` : n.full_name}
+                    </span>
                   </span>
                   <DiffPills node={n} compact alignRight />
                 </button>
@@ -511,7 +494,7 @@ function NodeDetail({
 }) {
   const pkgPrefix = pkgLabel(node);
   const cachedCode = nodeCodeCache[node.id];
-  const canViewCode = node.granularity === "function";
+  const canViewCode = true;
 
   useEffect(() => {
     if (!canViewCode) return;
@@ -547,7 +530,7 @@ function NodeDetail({
 
       {/* File path */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
-        {node.granularity === "package" ? node.package_path || node.file_path : node.file_path}
+        {node.file_path}
       </p>
 
       {/* Package label */}
@@ -562,19 +545,10 @@ function NodeDetail({
         {node.full_name}
       </h2>
 
-      {node.granularity !== "function" && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
-          <span style={repoPRBadgeStyle}>{node.granularity}</span>
-          {Boolean(node.member_count) && (
-            <span style={repoPRBadgeStyle}>
-              {node.member_count} {node.member_count === 1 ? "member" : "members"}
-            </span>
-          )}
-          {Boolean(node.changed_member_count) && (
-            <span style={{ ...repoPRBadgeStyle, color: "#166534" }}>
-              {node.changed_member_count} changed
-            </span>
-          )}
+      {node.change_type === "renamed" && (node.old_full_name || node.old_file_path) && (
+        <div style={{ background: "#F5F5F5", border: "1px solid #D4D4D4", borderRadius: 6, color: "#555555", fontSize: 12, lineHeight: 1.5, marginBottom: 14, padding: 10 }}>
+          {node.old_full_name && <div>Renamed from {node.old_full_name}</div>}
+          {node.old_file_path && node.old_file_path !== node.file_path && <div>{`${node.old_file_path} -> ${node.file_path}`}</div>}
         </div>
       )}
 
@@ -1175,8 +1149,6 @@ function uniqueGraphTests(tests: GraphNode["tests"]): GraphNode["tests"] {
 }
 
 function pkgLabel(node: GraphNode): string {
-  if (node.granularity === "package") return "package";
-  if (node.granularity === "object") return node.package_path || "object";
   const parts = node.file_path.split("/");
   const pkg = parts.length >= 2
     ? parts[parts.length - 2]

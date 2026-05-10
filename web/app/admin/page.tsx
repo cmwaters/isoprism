@@ -21,6 +21,7 @@ type BetaTester = {
   token?: string | null;
   email?: string | null;
   invited_at: string;
+  accepted_at?: string | null;
   completed_at?: string | null;
   user_id?: string | null;
   selected_repo_id?: string | null;
@@ -40,12 +41,12 @@ export default function BetaAdminPage() {
   const [password, setPassword] = useState("");
   const [savedPassword, setSavedPassword] = useState("");
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [testers, setTesters] = useState<BetaTester[]>([]);
   const [created, setCreated] = useState<CreateBetaTesterResponse | null>(null);
   const [expandedID, setExpandedID] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [deletingID, setDeletingID] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
 
@@ -126,11 +127,10 @@ export default function BetaAdminPage() {
     try {
       const result = await adminFetch<CreateBetaTesterResponse>("/api/v1/admin/beta/testers", {
         method: "POST",
-        body: JSON.stringify({ name: name.trim(), email: email.trim() }),
+        body: JSON.stringify({ name: name.trim() }),
       });
       setCreated(result);
       setName("");
-      setEmail("");
       await loadTesters();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create beta tester.");
@@ -147,6 +147,33 @@ export default function BetaAdminPage() {
       window.setTimeout(() => setCopied((current) => current === label ? "" : current), 1600);
     } catch {
       setError("Could not copy to clipboard.");
+    }
+  }
+
+  async function deleteTester(tester: BetaTester) {
+    if (!window.confirm(`Delete ${tester.name}?`)) return;
+
+    setDeletingID(tester.id);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/admin/beta/testers/${tester.id}`, {
+        method: "DELETE",
+        headers: {
+          "X-Admin-Password": activePassword,
+        },
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Admin API error ${response.status}`);
+      }
+      setCreated((current) => current?.id === tester.id ? null : current);
+      setExpandedID((current) => current === tester.id ? null : current);
+      await loadTesters();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete beta tester.");
+    } finally {
+      setDeletingID("");
     }
   }
 
@@ -213,31 +240,22 @@ export default function BetaAdminPage() {
               placeholder="Tester name"
               style={inputStyle}
             />
-            <input
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="Email or note (optional)"
-              style={inputStyle}
-            />
             <button style={primaryButtonStyle} disabled={!name.trim() || creating}>
-              {creating ? "Generating..." : "Generate link"}
+              {creating ? "Creating..." : "Create"}
             </button>
           </form>
 
           {created && (
             <div style={createdBoxStyle}>
               <CopyRow label="Tester ID" value={`${created.name} · ${created.beta_id}`} copied={copied} onCopy={copyValue} />
-              <div style={smallLabelStyle}>Raw token, shown once</div>
-              <CopyRow label="Token" value={created.token} copied={copied} onCopy={copyValue} code />
               <div style={smallLabelStyle}>Invite link</div>
               <CopyRow label="Invite link" value={created.link} copied={copied} onCopy={copyValue} code />
             </div>
           )}
         </section>
 
-        <section style={sectionStyle}>
-          <div style={sectionHeaderStyle}>
-            <h2 style={sectionTitleStyle}>Monitor testers</h2>
+        <section style={flatSectionStyle}>
+          <div style={tableActionStyle}>
             <button style={secondaryButtonStyle} onClick={() => void loadTesters()} disabled={loading}>
               {loading ? "Refreshing..." : "Refresh"}
             </button>
@@ -261,7 +279,7 @@ export default function BetaAdminPage() {
                     <button style={rowButtonStyle} onClick={() => setExpandedID(expanded ? null : tester.id)}>
                       <div>
                         <div style={rowTitleStyle}>{tester.name}</div>
-                        <div style={rowMetaStyle}>{tester.user_id ?? tester.beta_id}</div>
+                        <div style={rowMetaStyle}>{tester.user_id ?? "None"}</div>
                       </div>
                       <div style={rowMetaStrongStyle}>{tester.link || "Not available"}</div>
                       <div style={rowMetaStrongStyle}>{tester.selected_repo_full_name ?? "Not set up"}</div>
@@ -270,16 +288,25 @@ export default function BetaAdminPage() {
 
                     {expanded && (
                       <div style={detailStyle}>
-                        <CopyDetail label="ID" value={tester.user_id ?? tester.beta_id} copied={copied} onCopy={copyValue} />
-                        <CopyDetail label="Token" value={tester.token ?? "Not stored"} copied={copied} onCopy={copyValue} />
+                        <CopyDetail label="ID" value={tester.user_id ?? "None"} copied={copied} onCopy={copyValue} />
+                        <Detail label="Account set up" value={tester.accepted_at ? formatDate(tester.accepted_at) : "None"} />
                         <CopyDetail
                           label="Invite link"
                           value={tester.link || "Not available"}
                           copied={copied}
                           onCopy={copyValue}
                         />
-                        <Detail label="Email / note" value={tester.email ?? "None"} />
                         <CopyDetail label="Selected repo ID" value={tester.selected_repo_id ?? "None"} copied={copied} onCopy={copyValue} />
+                        <div style={detailItemStyle}>
+                          <div style={smallLabelStyle}>Delete tester</div>
+                          <button
+                            style={dangerButtonStyle}
+                            onClick={() => void deleteTester(tester)}
+                            disabled={deletingID === tester.id}
+                          >
+                            {deletingID === tester.id ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
                         {tester.questionnaire ? (
                           <div style={questionnaireStyle}>
                             <Detail label="Faster rating" value={String(tester.questionnaire.faster_rating ?? "None")} />
@@ -399,6 +426,13 @@ function CopyRow({
   );
 }
 
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 const mainStyle: React.CSSProperties = {
   width: "min(1040px, 100%)",
   margin: "0 auto",
@@ -450,10 +484,14 @@ const sectionStyle: React.CSSProperties = {
   marginBottom: 16,
 };
 
-const sectionHeaderStyle: React.CSSProperties = {
+const flatSectionStyle: React.CSSProperties = {
+  marginTop: 20,
+};
+
+const tableActionStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
+  justifyContent: "flex-end",
   gap: 12,
   marginBottom: 14,
 };
@@ -467,7 +505,7 @@ const sectionTitleStyle: React.CSSProperties = {
 
 const createGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(180px, 1fr) minmax(180px, 1fr) auto",
+  gridTemplateColumns: "minmax(180px, 1fr) auto",
   gap: 8,
   alignItems: "center",
 };
@@ -567,7 +605,7 @@ const tableStyle: React.CSSProperties = {
 
 const tableHeaderStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1.1fr 0.8fr 1.1fr 0.8fr",
+  gridTemplateColumns: "1.1fr minmax(220px, 1.5fr) 1.1fr 0.8fr",
   gap: 10,
   color: "#777777",
   fontSize: 11,
@@ -579,14 +617,14 @@ const tableHeaderStyle: React.CSSProperties = {
 const testerRowStyle: React.CSSProperties = {
   border: "1px solid #E0E0E0",
   borderRadius: 8,
-  background: "#FAFAFA",
+  background: "#EBE9E9",
   overflow: "hidden",
 };
 
 const rowButtonStyle: React.CSSProperties = {
   width: "100%",
   display: "grid",
-  gridTemplateColumns: "1.1fr 0.8fr 1.1fr 0.8fr",
+  gridTemplateColumns: "1.1fr minmax(220px, 1.5fr) 1.1fr 0.8fr",
   gap: 10,
   alignItems: "center",
   minHeight: 58,
@@ -595,6 +633,18 @@ const rowButtonStyle: React.CSSProperties = {
   padding: "10px 12px",
   cursor: "pointer",
   textAlign: "left",
+};
+
+const dangerButtonStyle: React.CSSProperties = {
+  minWidth: 74,
+  border: "1px solid #E7B5B5",
+  borderRadius: 6,
+  background: "#FFF1F1",
+  color: "#8A1F1F",
+  padding: "0 10px",
+  cursor: "pointer",
+  fontSize: 12,
+  fontWeight: 650,
 };
 
 const rowTitleStyle: React.CSSProperties = {

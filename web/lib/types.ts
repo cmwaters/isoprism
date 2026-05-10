@@ -65,12 +65,13 @@ export interface GraphNode {
   outputs: GraphNodeTypeRef[];
   language: string;
   kind: string;
-  granularity: "function" | "object" | "package";
   node_type: "changed" | "caller" | "callee" | "entrypoint" | "context";
   summary?: string;
   change_summary?: string;
   diff_hunk?: string;
-  change_type?: "added" | "modified" | "deleted";
+  change_type?: "added" | "modified" | "deleted" | "renamed";
+  old_full_name?: string;
+  old_file_path?: string;
   lines_added: number;
   lines_removed: number;
   weight: number;
@@ -78,10 +79,6 @@ export interface GraphNode {
   graph_depth: number;
   boundary: boolean;
   tests: GraphNodeTest[];
-  member_count?: number;
-  changed_member_count?: number;
-  collapsed_node_ids?: string[];
-  expandable: boolean;
 }
 
 export interface GraphNodeTypeRef {
@@ -137,7 +134,6 @@ export interface PRFileDiff {
 
 export interface GraphResponse {
   pr: GraphPR;
-  granularity: GraphNode["granularity"];
   nodes: GraphNode[];
   edges: GraphEdge[];
   files: PRFileDiff[];
@@ -145,7 +141,6 @@ export interface GraphResponse {
 
 export interface RepoGraphResponse {
   repo: Repository;
-  granularity: GraphNode["granularity"];
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
@@ -166,7 +161,7 @@ export interface NodeCodeResponse {
   base?: NodeCodeSegment;
   head?: NodeCodeSegment;
   diff_hunk?: string;
-  change_type?: "added" | "modified" | "deleted";
+  change_type?: "added" | "modified" | "deleted" | "renamed";
 }
 
 // ── Repo status ───────────────────────────────────────────────────────────────
