@@ -707,15 +707,26 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		fnRows.Close()
 	}
 
+	defaultBranchLookupNames := append([]string{}, changedFullNames...)
+	changedIDToOldFullName := map[string]string{}
+	for _, id := range changedIDs {
+		c := changedSet[id]
+		if c.oldFullName == nil || strings.TrimSpace(*c.oldFullName) == "" {
+			continue
+		}
+		changedIDToOldFullName[id] = *c.oldFullName
+		defaultBranchLookupNames = append(defaultBranchLookupNames, *c.oldFullName)
+	}
+
 	// Find equivalent node IDs at the indexed default-branch commit (for edge lookups).
 	// code_edges are stored with main-branch node IDs during repo_init.
 	mainIDByFullName := map[string]string{}
 	var mainChangedIDs []string
-	if mainCommitSHA != "" && len(changedFullNames) > 0 {
+	if mainCommitSHA != "" && len(defaultBranchLookupNames) > 0 {
 		mRows, _ := h.DB.Query(ctx, `
 			select id, full_name from code_nodes
 			where repo_id=$1 and commit_sha=$2 and full_name = any($3)
-		`, repoID, mainCommitSHA, changedFullNames)
+		`, repoID, mainCommitSHA, defaultBranchLookupNames)
 		if mRows != nil {
 			defer mRows.Close()
 			for mRows.Next() {
@@ -743,6 +754,11 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	for prID2, fn := range changedIDToFullName {
 		if mainID, ok := mainIDByFullName[fn]; ok {
 			mainIDToPRID[mainID] = prID2
+		}
+		if oldFn, ok := changedIDToOldFullName[prID2]; ok {
+			if mainID, ok := mainIDByFullName[oldFn]; ok {
+				mainIDToPRID[mainID] = prID2
+			}
 		}
 	}
 	remapID := func(id string) string {

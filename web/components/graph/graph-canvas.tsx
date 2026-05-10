@@ -417,6 +417,52 @@ function isPRGraph(graph: UnifiedGraph): graph is GraphResponse {
   return "pr" in graph;
 }
 
+function nodeMatchesRenameSource(node: APIGraphNode, oldFullName: string, oldFilePath: string): boolean {
+  if (node.file_path !== oldFilePath) return false;
+  return node.full_name === oldFullName || node.full_name.endsWith(`.${oldFullName}`);
+}
+
+function collapseRenamedGraphNodes(graph: UnifiedGraph): UnifiedGraph {
+  if (!isPRGraph(graph)) return graph;
+
+  const oldIDToRenamedID = new Map<string, string>();
+  const renamedNodes = graph.nodes.filter((node) => node.change_type === "renamed" && node.old_full_name && node.old_file_path);
+
+  for (const renamedNode of renamedNodes) {
+    const oldFullName = renamedNode.old_full_name;
+    const oldFilePath = renamedNode.old_file_path;
+    if (!oldFullName || !oldFilePath) continue;
+
+    const oldNode = graph.nodes.find((node) => (
+      node.id !== renamedNode.id
+      && !node.change_type
+      && nodeMatchesRenameSource(node, oldFullName, oldFilePath)
+    ));
+    if (oldNode) oldIDToRenamedID.set(oldNode.id, renamedNode.id);
+  }
+
+  if (oldIDToRenamedID.size === 0) return graph;
+
+  const remapID = (id: string) => oldIDToRenamedID.get(id) ?? id;
+  const seenEdges = new Set<string>();
+
+  return {
+    ...graph,
+    nodes: graph.nodes.filter((node) => !oldIDToRenamedID.has(node.id)),
+    edges: graph.edges.flatMap((edge) => {
+      const callerID = remapID(edge.caller_id);
+      const calleeID = remapID(edge.callee_id);
+      if (callerID === calleeID) return [];
+
+      const key = `${callerID}->${calleeID}`;
+      if (seenEdges.has(key)) return [];
+      seenEdges.add(key);
+
+      return [{ ...edge, caller_id: callerID, callee_id: calleeID }];
+    }),
+  };
+}
+
 function InnerCanvas({
   graph,
   repoID,
@@ -440,31 +486,32 @@ function InnerCanvas({
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const visibleGraph = useMemo(() => collapseRenamedGraphNodes(activeGraph), [activeGraph]);
 
   const selectGraphNode = useCallback((id: string) => {
-    const apiNode = activeGraph.nodes.find((n) => n.id === id) ?? null;
+    const apiNode = visibleGraph.nodes.find((n) => n.id === id) ?? null;
     setSelectedNode(apiNode);
-    if (isPRGraph(activeGraph) && apiNode) {
+    if (isPRGraph(visibleGraph) && apiNode) {
       setSelectedPRChange({ type: "node", nodeID: apiNode.id });
     }
-  }, [activeGraph]);
+  }, [visibleGraph]);
 
-  const initialNodes: Node[] = useMemo(() => activeGraph.nodes.map((n) => ({
+  const initialNodes: Node[] = useMemo(() => visibleGraph.nodes.map((n) => ({
     id: n.id,
     type: "graphNode",
     data: { node: n, onSelectType: selectGraphNode },
     position: { x: 0, y: 0 },
-  })), [activeGraph.nodes, selectGraphNode]);
+  })), [visibleGraph.nodes, selectGraphNode]);
 
-  const baseEdges: Edge[] = useMemo(() => activeGraph.edges.map((e, idx) => ({
+  const baseEdges: Edge[] = useMemo(() => visibleGraph.edges.map((e, idx) => ({
     id: `e${idx}`,
     source: e.caller_id,
     target: e.callee_id,
     type: "smartBezier",
-  })), [activeGraph.edges]);
+  })), [visibleGraph.edges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(
-    hexGridLayout(initialNodes, baseEdges, activeGraph.nodes)
+    hexGridLayout(initialNodes, baseEdges, visibleGraph.nodes)
   );
 
   // Recompute edge styles whenever selection changes
@@ -474,7 +521,7 @@ function InnerCanvas({
       const isConnected = selID && (e.source === selID || e.target === selID);
       const isDimmed = selID && !isConnected;
       const color = isConnected ? "#333333" : isDimmed ? "#CCCCCC" : "#888888";
-      const apiEdge = activeGraph.edges.find((edge) => edge.caller_id === e.source && edge.callee_id === e.target);
+      const apiEdge = visibleGraph.edges.find((edge) => edge.caller_id === e.source && edge.callee_id === e.target);
       const weightedWidth = Math.min(5, 1 + Math.log2(1 + (apiEdge?.weight ?? 1)) * 0.6);
       const width = isConnected ? Math.max(2, weightedWidth) : weightedWidth;
       return {
@@ -483,7 +530,7 @@ function InnerCanvas({
         markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color },
       };
     });
-  }, [activeGraph.edges, baseEdges, selectedNode]);
+  }, [visibleGraph.edges, baseEdges, selectedNode]);
 
   const onEdgesChange = useCallback(() => {}, []);
 
@@ -492,12 +539,12 @@ function InnerCanvas({
   }, [graph]);
 
   useEffect(() => {
-    setNodes(hexGridLayout(initialNodes, baseEdges, activeGraph.nodes));
+    setNodes(hexGridLayout(initialNodes, baseEdges, visibleGraph.nodes));
     setSelectedNode(null);
     setSelectedPRChange(null);
     setPanelMode("overview");
     setTimeout(() => fitView({ padding: 0.15 }), 50);
-  }, [activeGraph, baseEdges, fitView, initialNodes, setNodes]);
+  }, [visibleGraph, baseEdges, fitView, initialNodes, setNodes]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
@@ -545,22 +592,22 @@ function InnerCanvas({
     setActiveGraph(graph);
   }, [graph]);
 
-  const totalNodes = activeGraph.nodes.length;
+  const totalNodes = visibleGraph.nodes.length;
   const maxNodes = 20;
   const activeRepo = repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo);
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
   const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
   const activePRTestChanges = isPRGraph(activeGraph) ? activeGraph.test_changes ?? [] : [];
-  const detailNodes = isPRGraph(activeGraph)
-    ? [...activeGraph.nodes, ...activePRTestChanges]
-    : activeGraph.nodes;
+  const detailNodes = isPRGraph(visibleGraph)
+    ? [...visibleGraph.nodes, ...activePRTestChanges]
+    : visibleGraph.nodes;
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", position: "relative" }}>
       <NodeDetailPanel
         node={activePR ? null : selectedNode}
-        allNodes={activeGraph.nodes}
-        edges={activeGraph.edges}
+        allNodes={visibleGraph.nodes}
+        edges={visibleGraph.edges}
         onSelectNode={(id) => {
           selectGraphNode(id);
         }}
@@ -604,7 +651,7 @@ function InnerCanvas({
         <ComponentChangePanel
           selectedChange={selectedPRChange}
           allNodes={detailNodes}
-          edges={activeGraph.edges}
+          edges={visibleGraph.edges}
           files={activePRFiles}
           repoID={repoID}
           prID={activePR.id}

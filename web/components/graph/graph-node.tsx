@@ -59,7 +59,10 @@ function DiffPills({ node }: { node: GraphNode }) {
       {node.change_type === "deleted" && (
         <span style={{ ...pillBase, background: "#FEE2E2", color: "#EF4444" }}>Deleted</span>
       )}
-      {node.change_type === "modified" && (
+      {node.change_type === "renamed" && (
+        <span style={{ ...pillBase, background: "#E0E7FF", color: "#4F46E5" }}>Renamed</span>
+      )}
+      {(node.change_type === "modified" || node.change_type === "renamed") && (
         <>
           {node.lines_added > 0 && (
             <span style={{ ...pillBase, background: "#DCFCE7", color: "#16A34A" }}>+{node.lines_added}</span>
