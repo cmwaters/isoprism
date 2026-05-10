@@ -1,3 +1,6 @@
+[phases.setup]
+nixPkgs = ["...", "gcc"]
+
 [phases.build]
 cmds = ["CGO_ENABLED=1 go build -o /app/server ./cmd/api"]
 
