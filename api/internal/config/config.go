@@ -26,6 +26,7 @@ type Config struct {
 
 	FrontendURL  string
 	FrontendURLs []string
+	CommitSHA    string
 }
 
 func Load() (*Config, error) {
@@ -43,6 +44,10 @@ func Load() (*Config, error) {
 		GitHubFeedbackRepo:     getEnv("GITHUB_FEEDBACK_REPO", ""),
 		AdminPassword:          getEnv("ADMIN_PASSWORD", ""),
 		FrontendURL:            getEnv("FRONTEND_URL", "https://isoprism.com"),
+		CommitSHA:              firstEnv("ISOPRISM_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "GIT_COMMIT_SHA"),
+	}
+	if cfg.CommitSHA == "" {
+		cfg.CommitSHA = "unknown"
 	}
 	cfg.FrontendURLs = frontendURLs(cfg.FrontendURL)
 	return cfg, nil
@@ -68,6 +73,15 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func mustGetEnv(key string) string {

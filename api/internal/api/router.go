@@ -54,7 +54,10 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "ok",
+			"commit": cfg.CommitSHA,
+		})
 	})
 
 	// Debug endpoints — no auth, for development use only

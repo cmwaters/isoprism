@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ── User ──────────────────────────────────────────────────────────────────────
 
@@ -43,26 +46,30 @@ type Repository struct {
 // ── Pull Request ──────────────────────────────────────────────────────────────
 
 type PullRequest struct {
-	ID              string     `json:"id"`
-	RepoID          string     `json:"repo_id"`
-	GitHubPRID      int64      `json:"github_pr_id"`
-	Number          int        `json:"number"`
-	Title           string     `json:"title"`
-	Body            *string    `json:"body"`
-	AuthorLogin     string     `json:"author_login"`
-	AuthorAvatarURL *string    `json:"author_avatar_url"`
-	BaseBranch      string     `json:"base_branch"`
-	HeadBranch      string     `json:"head_branch"`
-	BaseCommitSHA   *string    `json:"base_commit_sha"`
-	HeadCommitSHA   *string    `json:"head_commit_sha"`
-	State           string     `json:"state"` // open | closed | merged
-	Draft           bool       `json:"draft"`
-	HTMLURL         string     `json:"html_url"`
-	OpenedAt        time.Time  `json:"opened_at"`
-	MergedAt        *time.Time `json:"merged_at"`
-	LastActivityAt  *time.Time `json:"last_activity_at"`
-	GraphStatus     string     `json:"graph_status"` // pending | running | ready | skipped | failed
-	CreatedAt       time.Time  `json:"created_at"`
+	ID                 string          `json:"id"`
+	RepoID             string          `json:"repo_id"`
+	GitHubPRID         int64           `json:"github_pr_id"`
+	Number             int             `json:"number"`
+	Title              string          `json:"title"`
+	Body               *string         `json:"body"`
+	AuthorLogin        string          `json:"author_login"`
+	AuthorAvatarURL    *string         `json:"author_avatar_url"`
+	BaseBranch         string          `json:"base_branch"`
+	HeadBranch         string          `json:"head_branch"`
+	BaseCommitSHA      *string         `json:"base_commit_sha"`
+	HeadCommitSHA      *string         `json:"head_commit_sha"`
+	State              string          `json:"state"` // open | closed | merged
+	Draft              bool            `json:"draft"`
+	HTMLURL            string          `json:"html_url"`
+	OpenedAt           time.Time       `json:"opened_at"`
+	MergedAt           *time.Time      `json:"merged_at"`
+	LastActivityAt     *time.Time      `json:"last_activity_at"`
+	GraphStatus        string          `json:"graph_status"` // pending | running | ready | skipped | failed
+	ProcessorCommitSHA *string         `json:"processor_commit_sha"`
+	ProcessedAt        *time.Time      `json:"processed_at"`
+	ProcessingError    *string         `json:"processing_error"`
+	ProcessingStats    json.RawMessage `json:"processing_stats"`
+	CreatedAt          time.Time       `json:"created_at"`
 }
 
 // ── Code graph ────────────────────────────────────────────────────────────────

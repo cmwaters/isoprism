@@ -93,6 +93,8 @@ The API also skips oversized PRs before expensive graph processing. The beta lim
 
 Large PRs can skip per-function AI summaries so the graph and changed-node overlay still become available without waiting on an oversized enrichment request.
 
+Each PR stores the latest processing snapshot on `pull_requests`: `processor_commit_sha`, `processed_at`, `processing_error`, and `processing_stats`. The stats JSON records file counts, supported-file counts, parsed node counts, detected semantic changes, persisted `pr_node_changes`, and call-edge persistence counters so empty PR views can be debugged without guessing which deployed API revision processed them.
+
 Graph responses are function-level. Nodes use `full_name` as the display label and expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records.
 
 PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail.
@@ -211,4 +213,4 @@ POST /debug/repos/{repoID}/reindex
 POST /debug/prs/{prID}/reprocess
 ```
 
-Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes`, `code_edges`, and `code_test_references` from the repository default branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, and changed-file test references for one PR.
+Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes`, `code_edges`, and `code_test_references` from the repository default branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, changed-file test references, and the PR's latest processing metadata snapshot.

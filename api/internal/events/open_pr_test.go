@@ -1,6 +1,7 @@
 package events
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -128,6 +129,52 @@ func TestFirstUnmatchedOverlappingBaseNodeDetectsRenamedFunctionWithBodyChange(t
 	}
 	if got.FullName != base.FullName {
 		t.Fatalf("matched %q, want %q", got.FullName, base.FullName)
+	}
+}
+
+func TestCurrentProcessorCommitSHAPrefersExplicitEnv(t *testing.T) {
+	t.Setenv("ISOPRISM_COMMIT_SHA", "app-commit")
+	t.Setenv("RAILWAY_GIT_COMMIT_SHA", "railway-commit")
+
+	if got := currentProcessorCommitSHA(); got != "app-commit" {
+		t.Fatalf("commit sha = %q, want explicit app commit", got)
+	}
+}
+
+func TestPRProcessingStatsJSONUsesDiagnosticNames(t *testing.T) {
+	stats := prProcessingStats{
+		ChangedFiles:                  4,
+		SupportedChangedFiles:         2,
+		ChangedNodesDetected:          3,
+		TestNodesDetected:             1,
+		NodeChangesPersisted:          3,
+		NodeChangePersistErrors:       1,
+		CallEdgesExtracted:            5,
+		CallEdgesPersisted:            4,
+		UnsupportedChangedFiles:       2,
+		NodeChangesSkippedMissingNode: 1,
+	}
+
+	raw, err := json.Marshal(stats)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonText := string(raw)
+	for _, want := range []string{
+		`"changed_files":4`,
+		`"supported_changed_files":2`,
+		`"changed_nodes_detected":3`,
+		`"test_nodes_detected":1`,
+		`"node_changes_persisted":3`,
+		`"node_change_persist_errors":1`,
+		`"call_edges_extracted":5`,
+		`"call_edges_persisted":4`,
+		`"unsupported_changed_files":2`,
+		`"node_changes_skipped_missing_node":1`,
+	} {
+		if !strings.Contains(jsonText, want) {
+			t.Fatalf("processing stats json %s missing %s", jsonText, want)
+		}
 	}
 }
 

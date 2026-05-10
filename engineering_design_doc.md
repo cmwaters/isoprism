@@ -182,6 +182,10 @@ pull_requests
   merged_at           timestamptz
   last_activity_at    timestamptz
   graph_status        text DEFAULT 'pending'  -- 'pending' | 'running' | 'ready' | 'skipped' | 'failed'
+  processor_commit_sha text           -- Isoprism API commit that last processed this PR
+  processed_at        timestamptz     -- when the latest OpenPR processing snapshot was written
+  processing_error    text            -- latest processing error or skip/suspicion reason, if any
+  processing_stats    jsonb DEFAULT '{}'::jsonb
   created_at          timestamptz
   UNIQUE (repo_id, github_pr_id)
 
@@ -444,8 +448,8 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 6. **Identify changed nodes:** Compare `body_hash` for each node between `base_commit_sha` and `head_sha`. Nodes with a differing hash are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`.
 7. **Build component diffs:** `modified` nodes keep a component-scoped slice of the GitHub patch. `added` and `deleted` nodes use synthetic component hunks where every source line is marked `+` or `-`, so semantic node stats count the whole new/removed component even when Git's file diff treats moved/copied body lines as unchanged context.
 8. **Generate change summaries:** For all `modified` and `added` nodes, call Claude with the diff hunk and new function body to generate `change_summary`. Batch into a single API call for normal-sized PRs. Large-but-allowed PRs can skip per-function AI enrichment and receive a coarse PR-level summary so structural graph processing can still finish.
-9. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`).
-10. **Update PR:** Set `pull_requests.head_commit_sha = head_sha` and `graph_status = 'ready'`.
+9. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`). Persistence errors are logged and counted in `pull_requests.processing_stats` instead of being silently swallowed.
+10. **Update PR:** Set `graph_status = 'ready'` and stamp the latest processing metadata on `pull_requests`: `processor_commit_sha`, `processed_at`, `processing_error`, and `processing_stats`. If changed nodes were detected but zero `pr_node_changes` rows persisted, `processing_error` records that suspicion while leaving the structural counters available for debugging.
 
 When serving a graph, the API returns `full_name` as the display name and structured `inputs[]`/`outputs[]` instead of a raw signature string. Each input/output item has an optional `name`, a `type`, and, when that type exists as a visible graph node, a `node_id` so the frontend can link directly to the type node.
 

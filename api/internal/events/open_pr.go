@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ const (
 // summaries, and updates pr_node_changes + pr_analyses.
 func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, enricher *ai.Enricher, prID string) {
 	log.Printf("OpenPR: starting for pr %s", prID)
+	stats := newPRProcessingStats()
+	markPRProcessing(ctx, db, prID, "running", stats, "")
 
 	// Load PR details
 	var repoID, fullName, baseBranch, defaultBranch, mainCommitSHA string
@@ -44,24 +47,30 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	`, prID).Scan(&repoID, &headSHA, &baseSHA, &prNumber, &fullName, &baseBranch, &defaultBranch, &mainCommitSHA, &installationID)
 	if err != nil {
 		log.Printf("OpenPR: failed to load PR: %v", err)
+		markPRProcessing(ctx, db, prID, "failed", stats, "failed to load PR: "+err.Error())
 		return
 	}
 
 	if baseBranch != defaultBranch {
-		log.Printf("OpenPR: skipping pr %s: base branch %q is not indexed default branch %q", prID, baseBranch, defaultBranch)
-		db.Exec(ctx, `update pull_requests set graph_status='skipped' where id=$1`, prID)
+		reason := fmt.Sprintf("base branch %q is not indexed default branch %q", baseBranch, defaultBranch)
+		log.Printf("OpenPR: skipping pr %s: %s", prID, reason)
+		stats.SkipReason = reason
+		markPRProcessing(ctx, db, prID, "skipped", stats, reason)
 		return
 	}
 
 	if headSHA == "" || baseSHA == "" || mainCommitSHA == "" {
-		log.Printf("OpenPR: missing commit SHAs for pr %s", prID)
-		db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
+		reason := "missing commit SHAs"
+		log.Printf("OpenPR: %s for pr %s", reason, prID)
+		markPRProcessing(ctx, db, prID, "failed", stats, reason)
 		return
 	}
 
 	if baseSHA != mainCommitSHA {
-		log.Printf("OpenPR: skipping pr %s: base sha %s does not match indexed default branch sha %s", prID, baseSHA, mainCommitSHA)
-		db.Exec(ctx, `update pull_requests set graph_status='skipped' where id=$1`, prID)
+		reason := fmt.Sprintf("base sha %s does not match indexed default branch sha %s", baseSHA, mainCommitSHA)
+		log.Printf("OpenPR: skipping pr %s: %s", prID, reason)
+		stats.SkipReason = reason
+		markPRProcessing(ctx, db, prID, "skipped", stats, reason)
 		return
 	}
 	baseCommit = baseSHA
@@ -69,12 +78,13 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	ghClient, err := appClient.ClientForInstallation(ctx, installationID)
 	if err != nil {
 		log.Printf("OpenPR: GitHub client error: %v", err)
-		db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
+		markPRProcessing(ctx, db, prID, "failed", stats, "github client error: "+err.Error())
 		return
 	}
 
 	parts := splitRepo(fullName)
 	if parts == nil {
+		markPRProcessing(ctx, db, prID, "failed", stats, "invalid repository full name")
 		return
 	}
 	owner, repo := parts[0], parts[1]
@@ -82,21 +92,24 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	ghPR, err := ghClient.GetPullRequest(ctx, owner, repo, prNumber)
 	if err != nil {
 		log.Printf("OpenPR: fetch PR metadata error: %v", err)
-		db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
+		markPRProcessing(ctx, db, prID, "failed", stats, "fetch PR metadata error: "+err.Error())
 		return
 	}
+	stats.GitHubChangedFiles = ghPR.ChangedFiles
+	stats.GitHubAdditions = ghPR.Additions
+	stats.GitHubDeletions = ghPR.Deletions
 	if shouldSkipPRForSize(ghPR) {
 		reason := prSizeSkipReason(ghPR)
 		log.Printf("OpenPR: skipping pr %s because %s", prID, reason)
-		markPRSkipped(ctx, db, prID, reason)
+		stats.SkipReason = reason
+		markPRSkipped(ctx, db, prID, reason, stats)
 		return
 	}
 
 	// Mark running
-	db.Exec(ctx, `update pull_requests set graph_status='running' where id=$1`, prID)
 	if _, err := db.Exec(ctx, `delete from pr_node_changes where pull_request_id=$1`, prID); err != nil {
 		log.Printf("OpenPR: failed to clear stale node changes for pr %s: %v", prID, err)
-		db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
+		markPRProcessing(ctx, db, prID, "failed", stats, "failed to clear stale node changes: "+err.Error())
 		return
 	}
 
@@ -107,7 +120,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		compareFiles, err := ghClient.CompareCommits(ctx, owner, repo, baseCommit, headSHA)
 		if err != nil {
 			log.Printf("OpenPR: compare error: %v", err)
-			db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
+			markPRProcessing(ctx, db, prID, "failed", stats, "compare error: "+err.Error())
 			return
 		}
 		changedFiles = make([]github.GHPullRequestFile, 0, len(compareFiles))
@@ -133,6 +146,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			})
 		}
 	}
+	stats.ChangedFiles = len(changedFiles)
 
 	type changedNode struct {
 		node        parser.Node
@@ -157,18 +171,23 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			patch = *file.Patch
 		}
 		if !parser.IsSupportedFile(headPath) && !parser.IsSupportedFile(basePath) {
+			stats.UnsupportedChangedFiles++
 			continue
 		}
+		stats.SupportedChangedFiles++
 
 		var headNodes []parser.Node
 		if file.Status != "removed" && parser.IsSupportedFile(headPath) {
 			content, err := ghClient.GetFileContent(ctx, owner, repo, headPath, headSHA)
 			if err != nil {
 				log.Printf("OpenPR: fetch head file %s: %v", headPath, err)
+				stats.HeadFileFetchErrors++
 				continue
 			}
+			stats.HeadFilesFetched++
 			changedFileContents[headPath] = content
 			headNodes = parser.Parse(content, headPath)
+			stats.HeadNodesParsed += len(headNodes)
 		}
 
 		// Fetch base version for comparison (if file was modified, not added)
@@ -178,12 +197,16 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		if file.Status == "modified" || file.Status == "renamed" || file.Status == "removed" {
 			baseContent, err := ghClient.GetFileContent(ctx, owner, repo, basePath, baseCommit)
 			if err == nil {
-				for _, n := range parser.Parse(baseContent, basePath) {
+				stats.BaseFilesFetched++
+				baseNodes := parser.Parse(baseContent, basePath)
+				stats.BaseNodesParsed += len(baseNodes)
+				for _, n := range baseNodes {
 					baseNodesByName[n.FullName] = n
 					baseNodesByHash[n.BodyHash] = append(baseNodesByHash[n.BodyHash], n)
 				}
 			} else {
 				log.Printf("OpenPR: fetch base file %s: %v", basePath, err)
+				stats.BaseFileFetchErrors++
 			}
 		}
 
@@ -207,8 +230,10 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 				n.LineStart, n.LineEnd, inputs, outputs, n.Language, n.Kind, n.BodyHash,
 			).Scan(&nodeID)
 			if err != nil {
+				stats.HeadNodeUpsertErrors++
 				continue
 			}
+			stats.HeadNodesUpserted++
 
 			changeType := "added"
 			var baseNode *parser.Node
@@ -308,6 +333,12 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	}
 
 	log.Printf("OpenPR: found %d changed nodes for pr %s", len(changed), prID)
+	stats.ChangedNodesDetected = len(changed)
+	for _, c := range changed {
+		if c.isTest {
+			stats.TestNodesDetected++
+		}
+	}
 
 	// Generate AI change summaries
 	var aiInputs []ai.NodeInput
@@ -357,6 +388,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		}
 
 		if nodeID == "" {
+			stats.NodeChangesSkippedMissingNode++
 			continue
 		}
 
@@ -366,7 +398,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		}
 		diffHunk := c.diffHunk
 
-		db.Exec(ctx, `
+		tag, err := db.Exec(ctx, `
 			insert into pr_node_changes (pull_request_id, node_id, change_type, change_summary, diff_hunk, old_full_name, old_file_path)
 			values ($1,$2,$3,$4,$5,$6,$7)
 			on conflict (pull_request_id, node_id) do update set
@@ -376,6 +408,14 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 				old_full_name  = excluded.old_full_name,
 				old_file_path  = excluded.old_file_path
 		`, prID, nodeID, c.changeType, summary, nullIfEmpty(diffHunk), c.oldFullName, c.oldFilePath)
+		if err != nil {
+			log.Printf("OpenPR: failed to persist node change %s for pr %s: %v", c.node.FullName, prID, err)
+			stats.NodeChangePersistErrors++
+			continue
+		}
+		if tag.RowsAffected() > 0 {
+			stats.NodeChangesPersisted++
+		}
 	}
 
 	// Persist pr_analyses
@@ -392,7 +432,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	now := time.Now()
 	modelName := "claude-sonnet-4-6"
 
-	db.Exec(ctx, `
+	if _, err := db.Exec(ctx, `
 		insert into pr_analyses (pull_request_id, summary, nodes_changed, risk_score, risk_label, ai_model, generated_at)
 		values ($1,$2,$3,$4,$5,$6,$7)
 		on conflict (pull_request_id) do update set
@@ -402,7 +442,10 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			risk_label    = excluded.risk_label,
 			ai_model      = excluded.ai_model,
 			generated_at  = excluded.generated_at
-	`, prID, nullIfEmpty(summary), nodesChanged, nullIfZero(riskScore), nullIfEmpty(riskLabel), modelName, now)
+	`, prID, nullIfEmpty(summary), nodesChanged, nullIfZero(riskScore), nullIfEmpty(riskLabel), modelName, now); err != nil {
+		log.Printf("OpenPR: failed to persist PR analysis for pr %s: %v", prID, err)
+		stats.AnalysisPersistErrors++
+	}
 
 	// Build call edges for the PR's changed files (pass full file content per file).
 	nodeByName := make(map[string]bool)
@@ -505,6 +548,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			}
 		}
 		edges := parser.ExtractCallEdgesWithResolver(content, filePath, resolverIndex)
+		stats.CallEdgesExtracted += len(edges)
 		for _, edge := range edges {
 			var callerID, calleeID string
 			db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
@@ -512,11 +556,16 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
 				repoID, headSHA, edge.CalleeFullName).Scan(&calleeID)
 			if callerID != "" && calleeID != "" && callerID != calleeID {
-				db.Exec(ctx, `
+				tag, err := db.Exec(ctx, `
 					insert into code_edges (repo_id, commit_sha, caller_id, callee_id)
 					values ($1,$2,$3,$4)
 					on conflict do nothing
 				`, repoID, headSHA, callerID, calleeID)
+				if err != nil {
+					stats.CallEdgePersistErrors++
+				} else if tag.RowsAffected() > 0 {
+					stats.CallEdgesPersisted++
+				}
 			}
 		}
 	}
@@ -524,7 +573,12 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	insertTestReferences(ctx, db, repoID, headSHA, changedFileContents, nodeByName, refNodeIDs)
 
 	// Mark ready
-	db.Exec(ctx, `update pull_requests set graph_status='ready' where id=$1`, prID)
+	var finalErr string
+	if stats.ChangedNodesDetected > 0 && stats.NodeChangesPersisted == 0 {
+		finalErr = "detected changed nodes but persisted zero pr_node_changes"
+		log.Printf("OpenPR: warning for pr %s: %s", prID, finalErr)
+	}
+	markPRProcessing(ctx, db, prID, "ready", stats, finalErr)
 	log.Printf("OpenPR: completed for pr %s (%d changed nodes)", prID, nodesChanged)
 }
 
@@ -583,7 +637,7 @@ func prSizeSkipReason(pr *github.GHPullRequest) string {
 	)
 }
 
-func markPRSkipped(ctx context.Context, db *pgxpool.Pool, prID, reason string) {
+func markPRSkipped(ctx context.Context, db *pgxpool.Pool, prID, reason string, stats prProcessingStats) {
 	now := time.Now()
 	_, _ = db.Exec(ctx, `delete from pr_node_changes where pull_request_id=$1`, prID)
 	_, _ = db.Exec(ctx, `
@@ -597,7 +651,67 @@ func markPRSkipped(ctx context.Context, db *pgxpool.Pool, prID, reason string) {
 			ai_model      = excluded.ai_model,
 			generated_at  = excluded.generated_at
 	`, prID, reason, 0, nil, nil, "pr-size-limit", now)
-	_, _ = db.Exec(ctx, `update pull_requests set graph_status='skipped' where id=$1`, prID)
+	markPRProcessing(ctx, db, prID, "skipped", stats, reason)
+}
+
+type prProcessingStats struct {
+	GitHubChangedFiles            int    `json:"github_changed_files,omitempty"`
+	GitHubAdditions               int    `json:"github_additions,omitempty"`
+	GitHubDeletions               int    `json:"github_deletions,omitempty"`
+	ChangedFiles                  int    `json:"changed_files,omitempty"`
+	SupportedChangedFiles         int    `json:"supported_changed_files,omitempty"`
+	UnsupportedChangedFiles       int    `json:"unsupported_changed_files,omitempty"`
+	HeadFilesFetched              int    `json:"head_files_fetched,omitempty"`
+	HeadFileFetchErrors           int    `json:"head_file_fetch_errors,omitempty"`
+	BaseFilesFetched              int    `json:"base_files_fetched,omitempty"`
+	BaseFileFetchErrors           int    `json:"base_file_fetch_errors,omitempty"`
+	HeadNodesParsed               int    `json:"head_nodes_parsed,omitempty"`
+	BaseNodesParsed               int    `json:"base_nodes_parsed,omitempty"`
+	HeadNodesUpserted             int    `json:"head_nodes_upserted,omitempty"`
+	HeadNodeUpsertErrors          int    `json:"head_node_upsert_errors,omitempty"`
+	ChangedNodesDetected          int    `json:"changed_nodes_detected,omitempty"`
+	TestNodesDetected             int    `json:"test_nodes_detected,omitempty"`
+	NodeChangesPersisted          int    `json:"node_changes_persisted,omitempty"`
+	NodeChangesSkippedMissingNode int    `json:"node_changes_skipped_missing_node,omitempty"`
+	NodeChangePersistErrors       int    `json:"node_change_persist_errors,omitempty"`
+	AnalysisPersistErrors         int    `json:"analysis_persist_errors,omitempty"`
+	CallEdgesExtracted            int    `json:"call_edges_extracted,omitempty"`
+	CallEdgesPersisted            int    `json:"call_edges_persisted,omitempty"`
+	CallEdgePersistErrors         int    `json:"call_edge_persist_errors,omitempty"`
+	SkipReason                    string `json:"skip_reason,omitempty"`
+}
+
+func newPRProcessingStats() prProcessingStats {
+	return prProcessingStats{}
+}
+
+func markPRProcessing(ctx context.Context, db *pgxpool.Pool, prID, graphStatus string, stats prProcessingStats, processingError string) {
+	statsJSON, err := json.Marshal(stats)
+	if err != nil {
+		log.Printf("OpenPR: failed to marshal processing stats for pr %s: %v", prID, err)
+		statsJSON = []byte(`{}`)
+	}
+	_, err = db.Exec(ctx, `
+		update pull_requests set
+			graph_status = $1,
+			processor_commit_sha = $2,
+			processed_at = now(),
+			processing_error = $3,
+			processing_stats = $4
+		where id = $5
+	`, graphStatus, currentProcessorCommitSHA(), nullIfEmpty(processingError), statsJSON, prID)
+	if err != nil {
+		log.Printf("OpenPR: failed to update processing metadata for pr %s: %v", prID, err)
+	}
+}
+
+func currentProcessorCommitSHA() string {
+	for _, key := range []string{"ISOPRISM_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "GIT_COMMIT_SHA"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return "unknown"
 }
 
 // componentDiffHunk returns the diff shown for a parsed component. Modified
