@@ -130,6 +130,10 @@
 }
 
 @layer components {
+  .panel-close-button:hover {
+    background: #CFCFCF !important;
+  }
+
   .pr-description-markdown {
     margin-bottom: 20px;
     color: #555555;

@@ -858,12 +858,13 @@ function PanelCloseButton({ onClose }: { onClose: () => void }) {
     <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
       <button
         type="button"
+        className="panel-close-button"
         aria-label="Close change panel"
         title="Close"
         onClick={onClose}
         style={{
           alignItems: "center",
-          background: "#CFCFCF",
+          background: "transparent",
           border: "none",
           borderRadius: 4,
           color: "#333333",

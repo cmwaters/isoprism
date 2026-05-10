@@ -715,7 +715,7 @@ function InnerCanvas({
             panOnScroll
             panOnScrollMode={PanOnScrollMode.Free}
             minZoom={0.15}
-            maxZoom={2}
+            maxZoom={1}
             proOptions={{ hideAttribution: true }}
           >
             <Background color="#D8D6D6" gap={20} size={1} />
