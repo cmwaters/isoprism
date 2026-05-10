@@ -1,5 +1,5 @@
 [phases.build]
-cmds = ["go build -o /app/server ./cmd/api"]
+cmds = ["CGO_ENABLED=1 go build -o /app/server ./cmd/api"]
 
 [start]
 cmd = "/app/server"

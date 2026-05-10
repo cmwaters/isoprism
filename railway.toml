@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "go build -o /app/server ./cmd/api"
+buildCommand = "CGO_ENABLED=1 go build -o /app/server ./cmd/api"
 
 [deploy]
 startCommand = "/app/server"
