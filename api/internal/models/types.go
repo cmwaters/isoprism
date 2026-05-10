@@ -143,24 +143,19 @@ type GraphNode struct {
 	Outputs       []TypeRef `json:"outputs"`
 	Language      string    `json:"language"`
 	Kind          string    `json:"kind"`
-	Granularity   string    `json:"granularity"` // function | object | package
-	NodeType      string    `json:"node_type"`   // changed | caller | callee
+	NodeType      string    `json:"node_type"` // changed | caller | callee
 	Summary       *string   `json:"summary"`
 	ChangeSummary *string   `json:"change_summary"`
 	DiffHunk      *string   `json:"diff_hunk"`
 	ChangeType    *string   `json:"change_type"` // added | modified | deleted | nil for unchanged
 	// Diff stats (only for changed nodes)
-	LinesAdded         int             `json:"lines_added"`
-	LinesRemoved       int             `json:"lines_removed"`
-	Weight             int             `json:"weight"`
-	Degree             int             `json:"degree"`
-	GraphDepth         int             `json:"graph_depth"`
-	Boundary           bool            `json:"boundary"`
-	Tests              []GraphNodeTest `json:"tests"`
-	MemberCount        int             `json:"member_count,omitempty"`
-	ChangedMemberCount int             `json:"changed_member_count,omitempty"`
-	CollapsedNodeIDs   []string        `json:"collapsed_node_ids,omitempty"`
-	Expandable         bool            `json:"expandable"`
+	LinesAdded   int             `json:"lines_added"`
+	LinesRemoved int             `json:"lines_removed"`
+	Weight       int             `json:"weight"`
+	Degree       int             `json:"degree"`
+	GraphDepth   int             `json:"graph_depth"`
+	Boundary     bool            `json:"boundary"`
+	Tests        []GraphNodeTest `json:"tests"`
 }
 
 type TypeRef struct {
@@ -194,18 +189,16 @@ type GraphEdgeSample struct {
 }
 
 type GraphResponse struct {
-	PR          GraphPR      `json:"pr"`
-	Granularity string       `json:"granularity"`
-	Nodes       []GraphNode  `json:"nodes"`
-	Edges       []GraphEdge  `json:"edges"`
-	Files       []PRFileDiff `json:"files"`
+	PR    GraphPR      `json:"pr"`
+	Nodes []GraphNode  `json:"nodes"`
+	Edges []GraphEdge  `json:"edges"`
+	Files []PRFileDiff `json:"files"`
 }
 
 type RepoGraphResponse struct {
-	Repo        Repository  `json:"repo"`
-	Granularity string      `json:"granularity"`
-	Nodes       []GraphNode `json:"nodes"`
-	Edges       []GraphEdge `json:"edges"`
+	Repo  Repository  `json:"repo"`
+	Nodes []GraphNode `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
 }
 
 type GraphPR struct {

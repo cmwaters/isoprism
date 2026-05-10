@@ -628,7 +628,6 @@ GITHUB_FEEDBACK_REPO
     "body": "...",
     "author_login": "octocat"
   },
-  "granularity": "package",
   "nodes": [
     {
       "id": "...",
@@ -641,7 +640,6 @@ GITHUB_FEEDBACK_REPO
       "outputs": [{"type": "*User"}, {"type": "error"}],
       "language": "go",
       "kind": "method",
-      "granularity": "function",
       "node_type": "changed",
       "summary": "Validates a JWT token and returns the associated user. Returns an error if the token is expired or malformed.",
       "change_summary": "Now validates token expiry against a configurable grace period instead of hard-coding 5 minutes. Adds a new error type for expired tokens.",
@@ -662,7 +660,6 @@ GITHUB_FEEDBACK_REPO
       "outputs": [],
       "language": "go",
       "kind": "function",
-      "granularity": "function",
       "node_type": "caller",
       "summary": "HTTP middleware that extracts the Bearer token from the Authorization header and calls handleAuth.",
       "change_summary": null,

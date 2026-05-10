@@ -104,11 +104,33 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	changedFiles, err := ghClient.ListPullRequestFiles(ctx, owner, repo, prNumber)
 	if err != nil {
 		log.Printf("OpenPR: PR files error, falling back to compare: %v", err)
-		changedFiles, err = ghClient.CompareCommits(ctx, owner, repo, baseCommit, headSHA)
+		compareFiles, err := ghClient.CompareCommits(ctx, owner, repo, baseCommit, headSHA)
 		if err != nil {
 			log.Printf("OpenPR: compare error: %v", err)
 			db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
 			return
+		}
+		changedFiles = make([]github.GHPullRequestFile, 0, len(compareFiles))
+		for _, file := range compareFiles {
+			var previousFilename *string
+			if file.PreviousFilename != "" {
+				value := file.PreviousFilename
+				previousFilename = &value
+			}
+			var patch *string
+			if file.Patch != "" {
+				value := file.Patch
+				patch = &value
+			}
+			changedFiles = append(changedFiles, github.GHPullRequestFile{
+				Filename:         file.Filename,
+				PreviousFilename: previousFilename,
+				Status:           file.Status,
+				Additions:        file.Additions,
+				Deletions:        file.Deletions,
+				Changes:          file.Changes,
+				Patch:            patch,
+			})
 		}
 	}
 
@@ -126,8 +148,12 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	for _, file := range changedFiles {
 		headPath := file.Filename
 		basePath := file.Filename
-		if file.PreviousFilename != "" {
-			basePath = file.PreviousFilename
+		if file.PreviousFilename != nil && *file.PreviousFilename != "" {
+			basePath = *file.PreviousFilename
+		}
+		patch := ""
+		if file.Patch != nil {
+			patch = *file.Patch
 		}
 		if !parser.IsSupportedFile(headPath) && !parser.IsSupportedFile(basePath) {
 			continue
@@ -229,7 +255,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			changed = append(changed, changedNode{
 				node:        n,
 				changeType:  changeType,
-				diffHunk:    componentDiffHunk(changeType, file.Patch, n.Body, oldStart, oldEnd, n.LineStart, n.LineEnd, oldFullName, oldFilePath),
+				diffHunk:    componentDiffHunk(changeType, patch, n.Body, oldStart, oldEnd, n.LineStart, n.LineEnd, oldFullName, oldFilePath),
 				oldFullName: oldFullName,
 				oldFilePath: oldFilePath,
 			})
@@ -258,7 +284,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 						changed = append(changed, changedNode{
 							node:       baseNode,
 							changeType: "deleted",
-							diffHunk:   componentDiffHunk("deleted", file.Patch, baseNode.Body, baseNode.LineStart, baseNode.LineEnd, 0, 0, nil, nil),
+							diffHunk:   componentDiffHunk("deleted", patch, baseNode.Body, baseNode.LineStart, baseNode.LineEnd, 0, 0, nil, nil),
 						})
 					}
 				}
