@@ -31,7 +31,7 @@ The prototype delivers exactly one flow:
 1. Beta tester opens a unique invite link containing an access token
 2. Tester signs in with GitHub and installs or authorizes the Isoprism GitHub App
 3. Tester selects exactly one repository for a one-week trial
-4. The backend indexes the repo, building a base code graph from the `main` branch HEAD
+4. The backend indexes the repo, building a base code graph from the repository default branch HEAD
 5. The tester uses Isoprism while reviewing PRs for one week, with in-product bug and feature feedback available throughout
 6. At the end of the week, the tester is asked to complete a short questionnaire
 
@@ -173,7 +173,7 @@ pull_requests
   author_avatar_url   text
   base_branch         text
   head_branch         text
-  base_commit_sha     text            -- SHA of main at time PR was opened/last rebased
+  base_commit_sha     text            -- SHA of the default branch at time PR was opened/last rebased
   head_commit_sha     text            -- current HEAD of the PR branch; updated on synchronize
   state               text            -- 'open' | 'closed' | 'merged'
   draft               boolean DEFAULT false
@@ -219,22 +219,7 @@ code_edges
   created_at       timestamptz
   UNIQUE (repo_id, commit_sha, caller_id, callee_id)
 
-Graph granularity is a query-time projection over this canonical function/type
-graph. `code_nodes` and `code_edges` remain the source of truth. The graph API
-accepts `granularity=function|object|package`:
-
-- `function` returns canonical function, method, and type nodes.
-- `object` collapses a Go type plus its receiver methods into one object node;
-  package-level functions remain function nodes.
-- `package` collapses all functions, objects, and types under a file directory
-  package path into one package node.
-
-Collapsed edges are derived from underlying function-level `code_edges`. If any
-member of package A calls any member of package B, the API returns one aggregate
-edge `A -> B` with `weight`, `changed_weight`, `underlying_edge_count`, and up to
-three `sample_edges` that preserve the concrete caller/callee evidence. Internal
-edges whose endpoints collapse into the same aggregate node are hidden from the
-canvas.
+The graph API serves this canonical function/type graph directly. `code_nodes` and `code_edges` remain the source of truth; graph responses do not expose package/object projections.
 
 -- Test references at a given commit. Test code is not inserted into
 -- code_nodes/code_edges; these rows attach test entrypoints to production nodes.
@@ -255,17 +240,20 @@ code_test_references
 -- PR delta: what changed and AI change summaries
 -- ────────────────────────────────────────────
 
--- One row per node that was added, modified, or deleted in a PR.
--- References the HEAD-commit version of the node in code_nodes.
+-- One row per semantic node that was added, modified, deleted, or renamed in a PR.
+-- Added, modified, and renamed rows reference the HEAD-commit version of the
+-- node in code_nodes. Deleted rows reference the base-commit version.
 -- node_type (changed | caller | callee) is NOT stored here; it is derived
 -- at query time by traversing code_edges from the changed set.
 pr_node_changes
   id               uuid PK
   pull_request_id  uuid FK → pull_requests
-  node_id          uuid FK → code_nodes   -- the HEAD-commit version of this node
-  change_type      text                   -- 'added' | 'modified' | 'deleted'
+  node_id          uuid FK → code_nodes
+  change_type      text                   -- 'added' | 'modified' | 'deleted' | 'renamed'
   change_summary   text                   -- AI: what changed in this node (2 sentences)
   diff_hunk        text                   -- unified diff for this node
+  old_full_name    text                   -- previous symbol name for renamed nodes
+  old_file_path    text                   -- previous file path for renamed nodes
   created_at       timestamptz
   UNIQUE (pull_request_id, node_id)
 
@@ -364,7 +352,7 @@ The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send th
 1. Looking up the set of `pr_node_changes` for the PR → these are `changed` nodes
 2. Traversing one hop of `code_edges` from that set → callers and callees
 
-**Separate base graph and PR delta.** `code_nodes` + `code_edges` are the base graph, built during `RepoInit` and kept current by `MergePR`. `pr_node_changes` is the PR-specific overlay, built during `OpenPR`.
+**Separate base graph and PR delta.** `code_nodes` + `code_edges` are the base graph, built during `RepoInit` and kept current by `MergePR`. `pr_node_changes` is the PR-specific semantic overlay, built during `OpenPR`. The PR graph endpoint also returns GitHub's changed-file list from the Pull Request Files API so the PR view keeps full file-diff parity with GitHub, including docs, config, generated files, global variable edits, and other non-node changes that do not become graph nodes.
 
 **Tests are metadata, not graph nodes.** Test code is excluded from `code_nodes` and `code_edges`. `code_test_references` records which test entrypoints exercise each production node so the UI can show tests in the node detail panel without cluttering the graph.
 
@@ -459,7 +447,7 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 9. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`).
 10. **Update PR:** Set `pull_requests.head_commit_sha = head_sha` and `graph_status = 'ready'`.
 
-When serving a graph, the API returns `full_name` as the display name and structured `inputs[]`/`outputs[]` instead of a raw signature string. Each input/output item has an optional `name`, a `type`, and, when that type exists as a visible function-level graph node, a `node_id` so the frontend can link directly to the type node. Aggregate package/object nodes return `granularity`, `package_path`, `member_count`, `changed_member_count`, `collapsed_node_ids`, and `expandable` metadata instead of code-viewable source ranges.
+When serving a graph, the API returns `full_name` as the display name and structured `inputs[]`/`outputs[]` instead of a raw signature string. Each input/output item has an optional `name`, a `type`, and, when that type exists as a visible graph node, a `node_id` so the frontend can link directly to the type node.
 
 When serving a PR graph, the API treats `file_path + full_name` as the semantic identity for visible nodes. This collapses duplicate rows for the same function across indexed-main and PR-head commits into one visual node, preferring the changed PR-head row when available. After collapsing, the API rewrites and de-duplicates edges and removes any edge whose endpoints are not in the final production-node set. Test nodes are filtered from graph responses and test coverage is returned only through each production node's `tests[]` field.
 
@@ -570,10 +558,10 @@ GET    /api/v1/repos/{repoID}                             repo detail + index_st
 POST   /api/v1/repos/{repoID}/index                       trigger RepoInit
 GET    /api/v1/repos/{repoID}/status                      {index_status, index_job, index_percent, eta_seconds, pr_count, ready_count}
 GET    /api/v1/repos/{repoID}/queue                       top 5 PRs by urgency
-GET    /api/v1/repos/{repoID}/graph                       repo graph from default branch HEAD; optional ?granularity=package|object|function, default package
+GET    /api/v1/repos/{repoID}/graph                       function-level repo graph from default branch HEAD
 GET    /api/v1/repos/{repoID}/nodes/{nodeID}/code         lazy repo node source
-GET    /api/v1/repos/{repoID}/prs/{prID}/graph            PR graph (nodes + edges + deltas); optional ?granularity=package|object|function, default package
-GET    /api/v1/repos/{repoID}/prs/number/{number}/graph   PR graph by GitHub PR number; optional ?granularity=package|object|function, default package
+GET    /api/v1/repos/{repoID}/prs/{prID}/graph            function-level PR graph (nodes + edges + deltas)
+GET    /api/v1/repos/{repoID}/prs/number/{number}/graph   function-level PR graph by GitHub PR number
 GET    /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code lazy PR node source/diff
 ```
 
@@ -719,10 +707,9 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 ### Graph Rendering
 
 React Flow (`@xyflow/react`) with a weighted hex-grid layout:
-- The API returns a bounded depth-2 neighborhood around weighted seed sets. Repo graphs default to `granularity=package` and seed from packages containing entrypoints such as `main`; PR graphs seed from changed nodes or their collapsed package/object groups.
+- The API returns a bounded depth-2 neighborhood around weighted seed sets. Repo graphs seed from entrypoint functions such as `main`; PR graphs seed from changed nodes.
 - Node `weight` is `lines_added + lines_removed + caller_count + callee_count`; high-weight seeds are prioritized near the center.
 - The API caps initial graph responses at 150 visible nodes and marks nodes as `boundary=true` when more connected context exists outside the visible set.
-- The frontend exposes a package/object/function segmented control. Package view is for repo-scale navigation, object view is for subsystem inspection, and function view is for code/diff review.
 - The client places one node per hex cell, keeps boundary nodes near the outer ring, and runs small local swaps to shorten visible edges.
 - Node `kind` drives the card colour; `node_type` drives seed placement and changed-node diff pills
 - Edges use a custom smart Bezier renderer that attaches to natural points on the raw card body, excludes diff pills from edge geometry, keeps anchors at least 20px away from corners, separates multiple anchors on the same face by at least 20px when space allows, and makes curves leave and enter perpendicular to the chosen faces

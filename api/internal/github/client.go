@@ -120,11 +120,13 @@ type GHTreeEntry struct {
 
 // GHCompareFile is a changed file in a compare response.
 type GHCompareFile struct {
-	Filename  string `json:"filename"`
-	Status    string `json:"status"` // added | modified | removed | renamed
-	Additions int    `json:"additions"`
-	Deletions int    `json:"deletions"`
-	Patch     string `json:"patch"` // unified diff
+	Filename         string `json:"filename"`
+	PreviousFilename string `json:"previous_filename,omitempty"`
+	Status           string `json:"status"` // added | modified | removed | renamed
+	Additions        int    `json:"additions"`
+	Deletions        int    `json:"deletions"`
+	Changes          int    `json:"changes"`
+	Patch            string `json:"patch"` // unified diff
 }
 
 // ── Methods ───────────────────────────────────────────────────────────────────
@@ -222,4 +224,21 @@ func (c *Client) CompareCommits(ctx context.Context, owner, repo, base, head str
 		return nil, err
 	}
 	return result.Files, nil
+}
+
+// ListPullRequestFiles returns the changed files shown on GitHub's PR Files tab.
+func (c *Client) ListPullRequestFiles(ctx context.Context, owner, repo string, number int) ([]GHCompareFile, error) {
+	var files []GHCompareFile
+	for page := 1; ; page++ {
+		var batch []GHCompareFile
+		url := fmt.Sprintf("/repos/%s/%s/pulls/%d/files?per_page=100&page=%d", owner, repo, number, page)
+		if err := c.do(ctx, "GET", url, &batch); err != nil {
+			return nil, err
+		}
+		files = append(files, batch...)
+		if len(batch) < 100 {
+			break
+		}
+	}
+	return files, nil
 }

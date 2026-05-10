@@ -101,50 +101,65 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	}
 
 	// Fetch changed files
-	changedFiles, err := ghClient.CompareCommits(ctx, owner, repo, baseCommit, headSHA)
+	changedFiles, err := ghClient.ListPullRequestFiles(ctx, owner, repo, prNumber)
 	if err != nil {
-		log.Printf("OpenPR: compare error: %v", err)
-		db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
-		return
+		log.Printf("OpenPR: PR files error, falling back to compare: %v", err)
+		changedFiles, err = ghClient.CompareCommits(ctx, owner, repo, baseCommit, headSHA)
+		if err != nil {
+			log.Printf("OpenPR: compare error: %v", err)
+			db.Exec(ctx, `update pull_requests set graph_status='failed' where id=$1`, prID)
+			return
+		}
 	}
 
 	type changedNode struct {
-		node       parser.Node
-		changeType string
-		diffHunk   string
+		node        parser.Node
+		changeType  string
+		diffHunk    string
+		oldFullName *string
+		oldFilePath *string
 	}
 
 	var changed []changedNode
 	changedFileContents := map[string][]byte{}
 
 	for _, file := range changedFiles {
-		if !parser.IsSupportedFile(file.Filename) {
+		headPath := file.Filename
+		basePath := file.Filename
+		if file.PreviousFilename != "" {
+			basePath = file.PreviousFilename
+		}
+		if !parser.IsSupportedFile(headPath) && !parser.IsSupportedFile(basePath) {
 			continue
 		}
 
-		// Fetch head version of the file
-		content, err := ghClient.GetFileContent(ctx, owner, repo, file.Filename, headSHA)
-		if err != nil {
-			log.Printf("OpenPR: fetch file %s: %v", file.Filename, err)
-			continue
+		var headNodes []parser.Node
+		if file.Status != "removed" && parser.IsSupportedFile(headPath) {
+			content, err := ghClient.GetFileContent(ctx, owner, repo, headPath, headSHA)
+			if err != nil {
+				log.Printf("OpenPR: fetch head file %s: %v", headPath, err)
+				continue
+			}
+			changedFileContents[headPath] = content
+			headNodes = parser.Parse(content, headPath)
 		}
-		changedFileContents[file.Filename] = content
-
-		headNodes := parser.Parse(content, file.Filename)
 
 		// Fetch base version for comparison (if file was modified, not added)
 		baseNodesByName := map[string]parser.Node{}
-		if file.Status == "modified" || file.Status == "renamed" {
-			baseRef := baseCommit
-			basePath := file.Filename
-			baseContent, err := ghClient.GetFileContent(ctx, owner, repo, basePath, baseRef)
+		baseNodesByHash := map[string][]parser.Node{}
+		matchedBase := map[string]bool{}
+		if file.Status == "modified" || file.Status == "renamed" || file.Status == "removed" {
+			baseContent, err := ghClient.GetFileContent(ctx, owner, repo, basePath, baseCommit)
 			if err == nil {
 				for _, n := range parser.Parse(baseContent, basePath) {
 					if n.IsTestCode {
 						continue
 					}
 					baseNodesByName[n.FullName] = n
+					baseNodesByHash[n.BodyHash] = append(baseNodesByHash[n.BodyHash], n)
 				}
+			} else {
+				log.Printf("OpenPR: fetch base file %s: %v", basePath, err)
 			}
 		}
 
@@ -163,7 +178,9 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 				on conflict (repo_id, commit_sha, full_name, file_path) do update
 					set body_hash = excluded.body_hash,
 					    inputs = excluded.inputs,
-					    outputs = excluded.outputs
+					    outputs = excluded.outputs,
+					    line_start = excluded.line_start,
+					    line_end = excluded.line_end
 				returning id
 			`, repoID, headSHA, n.FullName, n.FilePath,
 				n.LineStart, n.LineEnd, inputs, outputs, n.Language, n.Kind, n.BodyHash,
@@ -175,11 +192,34 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			changeType := "added"
 			var baseNode *parser.Node
 			if candidate, exists := baseNodesByName[n.FullName]; exists {
+				matchedBase[semanticNodeKey(candidate)] = true
 				if candidate.BodyHash == n.BodyHash {
-					continue // unchanged
+					if file.Status != "renamed" || candidate.FilePath == n.FilePath {
+						continue // unchanged
+					}
+					changeType = "renamed"
+					baseNode = &candidate
+				} else {
+					changeType = "modified"
+					baseNode = &candidate
 				}
-				changeType = "modified"
+			} else if candidate, ok := firstUnmatchedBaseNodeWithHash(baseNodesByHash[n.BodyHash], matchedBase); ok {
+				matchedBase[semanticNodeKey(candidate)] = true
+				changeType = "renamed"
 				baseNode = &candidate
+			} else if candidate, ok := firstUnmatchedOverlappingBaseNode(baseNodesByName, matchedBase, n); ok {
+				matchedBase[semanticNodeKey(candidate)] = true
+				changeType = "renamed"
+				baseNode = &candidate
+			}
+
+			var oldFullName, oldFilePath *string
+			if baseNode != nil && (baseNode.FullName != n.FullName || baseNode.FilePath != n.FilePath) {
+				oldFullName = stringPtr(baseNode.FullName)
+				oldFilePath = stringPtr(baseNode.FilePath)
+				if changeType == "modified" {
+					changeType = "renamed"
+				}
 			}
 
 			oldStart, oldEnd := 0, 0
@@ -187,15 +227,20 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 				oldStart, oldEnd = baseNode.LineStart, baseNode.LineEnd
 			}
 			changed = append(changed, changedNode{
-				node:       n,
-				changeType: changeType,
-				diffHunk:   componentDiffHunk(changeType, file.Patch, n.Body, oldStart, oldEnd, n.LineStart, n.LineEnd),
+				node:        n,
+				changeType:  changeType,
+				diffHunk:    componentDiffHunk(changeType, file.Patch, n.Body, oldStart, oldEnd, n.LineStart, n.LineEnd, oldFullName, oldFilePath),
+				oldFullName: oldFullName,
+				oldFilePath: oldFilePath,
 			})
 		}
 
 		// Detect deleted nodes (in base but not in head)
-		if file.Status == "modified" {
+		if file.Status == "modified" || file.Status == "renamed" || file.Status == "removed" {
 			for _, baseNode := range baseNodesByName {
+				if matchedBase[semanticNodeKey(baseNode)] {
+					continue
+				}
 				found := false
 				for _, n := range headNodes {
 					if n.FullName == baseNode.FullName {
@@ -213,7 +258,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 						changed = append(changed, changedNode{
 							node:       baseNode,
 							changeType: "deleted",
-							diffHunk:   componentDiffHunk("deleted", file.Patch, baseNode.Body, baseNode.LineStart, baseNode.LineEnd, 0, 0),
+							diffHunk:   componentDiffHunk("deleted", file.Patch, baseNode.Body, baseNode.LineStart, baseNode.LineEnd, 0, 0, nil, nil),
 						})
 					}
 				}
@@ -281,22 +326,19 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		diffHunk := c.diffHunk
 
 		db.Exec(ctx, `
-			insert into pr_node_changes (pull_request_id, node_id, change_type, change_summary, diff_hunk)
-			values ($1,$2,$3,$4,$5)
+			insert into pr_node_changes (pull_request_id, node_id, change_type, change_summary, diff_hunk, old_full_name, old_file_path)
+			values ($1,$2,$3,$4,$5,$6,$7)
 			on conflict (pull_request_id, node_id) do update set
 				change_type    = excluded.change_type,
 				change_summary = excluded.change_summary,
-				diff_hunk      = excluded.diff_hunk
-		`, prID, nodeID, c.changeType, summary, nullIfEmpty(diffHunk))
+				diff_hunk      = excluded.diff_hunk,
+				old_full_name  = excluded.old_full_name,
+				old_file_path  = excluded.old_file_path
+		`, prID, nodeID, c.changeType, summary, nullIfEmpty(diffHunk), c.oldFullName, c.oldFilePath)
 	}
 
 	// Persist pr_analyses
-	nodesChanged := 0
-	for _, c := range changed {
-		if c.changeType != "deleted" {
-			nodesChanged++
-		}
-	}
+	nodesChanged := len(changed)
 
 	riskScore := prOut.RiskScore
 	riskLabel := prOut.RiskLabel
@@ -444,15 +486,64 @@ func markPRSkipped(ctx context.Context, db *pgxpool.Pool, prID, reason string) {
 // deleted components synthesize a full component hunk so semantic node stats
 // count the whole new/removed component, even when Git's file diff treats moved
 // body lines as unchanged context.
-func componentDiffHunk(changeType, patch, body string, oldStart, oldEnd, newStart, newEnd int) string {
+func componentDiffHunk(changeType, patch, body string, oldStart, oldEnd, newStart, newEnd int, oldFullName, oldFilePath *string) string {
 	switch changeType {
 	case "added":
 		return prefixSourceLines(body, '+')
 	case "deleted":
 		return prefixSourceLines(body, '-')
+	case "renamed":
+		if hunk := extractComponentHunk(patch, oldStart, oldEnd, newStart, newEnd); hunk != "" {
+			return hunk
+		}
+		return renameMetadataHunk(oldFullName, oldFilePath)
 	default:
 		return extractComponentHunk(patch, oldStart, oldEnd, newStart, newEnd)
 	}
+}
+
+func renameMetadataHunk(oldFullName, oldFilePath *string) string {
+	var lines []string
+	if oldFilePath != nil && *oldFilePath != "" {
+		lines = append(lines, "rename from "+*oldFilePath)
+	}
+	if oldFullName != nil && *oldFullName != "" {
+		lines = append(lines, "rename symbol from "+*oldFullName)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func stringPtr(s string) *string {
+	return &s
+}
+
+func semanticNodeKey(n parser.Node) string {
+	return n.FullName + "|" + n.FilePath
+}
+
+func firstUnmatchedBaseNodeWithHash(nodes []parser.Node, matched map[string]bool) (parser.Node, bool) {
+	for _, n := range nodes {
+		if !matched[semanticNodeKey(n)] {
+			return n, true
+		}
+	}
+	return parser.Node{}, false
+}
+
+func firstUnmatchedOverlappingBaseNode(nodes map[string]parser.Node, matched map[string]bool, head parser.Node) (parser.Node, bool) {
+	for _, n := range nodes {
+		if matched[semanticNodeKey(n)] || n.Kind != head.Kind || n.FilePath != head.FilePath {
+			continue
+		}
+		if lineRangesOverlap(n.LineStart, n.LineEnd, head.LineStart, head.LineEnd) {
+			return n, true
+		}
+	}
+	return parser.Node{}, false
+}
+
+func lineRangesOverlap(aStart, aEnd, bStart, bEnd int) bool {
+	return aStart <= bEnd && bStart <= aEnd
 }
 
 func prefixSourceLines(source string, prefix byte) string {

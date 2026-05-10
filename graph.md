@@ -8,7 +8,7 @@ The layout is based on a weighted seed set, not a single focal node.
 
 ## Current Implementation
 
-The current implementation uses the weighted seed set, depth-2 loading, a 150-node visible budget, boundary-node marking, deterministic hex-grid placement, and query-time semantic granularity.
+The current implementation uses the weighted seed set, depth-2 loading, a 150-node visible budget, boundary-node marking, and deterministic hex-grid placement.
 
 The API includes layout metadata on each node:
 
@@ -23,33 +23,29 @@ Clustering and interactive boundary expansion are still design targets; the curr
 
 The canonical graph remains function-level. Production nodes and call edges are extracted by the API parser with tree-sitter. Call edge resolution is conservative: unresolved external calls, ambiguous names, and selector/member calls with unknown receiver types are omitted instead of guessed.
 
-The API projects that graph into:
-
-```text
-function: function/method/type cards
-object:   a type plus receiver methods, with package-level functions preserved
-package:  all production nodes under a package path
-```
-
-Aggregate edges are collapsed from underlying call edges. A package/object edge means "at least one member in the source group calls at least one member in the target group" and carries `weight`, `changed_weight`, `underlying_edge_count`, and `sample_edges` so the UI can expose the concrete calls behind the summary.
+The API serves the canonical function-level graph directly.
 
 ## Views
 
 ### Repo-Wide View
 
-Repo graphs default to package granularity. Seed nodes are packages containing entrypoints.
+Repo graph seed nodes are entrypoint functions.
 
-For Go, the first entrypoint signal is `main`; the containing package becomes the seed in package view and the containing object/function becomes the seed in lower-granularity views.
+For Go, the first entrypoint signal is `main`.
 
 Future entrypoints can include HTTP handlers, CLI commands, workers, exported APIs, and scheduled jobs.
 
 ### PR View
 
-Seed nodes are all changed nodes, or their collapsed object/package groups when the user is in a higher-level granularity.
+Seed nodes are all changed nodes.
 
 Changed nodes with larger changes and more graph connectivity appear closer to the center.
 
 Context nodes are loaded around the changed seed set.
+
+The PR summary panel uses GitHub's Pull Request Files API as the file-diff source of truth. Every changed file returned by GitHub is shown with its status, previous filename for renames, additions, deletions, and patch when GitHub provides one. This file list captures non-semantic changes such as docs, config, package metadata, global variables, and unsupported/generated files even when those changes do not produce graph nodes.
+
+Semantic graph changes are stored separately in `pr_node_changes`. Functions, methods, structs, interfaces, and type declarations can be `added`, `modified`, `deleted`, or `renamed`; renamed nodes keep `old_full_name` and `old_file_path` so the PR view can show the previous symbol/file alongside the current one.
 
 ## Node Weight
 
@@ -133,7 +129,7 @@ If the depth-2 neighborhood exceeds the visible budget:
 1. Keep all high-weight seed nodes.
 2. Keep direct neighbors of high-weight seed nodes.
 3. Cluster lower-priority nodes by file or package.
-4. Represent each cluster as a compact expandable node.
+4. Represent each cluster as a compact continuation node.
 
 Cluster labels:
 
@@ -229,7 +225,7 @@ boundary_cost =
   penalty if boundary nodes are placed too close to the center
 ```
 
-This makes expandable nodes feel like continuation points.
+This makes clustered nodes feel like continuation points.
 
 ## Hex Placement
 
