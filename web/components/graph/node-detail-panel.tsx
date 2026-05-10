@@ -1497,10 +1497,10 @@ function DiffPills({
           Renamed
         </span>
       ) : null}
-      {node.change_type !== "added" && node.change_type !== "deleted" && node.lines_added > 0 && (
+      {node.change_type !== "deleted" && node.lines_added > 0 && (
         <span style={{ ...pillBase, background: "#DCFCE7", color: "#16A34A" }}>+{node.lines_added}</span>
       )}
-      {node.change_type !== "added" && node.change_type !== "deleted" && node.lines_removed > 0 && (
+      {node.change_type !== "deleted" && node.lines_removed > 0 && (
         <span style={{ ...pillBase, background: "#FEE2E2", color: "#EF4444" }}>-{node.lines_removed}</span>
       )}
     </span>
