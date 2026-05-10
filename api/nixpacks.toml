@@ -2,7 +2,7 @@
 nixPkgs = ["...", "gcc"]
 
 [phases.build]
-cmds = ["CGO_ENABLED=1 go build -o /app/server ./cmd/api"]
+cmds = ["CGO_ENABLED=1 go build -ldflags '-linkmode external -extldflags \"-static\"' -o /app/server ./cmd/api"]
 
 [start]
 cmd = "/app/server"
