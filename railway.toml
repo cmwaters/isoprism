@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "CGO_ENABLED=1 go build -ldflags '-linkmode external -extldflags \"-static\"' -o /app/server ./cmd/api"
+buildCommand = "CGO_ENABLED=1 go build -o /app/server ./cmd/api"
 
 [deploy]
 startCommand = "/app/server"

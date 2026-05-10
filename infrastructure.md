@@ -92,12 +92,12 @@ railway run env | grep DATABASE
 
 ### Build config (`railway.toml`)
 
-The API parser uses tree-sitter grammar bindings, so builds require CGO and a C compiler. Keep the build command prefixed with `CGO_ENABLED=1`, keep `gcc` in `api/nixpacks.toml`, keep static linker flags in the Railway build command, and do not force `CGO_ENABLED=0` for API builds.
+The API parser uses tree-sitter grammar bindings, so builds require CGO and a C compiler. Keep the build command prefixed with `CGO_ENABLED=1`, keep `build-essential` in `api/nixpacks.toml`, and do not force `CGO_ENABLED=0` for API builds.
 
 ```toml
 [build]
 builder = "NIXPACKS"
-buildCommand = "CGO_ENABLED=1 go build -ldflags '-linkmode external -extldflags \"-static\"' -o /app/server ./cmd/api"
+buildCommand = "CGO_ENABLED=1 go build -o /app/server ./cmd/api"
 
 [deploy]
 startCommand = "/app/server"
