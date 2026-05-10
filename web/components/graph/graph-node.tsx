@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 import { GraphNode, GraphNodeTypeRef } from "@/lib/types";
 import { cardColorByKind } from "./graph-canvas";
+import { symbolContextLabel, symbolTitle } from "./symbol-format";
 
 const CARD_PADDING = 10;
 
@@ -28,19 +29,6 @@ function Divider({ color }: { color: string }) {
       margin: `6px -${CARD_PADDING}px`,
     }} />
   );
-}
-
-function inferPackageLabel(node: GraphNode): string {
-  const parts = node.file_path.split("/");
-  // Use directory name as package; fall back to filename stem for root-level files
-  const pkg = parts.length >= 2
-    ? parts[parts.length - 2]
-    : parts[0].replace(/\.[^.]+$/, "");
-  if (node.kind === "method" || node.full_name.includes(".")) {
-    const prefix = node.full_name.split(".").slice(0, -1).join(".");
-    return pkg ? `${pkg}.${prefix}` : prefix;
-  }
-  return pkg;
 }
 
 function DiffPills({ node }: { node: GraphNode }) {
@@ -80,7 +68,7 @@ function GraphNodeComponent({ data, selected }: Props) {
   const { node, onSelectType } = data;
   const bg = selected ? "#F5F5F5" : cardColorByKind(node.kind);
   const dividerColor = darken(bg);
-  const pkgLabel = inferPackageLabel(node);
+  const pkgLabel = symbolContextLabel(node);
   const inputs = node.inputs ?? [];
   const outputs = node.outputs ?? [];
   const hasIO = inputs.length > 0 || outputs.length > 0;
@@ -117,7 +105,7 @@ function GraphNodeComponent({ data, selected }: Props) {
           marginBottom: hasIO ? 6 : 0,
           wordBreak: "break-word",
         }}>
-          {node.full_name}
+          {symbolTitle(node)}
         </div>
 
         {hasIO && <Divider color={dividerColor} />}

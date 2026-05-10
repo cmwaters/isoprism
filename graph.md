@@ -53,6 +53,8 @@ The PR summary panel uses GitHub's Pull Request Files API as the file-diff sourc
 
 Semantic graph changes are stored separately in `pr_node_changes`. Functions, methods, structs, interfaces, and type declarations can be `added`, `modified`, `deleted`, or `renamed`; renamed nodes keep `old_full_name` and `old_file_path` so the PR view can show the previous symbol/file alongside the current one.
 
+The UI renders symbol names as context plus title: package and receiver/type context appears in the pink metadata label, while the black title shows only the function or method name. For example, `rpc/grpc:coregrpc.BlockAPI.Stop` renders as `grpc.BlockAPI` above `Stop`.
+
 Changed test functions are also stored in `pr_node_changes`, but the PR graph endpoint returns them in `test_changes[]` instead of rendering them as graph nodes. Test changes use the same labels and component diff fields as graph changes.
 
 After the PR description, the PR overview is grouped into:

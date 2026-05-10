@@ -84,7 +84,7 @@ The repo route renders one persistent `GraphCanvas` and side panel:
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
-- Node cards with package/type labels, full names, structured inputs/outputs, and added/removed/deleted pills.
+- Node cards with package/type labels, function or method titles, structured inputs/outputs, and added/removed/deleted pills.
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
 
 During beta, the PR queue only includes open, non-draft PRs targeting the repository's indexed default branch whose `base_commit_sha` exactly matches the repository's indexed `main_commit_sha`. PRs from other base branches, or PRs whose base SHA is out of sync with the indexed default-branch graph, are hidden rather than shown with approximate graph data.
@@ -95,7 +95,7 @@ Large PRs can skip per-function AI summaries so the graph and changed-node overl
 
 Each PR stores the latest processing snapshot on `pull_requests`: `processor_commit_sha`, `processed_at`, `processing_error`, and `processing_stats`. The stats JSON records file counts, supported-file counts, parsed node counts, detected semantic changes, persisted `pr_node_changes`, and call-edge persistence counters so empty PR views can be debugged without guessing which deployed API revision processed them.
 
-Graph responses are function-level. Nodes use `full_name` as the display label and expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records.
+Graph responses are function-level. The API returns canonical `full_name` values, but the UI splits them into a pink package/receiver label and a black title that contains only the function or method name. Nodes expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records.
 
 PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail.
 

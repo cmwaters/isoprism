@@ -7,6 +7,7 @@ import { ArrowLeft, BookOpenText, Code2, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { renamedFromTitle, symbolContextLabel, symbolTitle } from "./symbol-format";
 
 export type SelectedPRChange =
   | { type: "node"; nodeID: string }
@@ -487,15 +488,18 @@ function ChangeSection({
 }
 
 function NodeChangeRow({ node, onClick }: { node: GraphNode; onClick: () => void }) {
-  const displayName = node.change_type === "renamed" && node.old_full_name
-    ? `${node.old_full_name} -> ${node.full_name}`
-    : node.full_name;
+  const contextLabel = symbolContextLabel(node);
 
   return (
     <button type="button" onClick={onClick} style={changeRowButtonStyle}>
       <span style={{ minWidth: 0, flex: 1 }}>
-        <span style={{ color: "#222222", display: "block", fontSize: 13, lineHeight: 1.35, overflowWrap: "anywhere" }}>
-          {displayName}
+        {contextLabel && (
+          <span style={{ color: "#EF5DA8", display: "block", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, lineHeight: 1.35, overflowWrap: "anywhere" }}>
+            {contextLabel}
+          </span>
+        )}
+        <span style={{ color: "#222222", display: "block", fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>
+          {symbolTitle(node)}
         </span>
         <span style={{ color: "#888888", display: "block", fontSize: 11, marginTop: 2, overflowWrap: "anywhere" }}>
           {node.file_path}:{node.line_start}
@@ -710,12 +714,12 @@ function NodeChangeDetailPanel({
       )}
 
       <h2 style={{ fontSize: 22, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
-        {node.full_name}
+        {symbolTitle(node)}
       </h2>
 
       {node.change_type === "renamed" && (node.old_full_name || node.old_file_path) && (
         <div style={{ background: "#F5F5F5", border: "1px solid #D4D4D4", borderRadius: 6, color: "#555555", fontSize: 12, lineHeight: 1.5, marginBottom: 14, padding: 10 }}>
-          {node.old_full_name && <div>Renamed from {node.old_full_name}</div>}
+          {node.old_full_name && <div>Renamed from {renamedFromTitle(node)}</div>}
           {node.old_file_path && node.old_file_path !== node.file_path && <div>{`${node.old_file_path} -> ${node.file_path}`}</div>}
         </div>
       )}
@@ -961,12 +965,12 @@ function NodeDetail({
 
       {/* Function name */}
       <h2 style={{ fontSize: 22, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
-        {node.full_name}
+        {symbolTitle(node)}
       </h2>
 
       {node.change_type === "renamed" && (node.old_full_name || node.old_file_path) && (
         <div style={{ background: "#F5F5F5", border: "1px solid #D4D4D4", borderRadius: 6, color: "#555555", fontSize: 12, lineHeight: 1.5, marginBottom: 14, padding: 10 }}>
-          {node.old_full_name && <div>Renamed from {node.old_full_name}</div>}
+          {node.old_full_name && <div>Renamed from {renamedFromTitle(node)}</div>}
           {node.old_file_path && node.old_file_path !== node.file_path && <div>{`${node.old_file_path} -> ${node.file_path}`}</div>}
         </div>
       )}
@@ -1127,7 +1131,7 @@ function CodePanel({
         </p>
       )}
       <h2 style={{ fontSize: 20, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
-        {node.full_name}
+        {symbolTitle(node)}
       </h2>
 
       {loading && (
@@ -1515,8 +1519,8 @@ function RelationSection({
                 L{lineNumbers?.[n.id] ?? n.line_start}
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>
-                {pkg && <span style={{ fontSize: 11, color: "#EF5DA8" }}>{pkg}.</span>}
-                <span style={{ fontSize: 13, color: "#222222" }}>{n.full_name}</span>
+                {pkg && <span style={{ fontSize: 11, color: "#EF5DA8", display: "block" }}>{pkg}</span>}
+                <span style={{ fontSize: 13, color: "#222222" }}>{symbolTitle(n)}</span>
               </div>
               <DiffPills node={n} compact />
             </button>
@@ -1556,20 +1560,11 @@ function TestSection({ tests }: { tests: GraphNode["tests"] }) {
 }
 
 function pkgLabel(node: GraphNode): string {
-  const parts = node.file_path.split("/");
-  const pkg = parts.length >= 2
-    ? parts[parts.length - 2]
-    : parts[0].replace(/\.[^.]+$/, "");
-  if (node.kind === "method" || node.full_name.includes(".")) {
-    const prefix = node.full_name.split(".").slice(0, -1).join(".");
-    return pkg ? `${pkg}.${prefix}` : prefix;
-  }
-  return pkg;
+  return symbolContextLabel(node);
 }
 
 function functionDisplayName(node: GraphNode): string {
-  const parts = node.full_name.split(".");
-  return parts[parts.length - 1] || node.full_name;
+  return symbolTitle(node);
 }
 
 function calleesOf(nodeID: string, edges: GraphEdge[]): string[] {
