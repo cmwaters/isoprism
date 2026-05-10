@@ -784,7 +784,7 @@ React Flow (`@xyflow/react`) with a weighted hex-grid layout:
 | Postgres + Auth | Supabase | Managed; free tier sufficient |
 | GitHub App | GitHub | Single production app; webhook URL → `https://api.isoprism.com/webhooks/github` |
 
-Frontend-only development happens on `preview` with the web app running at `http://localhost:3000` and `NEXT_PUBLIC_API_URL=https://api.isoprism.com`. API changes are production changes and are made on `main` so Railway deploys them before frontend work depends on them.
+Frontend and API development happens on `main` for now. Local web runs at `http://localhost:3000` with `NEXT_PUBLIC_API_URL=https://api.isoprism.com`; pushes to `main` deploy the web app through Vercel and API changes through Railway. Keep `preview` only as a synced mirror of `main` while any external tooling still expects it.
 
 The GitHub App install flow uses one production app. The web app encodes the current frontend origin in the GitHub install `state`, and the API redirects back to that origin only when it is listed in `FRONTEND_URLS`. Keep Railway configured with `FRONTEND_URL=https://isoprism.com` and `FRONTEND_URLS=https://isoprism.com,http://localhost:3000`.
 

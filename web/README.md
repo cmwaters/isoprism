@@ -13,7 +13,7 @@ The web app runs on [http://localhost:3000](http://localhost:3000). It talks to 
 
 Local frontend development uses the single production GitHub App and the deployed API. GitHub App installs started from localhost redirect back to localhost through the encoded install `state`, as long as the Railway API includes `http://localhost:3000` in `FRONTEND_URLS`.
 
-If an API change is required, make that change on `main`, deploy it to Railway, then continue frontend iteration on `preview`.
+Use `main` for frontend and API changes for now. Push verified changes to `main`; Vercel deploys the web app and Railway deploys API changes.
 
 Useful checks:
 

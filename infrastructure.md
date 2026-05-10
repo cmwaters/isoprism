@@ -9,7 +9,7 @@
 | Database | Supabase  | `Isoprism` (ref: `ixgwhpigkkxpmllzlulc`) |
 | GitHub App | GitHub | Single production app used by local web, API, and production web |
 
-The API and GitHub App are production-only. Frontend iteration happens locally on `preview` while pointing at the deployed Railway API.
+The API and GitHub App are production-only. Development happens on `main` for now; local web runs against the deployed Railway API.
 
 ---
 
@@ -21,7 +21,7 @@ The API and GitHub App are production-only. Frontend iteration happens locally o
 **Root directory** (set in Vercel dashboard): `web/`
 
 ### Deploy workflow
-Pushes to `main` on GitHub auto-deploy to production via the Vercel GitHub integration. Develop frontend changes locally on `preview`; merge `preview` into `main` only when the UI is ready to ship.
+Pushes to `main` on GitHub auto-deploy to production via the Vercel GitHub integration. Keep `preview` only as a synced mirror of `main` while any external tooling still expects it.
 
 ### CLI
 
