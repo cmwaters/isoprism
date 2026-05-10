@@ -24,7 +24,7 @@ import { apiFetch } from "@/lib/api";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import { SettingsView } from "@/app/[owner]/settings/page";
 import GraphNodeComponent from "./graph-node";
-import NodeDetailPanel from "./node-detail-panel";
+import NodeDetailPanel, { ComponentChangePanel, type SelectedPRChange } from "./node-detail-panel";
 
 export const nodeTypes = { graphNode: GraphNodeComponent };
 export const edgeTypes = { smartBezier: SmartBezierEdge };
@@ -435,6 +435,7 @@ function InnerCanvas({
   const [prGraphCache, setPRGraphCache] = useState<Record<number, GraphResponse>>({});
   const [loadingPRNumber, setLoadingPRNumber] = useState<number | null>(null);
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
+  const [selectedPRChange, setSelectedPRChange] = useState<SelectedPRChange | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("overview");
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
@@ -443,7 +444,10 @@ function InnerCanvas({
   const selectGraphNode = useCallback((id: string) => {
     const apiNode = activeGraph.nodes.find((n) => n.id === id) ?? null;
     setSelectedNode(apiNode);
-  }, [activeGraph.nodes]);
+    if (isPRGraph(activeGraph) && apiNode) {
+      setSelectedPRChange({ type: "node", nodeID: apiNode.id });
+    }
+  }, [activeGraph]);
 
   const initialNodes: Node[] = useMemo(() => activeGraph.nodes.map((n) => ({
     id: n.id,
@@ -490,6 +494,7 @@ function InnerCanvas({
   useEffect(() => {
     setNodes(hexGridLayout(initialNodes, baseEdges, activeGraph.nodes));
     setSelectedNode(null);
+    setSelectedPRChange(null);
     setPanelMode("overview");
     setTimeout(() => fitView({ padding: 0.15 }), 50);
   }, [activeGraph, baseEdges, fitView, initialNodes, setNodes]);
@@ -503,6 +508,7 @@ function InnerCanvas({
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
+    setSelectedPRChange(null);
     setPanelMode("overview");
   }, []);
 
@@ -516,6 +522,7 @@ function InnerCanvas({
 
   const onSelectPR = useCallback(async (prNumber: number) => {
     setSettingsOpen(false);
+    setSelectedPRChange(null);
     const cached = prGraphCache[prNumber];
     if (cached) {
       setActiveGraph(cached);
@@ -534,6 +541,7 @@ function InnerCanvas({
 
   const onBackToRepo = useCallback(() => {
     setSettingsOpen(false);
+    setSelectedPRChange(null);
     setActiveGraph(graph);
   }, [graph]);
 
@@ -542,20 +550,32 @@ function InnerCanvas({
   const activeRepo = repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo);
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
   const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
+  const activePRTestChanges = isPRGraph(activeGraph) ? activeGraph.test_changes ?? [] : [];
+  const detailNodes = isPRGraph(activeGraph)
+    ? [...activeGraph.nodes, ...activePRTestChanges]
+    : activeGraph.nodes;
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", position: "relative" }}>
       <NodeDetailPanel
-        node={selectedNode}
+        node={activePR ? null : selectedNode}
         allNodes={activeGraph.nodes}
         edges={activeGraph.edges}
         onSelectNode={(id) => {
           selectGraphNode(id);
         }}
+        onSelectPRChange={(change) => {
+          setSelectedPRChange(change);
+          if (change.type === "node") {
+            setSelectedNode(detailNodes.find((node) => node.id === change.nodeID) ?? null);
+          }
+          setPanelMode("overview");
+        }}
         repoID={repoID}
         repo={activeRepo}
         pr={activePR}
         prFiles={activePRFiles}
+        testChanges={activePRTestChanges}
         prs={prs}
         loadingPRNumber={loadingPRNumber}
         onSelectPR={onSelectPR}
@@ -575,9 +595,35 @@ function InnerCanvas({
         onOpenSettings={() => {
           setSettingsOpen(true);
           setSelectedNode(null);
+          setSelectedPRChange(null);
           setPanelMode("overview");
         }}
       />
+
+      {activePR && selectedPRChange && !settingsOpen && (
+        <ComponentChangePanel
+          selectedChange={selectedPRChange}
+          allNodes={detailNodes}
+          edges={activeGraph.edges}
+          files={activePRFiles}
+          repoID={repoID}
+          prID={activePR.id}
+          token={token}
+          nodeCodeCache={nodeCodeCache}
+          onCacheNodeCode={onCacheNodeCode}
+          onSelectNode={(id) => {
+            selectGraphNode(id);
+            setSelectedPRChange({ type: "node", nodeID: id });
+          }}
+          onClose={() => {
+            setSelectedPRChange(null);
+            setSelectedNode(null);
+            setPanelMode("overview");
+          }}
+          mode={panelMode}
+          onModeChange={setPanelMode}
+        />
+      )}
 
       <div style={{ flex: 1, background: "#EBE9E9", position: "relative" }}>
         {settingsOpen ? (

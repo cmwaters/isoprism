@@ -48,6 +48,15 @@ type graphNodeRecord struct {
 	commitSHA string
 }
 
+type rawPRNodeChange struct {
+	nodeID        string
+	changeType    string
+	changeSummary *string
+	diffHunk      *string
+	oldFullName   *string
+	oldFilePath   *string
+}
+
 func isTestGraphNode(node models.GraphNode) bool {
 	normalized := strings.ReplaceAll(strings.ToLower(node.FilePath), "\\", "/")
 	base := normalized
@@ -645,14 +654,9 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load changed nodes from pr_node_changes
-	type rawChange struct {
-		nodeID        string
-		changeType    string
-		changeSummary *string
-		diffHunk      *string
-	}
 	changedRows, err := h.DB.Query(ctx, `
-		select pnc.node_id, pnc.change_type, pnc.change_summary, pnc.diff_hunk
+		select pnc.node_id, pnc.change_type, pnc.change_summary, pnc.diff_hunk,
+		       pnc.old_full_name, pnc.old_file_path
 		from pr_node_changes pnc
 		where pnc.pull_request_id = $1
 	`, prID)
@@ -663,25 +667,27 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	defer changedRows.Close()
 
-	changedSet := map[string]rawChange{}
+	changedSet := map[string]rawPRNodeChange{}
 	var changedIDs []string
 	for changedRows.Next() {
-		var c rawChange
-		if err := changedRows.Scan(&c.nodeID, &c.changeType, &c.changeSummary, &c.diffHunk); err != nil {
+		var c rawPRNodeChange
+		if err := changedRows.Scan(&c.nodeID, &c.changeType, &c.changeSummary, &c.diffHunk, &c.oldFullName, &c.oldFilePath); err != nil {
 			continue
 		}
 		changedSet[c.nodeID] = c
 		changedIDs = append(changedIDs, c.nodeID)
 	}
 	changedRows.Close()
+	testChanges := h.loadPRTestChanges(ctx, changedIDs, changedSet)
 
 	if len(changedIDs) == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(models.GraphResponse{
-			PR:    pr,
-			Nodes: []models.GraphNode{},
-			Edges: []models.GraphEdge{},
-			Files: files,
+			PR:          pr,
+			Nodes:       []models.GraphNode{},
+			Edges:       []models.GraphEdge{},
+			Files:       files,
+			TestChanges: testChanges,
 		})
 		return
 	}
@@ -916,6 +922,8 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		n.DiffHunk = c.diffHunk
 		ct := c.changeType
 		n.ChangeType = &ct
+		n.OldFullName = c.oldFullName
+		n.OldFilePath = c.oldFilePath
 		if c.diffHunk != nil {
 			added, removed := countDiffLines(*c.diffHunk)
 			n.LinesAdded = added
@@ -1027,10 +1035,11 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.GraphResponse{
-		PR:    pr,
-		Nodes: nodes,
-		Edges: edges,
-		Files: files,
+		PR:          pr,
+		Nodes:       nodes,
+		Edges:       edges,
+		Files:       files,
+		TestChanges: testChanges,
 	})
 }
 
@@ -1064,6 +1073,62 @@ func (h *GraphHandler) loadPRFileDiffs(ctx context.Context, fullName string, ins
 		})
 	}
 	return out, nil
+}
+
+func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []string, changedSet map[string]rawPRNodeChange) []models.GraphNode {
+	if len(changedIDs) == 0 {
+		return []models.GraphNode{}
+	}
+
+	rows, err := h.DB.Query(ctx, `
+		select id, full_name, file_path, line_start, line_end,
+		       inputs, outputs, language, kind, coalesce(summary,'')
+		from code_nodes
+		where id = any($1::uuid[])
+	`, changedIDs)
+	if err != nil {
+		log.Printf("GetGraph: test change node query: %v", err)
+		return []models.GraphNode{}
+	}
+	defer rows.Close()
+
+	testChanges := []models.GraphNode{}
+	for rows.Next() {
+		var n models.GraphNode
+		var inputsRaw, outputsRaw []byte
+		var summary string
+		if err := rows.Scan(
+			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &summary,
+		); err != nil {
+			continue
+		}
+		n.Inputs = decodeTypeRefs(inputsRaw)
+		n.Outputs = decodeTypeRefs(outputsRaw)
+		if !isTestGraphNode(n) {
+			continue
+		}
+		if summary != "" {
+			n.Summary = &summary
+		}
+		n.NodeType = "changed"
+		n.PackagePath = packagePathForNode(n)
+		if c, ok := changedSet[n.ID]; ok {
+			ct := c.changeType
+			n.ChangeType = &ct
+			n.ChangeSummary = c.changeSummary
+			n.DiffHunk = c.diffHunk
+			n.OldFullName = c.oldFullName
+			n.OldFilePath = c.oldFilePath
+			if c.diffHunk != nil {
+				n.LinesAdded, n.LinesRemoved = countDiffLines(*c.diffHunk)
+			}
+		}
+		n.Tests = []models.GraphNodeTest{}
+		testChanges = append(testChanges, n)
+	}
+	sortGraphNodes(testChanges)
+	return testChanges
 }
 
 func countDiffLines(patch string) (added, removed int) {

@@ -43,9 +43,20 @@ Changed nodes with larger changes and more graph connectivity appear closer to t
 
 Context nodes are loaded around the changed seed set.
 
-The PR summary panel uses GitHub's Pull Request Files API as the file-diff source of truth. Every changed file returned by GitHub is shown with its status, previous filename for renames, additions, deletions, and patch when GitHub provides one. This file list captures non-semantic changes such as docs, config, package metadata, global variables, and unsupported/generated files even when those changes do not produce graph nodes.
+The PR summary panel uses GitHub's Pull Request Files API as the file-diff source of truth. Every changed file returned by GitHub is available with its status, previous filename for renames, additions, deletions, and patch when GitHub provides one. This file list captures non-semantic changes such as docs, config, package metadata, global variables, and unsupported/generated files even when those changes do not produce graph nodes.
 
 Semantic graph changes are stored separately in `pr_node_changes`. Functions, methods, structs, interfaces, and type declarations can be `added`, `modified`, `deleted`, or `renamed`; renamed nodes keep `old_full_name` and `old_file_path` so the PR view can show the previous symbol/file alongside the current one.
+
+Changed test functions are also stored in `pr_node_changes`, but the PR graph endpoint returns them in `test_changes[]` instead of rendering them as graph nodes. Test changes use the same labels and component diff fields as graph changes.
+
+After the PR description, the PR overview is grouped into:
+
+1. **Graph changes**: all changed production components shown in the graph.
+2. **Test changes**: all changed test functions returned by `test_changes[]`.
+3. **Documentation changes**: Markdown file diffs from the GitHub file list.
+4. **Other changes**: remaining file diffs not captured by graph, tests, or documentation.
+
+Clicking any row opens a middle detail panel between the PR overview and the graph. Graph/test rows open the component overview and diff/code view; documentation/other rows open the file-level patch.
 
 ## Node Weight
 

@@ -137,6 +137,7 @@ export interface GraphResponse {
   nodes: GraphNode[];
   edges: GraphEdge[];
   files: PRFileDiff[];
+  test_changes: GraphNode[];
 }
 
 export interface RepoGraphResponse {

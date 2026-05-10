@@ -148,6 +148,8 @@ type GraphNode struct {
 	ChangeSummary *string   `json:"change_summary"`
 	DiffHunk      *string   `json:"diff_hunk"`
 	ChangeType    *string   `json:"change_type"` // added | modified | deleted | nil for unchanged
+	OldFullName   *string   `json:"old_full_name,omitempty"`
+	OldFilePath   *string   `json:"old_file_path,omitempty"`
 	// Diff stats (only for changed nodes)
 	LinesAdded   int             `json:"lines_added"`
 	LinesRemoved int             `json:"lines_removed"`
@@ -189,10 +191,11 @@ type GraphEdgeSample struct {
 }
 
 type GraphResponse struct {
-	PR    GraphPR      `json:"pr"`
-	Nodes []GraphNode  `json:"nodes"`
-	Edges []GraphEdge  `json:"edges"`
-	Files []PRFileDiff `json:"files"`
+	PR          GraphPR      `json:"pr"`
+	Nodes       []GraphNode  `json:"nodes"`
+	Edges       []GraphEdge  `json:"edges"`
+	Files       []PRFileDiff `json:"files"`
+	TestChanges []GraphNode  `json:"test_changes"`
 }
 
 type RepoGraphResponse struct {

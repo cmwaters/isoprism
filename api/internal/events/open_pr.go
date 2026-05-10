@@ -140,6 +140,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		diffHunk    string
 		oldFullName *string
 		oldFilePath *string
+		isTest      bool
 	}
 
 	var changed []changedNode
@@ -178,9 +179,6 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			baseContent, err := ghClient.GetFileContent(ctx, owner, repo, basePath, baseCommit)
 			if err == nil {
 				for _, n := range parser.Parse(baseContent, basePath) {
-					if n.IsTestCode {
-						continue
-					}
 					baseNodesByName[n.FullName] = n
 					baseNodesByHash[n.BodyHash] = append(baseNodesByHash[n.BodyHash], n)
 				}
@@ -190,9 +188,6 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		}
 
 		for _, n := range headNodes {
-			if n.IsTestCode {
-				continue
-			}
 			// Insert head node (or update if body changed)
 			var nodeID string
 			inputs, _ := json.Marshal(n.Inputs)
@@ -258,6 +253,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 				diffHunk:    componentDiffHunk(changeType, patch, n.Body, oldStart, oldEnd, n.LineStart, n.LineEnd, oldFullName, oldFilePath),
 				oldFullName: oldFullName,
 				oldFilePath: oldFilePath,
+				isTest:      n.IsTestCode,
 			})
 		}
 
@@ -280,11 +276,30 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 					db.QueryRow(ctx, `
 						select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3 and file_path=$4
 					`, repoID, baseCommit, baseNode.FullName, baseNode.FilePath).Scan(&nodeID)
+					if nodeID == "" && baseNode.IsTestCode {
+						inputs, _ := json.Marshal(baseNode.Inputs)
+						outputs, _ := json.Marshal(baseNode.Outputs)
+						db.QueryRow(ctx, `
+							insert into code_nodes (repo_id, commit_sha, full_name, file_path,
+								line_start, line_end, inputs, outputs, language, kind, body_hash)
+							values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+							on conflict (repo_id, commit_sha, full_name, file_path) do update
+								set body_hash = excluded.body_hash,
+								    inputs = excluded.inputs,
+								    outputs = excluded.outputs,
+								    line_start = excluded.line_start,
+								    line_end = excluded.line_end
+							returning id
+						`, repoID, baseCommit, baseNode.FullName, baseNode.FilePath,
+							baseNode.LineStart, baseNode.LineEnd, inputs, outputs, baseNode.Language, baseNode.Kind, baseNode.BodyHash,
+						).Scan(&nodeID)
+					}
 					if nodeID != "" {
 						changed = append(changed, changedNode{
 							node:       baseNode,
 							changeType: "deleted",
 							diffHunk:   componentDiffHunk("deleted", patch, baseNode.Body, baseNode.LineStart, baseNode.LineEnd, 0, 0, nil, nil),
+							isTest:     baseNode.IsTestCode,
 						})
 					}
 				}
@@ -297,7 +312,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	// Generate AI change summaries
 	var aiInputs []ai.NodeInput
 	for _, c := range changed {
-		if c.changeType != "deleted" {
+		if !c.isTest && c.changeType != "deleted" {
 			aiInputs = append(aiInputs, ai.NodeInput{
 				FullName: c.node.FullName,
 				Body:     c.node.Body,
@@ -364,7 +379,12 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	}
 
 	// Persist pr_analyses
-	nodesChanged := len(changed)
+	nodesChanged := 0
+	for _, c := range changed {
+		if !c.isTest {
+			nodesChanged++
+		}
+	}
 
 	riskScore := prOut.RiskScore
 	riskLabel := prOut.RiskLabel
@@ -387,7 +407,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	// Build call edges for the PR's changed files (pass full file content per file).
 	nodeByName := make(map[string]bool)
 	for _, c := range changed {
-		if c.changeType != "deleted" {
+		if !c.isTest && c.changeType != "deleted" {
 			nodeByName[c.node.FullName] = true
 		}
 	}

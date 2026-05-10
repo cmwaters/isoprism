@@ -354,7 +354,7 @@ The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send th
 
 **Separate base graph and PR delta.** `code_nodes` + `code_edges` are the base graph, built during `RepoInit` and kept current by `MergePR`. `pr_node_changes` is the PR-specific semantic overlay, built during `OpenPR`. The PR graph endpoint also returns GitHub's changed-file list from the Pull Request Files API so the PR view keeps full file-diff parity with GitHub, including docs, config, generated files, global variable edits, and other non-node changes that do not become graph nodes.
 
-**Tests are metadata, not graph nodes.** Test code is excluded from `code_nodes` and `code_edges`. `code_test_references` records which test entrypoints exercise each production node so the UI can show tests in the node detail panel without cluttering the graph.
+**Tests are metadata and PR components, not graph nodes.** Default-branch test code is excluded from the base graph and from `code_edges`. `code_test_references` records which test entrypoints exercise each production node so the UI can show tests in the node detail panel without cluttering the graph. PR processing also persists changed test functions in `pr_node_changes`; the PR graph endpoint returns them in `test_changes[]` so the PR view can show test-function labels and diffs separately from graph changes.
 
 ---
 
@@ -742,7 +742,7 @@ React Flow (`@xyflow/react`) with a weighted hex-grid layout:
 - The client places one node per hex cell, keeps boundary nodes near the outer ring, and runs small local swaps to shorten visible edges.
 - Node `kind` drives the card colour; `node_type` drives seed placement and changed-node diff pills
 - Edges use a custom smart Bezier renderer that attaches to natural points on the raw card body, excludes diff pills from edge geometry, keeps anchors at least 20px away from corners, separates multiple anchors on the same face by at least 20px when space allows, and makes curves leave and enter perpendicular to the chosen faces
-- `onNodeClick` updates `selectedNodeId` state; `NodeDetailPanel` reads from it, and its back control clears the selection to return to the PR summary
+- In PR view, `NodeDetailPanel` keeps the PR overview visible and clicking a graph/test/file change opens a middle `ComponentChangePanel` between the overview and the graph. Graph/test rows show component overview plus diff/code mode; documentation and other rows show the GitHub file patch.
 
 ### Data Fetching
 
@@ -750,6 +750,7 @@ React Flow (`@xyflow/react`) with a weighted hex-grid layout:
 - **Repo/PR Graph page**: The GitHub-shaped repo URL resolves to the internal repo ID, fetches the repo graph and PR queue, and passes them to the shared client-side `GraphCanvas`. Clicking a PR fetches `/prs/number/{number}/graph` in place and caches it for quick switching while the browser URL remains `/{owner}/{repo}`.
 - **Lazy code loading**: The side panel fetches repo source from `/nodes/{nodeID}/code` or PR source/diff data from `/prs/{prID}/nodes/{nodeID}/code` only when the user opens code mode, then caches each node response in the mounted graph view.
 - **PR description markdown**: `NodeDetailPanel` renders `GraphPR.body` with `react-markdown` and `remark-gfm`; HTML is not enabled, and links open in a new tab.
+- **PR change buckets**: After the rendered PR description, the PR overview groups rows into Graph changes, Test changes, Documentation changes, and Other changes. Graph/test rows come from component metadata (`nodes[]` and `test_changes[]`); documentation/other rows come from GitHub `files[]`.
 - **Indexing status**: Client Component polls `GET /repos/{repoID}/status` every 2 seconds until `index_status = 'ready'`.
 
 ---
