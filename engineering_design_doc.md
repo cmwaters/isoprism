@@ -476,6 +476,7 @@ The current parser supports Go, TypeScript, TSX, JavaScript, and JSX through tre
 
 - `parser.Parse(content []byte, filePath string) []Node`
 - `parser.ExtractCallEdges(content []byte, filePath string, nodeSet map[string]bool) []CallEdge`
+- `parser.ExtractCallEdgesWithResolver(content []byte, filePath string, resolverIndex ResolverIndex) []CallEdge`
 - `parser.ExtractTestReferences(content []byte, filePath string, nodeSet map[string]bool) []TestReference`
 
 | Language | Parser | Extracted production nodes | Test code handling |
@@ -489,6 +490,8 @@ Rust and Python are not currently indexed.
 **Symbol identity:** Go full names include directory and package context (`path/to/package:package.Symbol`, or `path/to/package:package.Receiver.Method`) so repeated package-level names like `New` do not collide across packages. TypeScript/JavaScript full names include module path context (`path/to/module.Symbol`).
 
 **Call graph extraction:** After extracting production node boundaries, function bodies are walked for calls and resolved against the full production node set for the same commit. Resolution is intentionally conservative: unresolvable names, stdlib/external package calls, ambiguous suffix matches, and selector/member calls whose receiver type is unknown are discarded. Go selector calls are never resolved by selector name alone; for example `sha256.New()` does not link to an internal `client.New` node.
+
+**Resolver index:** Repo and PR indexing build a `ResolverIndex` from full source files before inserting call edges. The shared resolver index stores known node names plus language-specific semantic facts. The Go adapter currently records struct field types, receiver bindings, parameter types, simple local variable declarations, import aliases, and repository-relative import suffixes. This lets the call graph resolve safe receiver and field-chain calls such as `blockAPI.env.EventBus.Unsubscribe(...)` to `types.EventBus.Unsubscribe` when every hop has one known type. Ambiguous or missing field/type hops still produce no edge.
 
 **Test reference extraction:** Test files are parsed separately from the production graph. Test functions/cases never become `code_nodes`; instead, each test entrypoint that reaches a production node writes a `code_test_references` row. The graph API attaches those rows to each returned production node so the detail panel can show callers, callees, and tests without rendering tests as graph nodes.
 

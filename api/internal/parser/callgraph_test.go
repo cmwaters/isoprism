@@ -81,6 +81,133 @@ type User struct{}
 	}
 }
 
+func TestGoFieldChainResolvesThroughImportedStructFields(t *testing.T) {
+	files := map[string][]byte{
+		"rpc/grpc/api.go": []byte(`package coregrpc
+
+import (
+	"context"
+	core "github.com/cometbft/cometbft/rpc/core"
+)
+
+type BlockAPI struct {
+	env *core.Environment
+}
+
+func (blockAPI *BlockAPI) Stop(ctx context.Context) error {
+	return blockAPI.env.EventBus.Unsubscribe(ctx, "sub", "query")
+}
+`),
+		"rpc/core/env.go": []byte(`package core
+
+import eventstypes "github.com/cometbft/cometbft/types"
+
+type Environment struct {
+	EventBus *eventstypes.EventBus
+}
+`),
+		"types/event_bus.go": []byte(`package types
+
+import "context"
+
+type EventBus struct{}
+
+func (b *EventBus) Unsubscribe(ctx context.Context, subscriber string, query string) error {
+	return nil
+}
+`),
+	}
+	nodeByName := nodesByName(files)
+	index := BuildResolverIndex(files, nodeByName)
+	edges := ExtractCallEdgesWithResolver(files["rpc/grpc/api.go"], "rpc/grpc/api.go", index)
+
+	if !hasEdge(edges, "rpc/grpc:coregrpc.BlockAPI.Stop", "types:types.EventBus.Unsubscribe") {
+		t.Fatalf("expected field-chain edge, got %#v", edges)
+	}
+}
+
+func TestGoReceiverCallResolvesFromParameterType(t *testing.T) {
+	files := map[string][]byte{
+		"service/service.go": []byte(`package service
+
+type Client struct{}
+
+func (c *Client) Save() {}
+
+func Run(client *Client) {
+	client.Save()
+}
+`),
+	}
+	nodeByName := nodesByName(files)
+	index := BuildResolverIndex(files, nodeByName)
+	edges := ExtractCallEdgesWithResolver(files["service/service.go"], "service/service.go", index)
+
+	if !hasEdge(edges, "service:service.Run", "service:service.Client.Save") {
+		t.Fatalf("expected parameter receiver edge, got %#v", edges)
+	}
+}
+
+func TestGoFieldChainDoesNotResolveAmbiguousImportedType(t *testing.T) {
+	files := map[string][]byte{
+		"app/app.go": []byte(`package app
+
+import "example.com/project/shared"
+
+type Service struct {
+	store *shared.Store
+}
+
+func (s *Service) Run() {
+	s.store.Save()
+}
+`),
+		"shared/store.go": []byte(`package shared
+
+type Store struct{}
+`),
+		"other/shared/store.go": []byte(`package shared
+
+type Store struct{}
+
+func (s *Store) Save() {}
+`),
+	}
+	nodeByName := nodesByName(files)
+	index := BuildResolverIndex(files, nodeByName)
+	edges := ExtractCallEdgesWithResolver(files["app/app.go"], "app/app.go", index)
+
+	if hasEdge(edges, "app:app.Service.Run", "other/shared:shared.Store.Save") {
+		t.Fatalf("ambiguous imported type resolved to unrelated Store.Save: %#v", edges)
+	}
+}
+
+func TestGoFieldChainRequiresKnownFieldType(t *testing.T) {
+	files := map[string][]byte{
+		"service/service.go": []byte(`package service
+
+type Service struct {
+	client any
+}
+
+func (s *Service) Run() {
+	s.client.Save()
+}
+`),
+		"service/client.go": []byte(`package service
+
+func Save() {}
+`),
+	}
+	nodeByName := nodesByName(files)
+	index := BuildResolverIndex(files, nodeByName)
+	edges := ExtractCallEdgesWithResolver(files["service/service.go"], "service/service.go", index)
+
+	if hasEdge(edges, "service:service.Service.Run", "service:service.Save") {
+		t.Fatalf("unknown field type resolved by method name only: %#v", edges)
+	}
+}
+
 func TestScriptFunctionExtractionAndCallEdges(t *testing.T) {
 	src := []byte(`export function saveUser(user: User) {
   return normalizeUser(user);
@@ -157,4 +284,14 @@ func hasEdge(edges []CallEdge, caller, callee string) bool {
 		}
 	}
 	return false
+}
+
+func nodesByName(files map[string][]byte) map[string]bool {
+	out := map[string]bool{}
+	for filePath, src := range files {
+		for _, node := range Parse(src, filePath) {
+			out[node.FullName] = true
+		}
+	}
+	return out
 }

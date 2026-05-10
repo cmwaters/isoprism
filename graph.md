@@ -43,6 +43,8 @@ Changed nodes with larger changes and more graph connectivity appear closer to t
 
 Context nodes are loaded around the changed seed set.
 
+Call edges are built from a conservative resolver index. Tree-sitter identifies call expressions and declarations, then the resolver adds safe semantic facts such as Go receiver types, parameter types, struct field types, and import aliases. It will resolve field-chain calls like `blockAPI.env.EventBus.Unsubscribe(...)` only when every field hop maps to exactly one known type and the final method exists as a graph node. Ambiguous receiver types, unknown fields, external packages, and selector-name-only matches are intentionally skipped rather than drawn as misleading edges.
+
 The PR summary panel uses GitHub's Pull Request Files API as the file-diff source of truth. Every changed file returned by GitHub is available with its status, previous filename for renames, additions, deletions, and patch when GitHub provides one. This file list captures non-semantic changes such as docs, config, package metadata, global variables, and unsupported/generated files even when those changes do not produce graph nodes.
 
 Semantic graph changes are stored separately in `pr_node_changes`. Functions, methods, structs, interfaces, and type declarations can be `added`, `modified`, `deleted`, or `renamed`; renamed nodes keep `old_full_name` and `old_file_path` so the PR view can show the previous symbol/file alongside the current one.

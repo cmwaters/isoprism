@@ -26,6 +26,13 @@ type TestReference struct {
 // ExtractCallEdges finds call relationships within source for the given parsed
 // node set. nodeByName maps full_name -> true so we can filter to known symbols.
 func ExtractCallEdges(src []byte, filePath string, nodeByName map[string]bool) []CallEdge {
+	return ExtractCallEdgesWithResolver(src, filePath, BuildResolverIndex(map[string][]byte{filePath: src}, nodeByName))
+}
+
+// ExtractCallEdgesWithResolver finds call relationships using a prebuilt
+// resolver index. Prefer this for repository/PR indexing so cross-file type
+// facts are available during field-chain resolution.
+func ExtractCallEdgesWithResolver(src []byte, filePath string, index ResolverIndex) []CallEdge {
 	pf, ok := parseTree(src, filePath)
 	if !ok {
 		return nil
@@ -34,9 +41,9 @@ func ExtractCallEdges(src []byte, filePath string, nodeByName map[string]bool) [
 
 	switch languageFor(filePath) {
 	case "go":
-		return extractGoCallEdges(src, filePath, pf.root, nodeByName)
+		return extractGoCallEdges(src, filePath, pf.root, index)
 	case "typescript", "javascript":
-		return extractScriptCallEdges(src, filePath, pf.root, nodeByName)
+		return extractScriptCallEdges(src, filePath, pf.root, index.NodeByName)
 	default:
 		return nil
 	}
@@ -60,7 +67,7 @@ func ExtractTestReferences(src []byte, filePath string, nodeByName map[string]bo
 	}
 }
 
-func extractGoCallEdges(src []byte, filePath string, root *sitter.Node, nodeByName map[string]bool) []CallEdge {
+func extractGoCallEdges(src []byte, filePath string, root *sitter.Node, index ResolverIndex) []CallEdge {
 	pkg := goPackageName(src, root)
 	prefix := goPackagePrefix(filePath, pkg)
 	imports := goImports(src, root)
@@ -75,12 +82,13 @@ func extractGoCallEdges(src []byte, filePath string, root *sitter.Node, nodeByNa
 		if body == nil {
 			continue
 		}
+		scope := buildGoScope(src, fn, prefix, imports, index)
 		seen := map[string]bool{}
 		walk(body, func(n *sitter.Node) bool {
 			if n.Kind() != "call_expression" {
 				return true
 			}
-			callee := resolveGoCall(src, n.ChildByFieldName("function"), prefix, imports, nodeByName)
+			callee := resolveGoCall(src, n.ChildByFieldName("function"), prefix, imports, index.NodeByName, index, scope)
 			if callee != "" && callee != caller && !seen[callee] {
 				seen[callee] = true
 				edges = append(edges, CallEdge{CallerFullName: caller, CalleeFullName: callee})
@@ -121,7 +129,7 @@ func extractGoTestReferences(src []byte, filePath string, root *sitter.Node, nod
 				return true
 			}
 			fun := n.ChildByFieldName("function")
-			if callee := resolveGoCall(src, fun, prefix, imports, nodeByName); callee != "" {
+			if callee := resolveGoCall(src, fun, prefix, imports, nodeByName, ResolverIndex{NodeByName: nodeByName}, nil); callee != "" {
 				productionCalls[name][callee] = true
 				return true
 			}
@@ -200,7 +208,7 @@ func goDirectCallName(src []byte, fun *sitter.Node) string {
 	return ""
 }
 
-func resolveGoCall(src []byte, fun *sitter.Node, prefix string, imports map[string]string, nodeByName map[string]bool) string {
+func resolveGoCall(src []byte, fun *sitter.Node, prefix string, imports map[string]string, nodeByName map[string]bool, index ResolverIndex, scope goScope) string {
 	if fun == nil {
 		return ""
 	}
@@ -212,6 +220,9 @@ func resolveGoCall(src []byte, fun *sitter.Node, prefix string, imports map[stri
 		}
 		return known(name, nodeByName)
 	case "selector_expression":
+		if callee := resolveGoFieldChainCall(src, fun, index, scope); callee != "" {
+			return callee
+		}
 		root := selectorRoot(src, fun)
 		sel := selectorName(src, fun)
 		if root == "" || sel == "" {
@@ -235,14 +246,17 @@ func resolveImportedGoSelector(importPath, selector string, nodeByName map[strin
 	cleanPath := strings.Trim(importPath, `"`)
 	dir := filepath.ToSlash(cleanPath)
 	pkg := filepath.Base(dir)
-	suffix := dir + ":" + pkg + "." + selector
+	suffixes := repoRelativeImportSuffix(dir, selector)
+	suffixes = append(suffixes, dir+":"+pkg+"."+selector)
 	var match string
 	for name := range nodeByName {
-		if strings.HasSuffix(name, suffix) {
-			if match != "" && match != name {
-				return ""
+		for _, suffix := range suffixes {
+			if strings.HasSuffix(name, suffix) {
+				if match != "" && match != name {
+					return ""
+				}
+				match = name
 			}
-			match = name
 		}
 	}
 	return match

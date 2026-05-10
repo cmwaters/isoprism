@@ -176,12 +176,13 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	for _, n := range allNodes {
 		nodeByName[n.FullName] = true
 	}
+	resolverIndex := parser.BuildResolverIndex(fileContents, nodeByName)
 
 	edgeFilesTotal := len(fileContents)
 	edgeFilesDone := 0
 	updateIndexJobProgress(ctx, db, repoID, headSHA, "building_edges", "Building call graph edges", len(sourceFiles), len(sourceFiles), len(allNodes), len(allNodes), edgeFilesTotal, 0)
 	for filePath, content := range fileContents {
-		edges := parser.ExtractCallEdges(content, filePath, nodeByName)
+		edges := parser.ExtractCallEdgesWithResolver(content, filePath, resolverIndex)
 		for _, edge := range edges {
 			callerID, ok := nodeIDs[edge.CallerFullName]
 			if !ok {

@@ -446,13 +446,65 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			fileToNodes[c.node.FilePath] = true
 		}
 	}
+
+	resolverFileContents := make(map[string][]byte, len(changedFileContents)+len(fileToNodes))
+	for path, content := range changedFileContents {
+		resolverFileContents[path] = content
+	}
+	importDirSuffixes := map[string]bool{}
 	for filePath := range fileToNodes {
-		content, err := ghClient.GetFileContent(ctx, owner, repo, filePath, headSHA)
-		if err != nil {
-			log.Printf("OpenPR: edge extraction fetch %s: %v", filePath, err)
-			continue
+		content, ok := resolverFileContents[filePath]
+		if !ok {
+			var err error
+			content, err = ghClient.GetFileContent(ctx, owner, repo, filePath, headSHA)
+			if err != nil {
+				log.Printf("OpenPR: edge extraction fetch %s: %v", filePath, err)
+				continue
+			}
+			resolverFileContents[filePath] = content
 		}
-		edges := parser.ExtractCallEdges(content, filePath, nodeByName)
+		for suffix := range parser.GoImportDirSuffixes(content, filePath) {
+			importDirSuffixes[suffix] = true
+		}
+	}
+	if len(importDirSuffixes) > 0 {
+		typeRows, _ := db.Query(ctx, `
+			select distinct file_path
+			from code_nodes
+			where repo_id=$1
+			  and commit_sha in ($2, $3)
+			  and language='go'
+			  and kind in ('struct', 'interface', 'type')
+		`, repoID, headSHA, baseCommit)
+		if typeRows != nil {
+			for typeRows.Next() {
+				var typeFilePath string
+				typeRows.Scan(&typeFilePath)
+				if _, exists := resolverFileContents[typeFilePath]; exists || !matchesImportDirSuffix(typeFilePath, importDirSuffixes) {
+					continue
+				}
+				content, err := ghClient.GetFileContent(ctx, owner, repo, typeFilePath, headSHA)
+				if err != nil {
+					continue
+				}
+				resolverFileContents[typeFilePath] = content
+			}
+			typeRows.Close()
+		}
+	}
+	resolverIndex := parser.BuildResolverIndex(resolverFileContents, nodeByName)
+
+	for filePath := range fileToNodes {
+		content, ok := resolverFileContents[filePath]
+		if !ok {
+			var err error
+			content, err = ghClient.GetFileContent(ctx, owner, repo, filePath, headSHA)
+			if err != nil {
+				log.Printf("OpenPR: edge extraction fetch %s: %v", filePath, err)
+				continue
+			}
+		}
+		edges := parser.ExtractCallEdgesWithResolver(content, filePath, resolverIndex)
 		for _, edge := range edges {
 			var callerID, calleeID string
 			db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
@@ -488,6 +540,27 @@ func nullIfZero(n int) interface{} {
 		return nil
 	}
 	return n
+}
+
+func matchesImportDirSuffix(filePath string, suffixes map[string]bool) bool {
+	dir := strings.Trim(filepathToSlashDir(filePath), "/")
+	for suffix := range suffixes {
+		suffix = strings.Trim(suffix, "/")
+		if suffix == "" {
+			continue
+		}
+		if dir == suffix || strings.HasSuffix(dir, "/"+suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func filepathToSlashDir(filePath string) string {
+	if idx := strings.LastIndex(filePath, "/"); idx >= 0 {
+		return filePath[:idx]
+	}
+	return ""
 }
 
 func shouldSkipPRForSize(pr *github.GHPullRequest) bool {
