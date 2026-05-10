@@ -56,7 +56,7 @@ After the PR description, the PR overview is grouped into:
 3. **Documentation changes**: Markdown file diffs from the GitHub file list.
 4. **Other changes**: remaining file diffs not captured by graph, tests, or documentation.
 
-Clicking any row opens a middle detail panel between the PR overview and the graph. Graph/test rows open the component overview and diff/code view; documentation/other rows open the file-level patch.
+Clicking any row opens a resizable middle detail panel between the PR overview and the graph. Graph/test rows show the component overview first and the diff/code view below it; documentation/other rows open the file-level patch. Opening or resizing the panel refits the graph into the remaining canvas.
 
 ## Node Weight
 

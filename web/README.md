@@ -153,7 +153,7 @@ The PR overview groups changes into four sections after the rendered description
 - **Documentation changes**: Markdown files from `files[]`.
 - **Other changes**: remaining file diffs not captured by the graph, tests, or docs.
 
-Clicking a graph/test row opens a middle component panel between the PR overview and the graph. The panel shows the component overview and can switch into the component diff/code view. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
+Clicking a graph/test row opens a resizable middle component panel between the PR overview and the graph. The panel shows the component overview first and the diff/code view below it, and opening or resizing it refits the graph. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
 
 ## API contract used by the code panel
 

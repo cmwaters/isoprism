@@ -3,7 +3,7 @@
 import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, PRFileDiff, QueuePR, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import type { PanelMode } from "./graph-canvas";
-import { ArrowLeft, BookOpenText, Code2, Settings } from "lucide-react";
+import { ArrowLeft, BookOpenText, Code2, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -390,7 +390,6 @@ function PRSummaryPanel({
       <ChangeSection
         title="Graph changes"
         emptyText="No graph function changes."
-        description="Functions represented in the graph."
       >
         {changedNodes.map((node) => (
           <NodeChangeRow
@@ -407,7 +406,6 @@ function PRSummaryPanel({
       <ChangeSection
         title="Test changes"
         emptyText="No test function changes."
-        description="Changed test functions kept separate from the graph."
       >
         {testChanges.map((node) => (
           <NodeChangeRow
@@ -421,7 +419,6 @@ function PRSummaryPanel({
       <ChangeSection
         title="Documentation changes"
         emptyText="No documentation changes."
-        description="Markdown file changes."
       >
         {documentationFiles.map((file) => (
           <FileChangeRow
@@ -432,19 +429,20 @@ function PRSummaryPanel({
         ))}
       </ChangeSection>
 
-      <ChangeSection
-        title="Other changes"
-        emptyText="No other changes."
-        description="Files not captured by graph, tests, or documentation."
-      >
-        {otherFiles.map((file) => (
-          <FileChangeRow
-            key={fileKey(file)}
-            file={file}
-            onClick={() => onSelectPRChange?.({ type: "file", fileKey: fileKey(file) })}
-          />
-        ))}
-      </ChangeSection>
+      {otherFiles.length > 0 && (
+        <ChangeSection
+          title="Other changes"
+          emptyText="No other changes."
+        >
+          {otherFiles.map((file) => (
+            <FileChangeRow
+              key={fileKey(file)}
+              file={file}
+              onClick={() => onSelectPRChange?.({ type: "file", fileKey: fileKey(file) })}
+            />
+          ))}
+        </ChangeSection>
+      )}
 
       {/* View on GitHub */}
       <a
@@ -461,12 +459,10 @@ function PRSummaryPanel({
 
 function ChangeSection({
   title,
-  description,
   emptyText,
   children,
 }: {
   title: string;
-  description: string;
   emptyText: string;
   children: ReactNode;
 }) {
@@ -477,9 +473,6 @@ function ChangeSection({
       <div style={{ marginBottom: 8 }}>
         <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>
           {title}
-        </p>
-        <p style={{ color: "#777777", fontSize: 12, lineHeight: 1.4, margin: "3px 0 0" }}>
-          {description}
         </p>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -514,7 +507,10 @@ function NodeChangeRow({ node, onClick }: { node: GraphNode; onClick: () => void
 }
 
 function FileChangeRow({ file, onClick }: { file: PRFileDiff; onClick: () => void }) {
-  const fileLabel = file.previous_filename
+  const fileName = file.previous_filename
+    ? `${basename(file.previous_filename)} -> ${basename(file.filename)}`
+    : basename(file.filename);
+  const filePath = file.previous_filename
     ? `${file.previous_filename} -> ${file.filename}`
     : file.filename;
 
@@ -522,15 +518,19 @@ function FileChangeRow({ file, onClick }: { file: PRFileDiff; onClick: () => voi
     <button type="button" onClick={onClick} style={changeRowButtonStyle}>
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{ color: "#222222", display: "block", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, lineHeight: 1.4, overflowWrap: "anywhere" }}>
-          {fileLabel}
+          {fileName}
         </span>
-        <span style={{ color: "#888888", display: "block", fontSize: 11, marginTop: 2 }}>
-          {file.filename.split("/").pop() ?? file.filename}
+        <span style={{ color: "#888888", display: "block", fontSize: 11, marginTop: 2, overflowWrap: "anywhere" }}>
+          {filePath}
         </span>
       </span>
       <FileDiffPills file={file} />
     </button>
   );
+}
+
+function basename(path: string): string {
+  return path.split("/").pop() || path;
 }
 
 export function ComponentChangePanel({
@@ -545,8 +545,10 @@ export function ComponentChangePanel({
   onCacheNodeCode,
   onSelectNode,
   onClose,
-  mode,
-  onModeChange,
+  width,
+  minWidth,
+  maxWidth,
+  onResize,
 }: {
   selectedChange: SelectedPRChange;
   allNodes: GraphNode[];
@@ -559,10 +561,28 @@ export function ComponentChangePanel({
   onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
   onSelectNode: (id: string) => void;
   onClose: () => void;
-  mode: PanelMode;
-  onModeChange: (mode: PanelMode) => void;
+  width: number;
+  minWidth: number;
+  maxWidth: number;
+  onResize: (width: number) => void;
 }) {
-  const width = 380;
+  const startResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      onResize(Math.max(minWidth, Math.min(maxWidth, startWidth + moveEvent.clientX - startX)));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [maxWidth, minWidth, onResize, width]);
+
   const node = selectedChange.type === "node"
     ? allNodes.find((candidate) => candidate.id === selectedChange.nodeID) ?? null
     : null;
@@ -577,49 +597,231 @@ export function ComponentChangePanel({
         borderRight: "1px solid #D4D4D4",
         height: "100vh",
         overflowY: "auto",
+        position: "relative",
         width,
         flex: `0 0 ${width}px`,
       }}
     >
       {node ? (
-        mode === "code" ? (
-          <CodePanel
-            node={node}
-            repoID={repoID}
-            prID={prID}
-            token={token}
-            cachedCode={nodeCodeCache[node.id]}
-            onCacheNodeCode={onCacheNodeCode}
-            onBackToOverview={() => onModeChange("overview")}
-            onBackToPR={onClose}
-          />
-        ) : (
-          <NodeDetail
-            node={node}
-            allNodes={allNodes}
-            edges={edges}
-            onSelectNode={onSelectNode}
-            onBackToOverview={onClose}
-            mode={mode}
-            onModeChange={onModeChange}
-            onViewCode={() => onModeChange("code")}
-            repoID={repoID}
-            prID={prID}
-            token={token}
-            nodeCodeCache={nodeCodeCache}
-            onCacheNodeCode={onCacheNodeCode}
-          />
-        )
+        <NodeChangeDetailPanel
+          node={node}
+          allNodes={allNodes}
+          edges={edges}
+          onSelectNode={onSelectNode}
+          repoID={repoID}
+          prID={prID}
+          token={token}
+          cachedCode={nodeCodeCache[node.id]}
+          onCacheNodeCode={onCacheNodeCode}
+          onClose={onClose}
+        />
       ) : file ? (
         <FileDiffPanel file={file} onClose={onClose} />
       ) : (
         <div style={{ padding: 20 }}>
-          <PanelToolbar backOnClick={onClose} />
+          <PanelCloseButton onClose={onClose} />
           <p style={{ color: "#777777", fontSize: 13 }}>Change not found.</p>
         </div>
       )}
+      <div
+        aria-hidden="true"
+        onPointerDown={startResize}
+        style={{
+          cursor: "col-resize",
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          right: -4,
+          width: 8,
+          zIndex: 30,
+        }}
+      />
     </div>
   );
+}
+
+function NodeChangeDetailPanel({
+  node,
+  allNodes,
+  edges,
+  onSelectNode,
+  repoID,
+  prID,
+  token,
+  cachedCode,
+  onCacheNodeCode,
+  onClose,
+}: {
+  node: GraphNode;
+  allNodes: GraphNode[];
+  edges: GraphEdge[];
+  onSelectNode: (id: string) => void;
+  repoID: string;
+  prID?: string;
+  token: string;
+  cachedCode?: NodeCodeResponse;
+  onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
+  onClose: () => void;
+}) {
+  const [error, setError] = useState<{ nodeID: string; message: string } | null>(null);
+  const pkgPrefix = pkgLabel(node);
+
+  useEffect(() => {
+    if (cachedCode?.node_id === node.id) return;
+
+    let cancelled = false;
+
+    const path = prID
+      ? `/api/v1/repos/${repoID}/prs/${prID}/nodes/${node.id}/code`
+      : `/api/v1/repos/${repoID}/nodes/${node.id}/code`;
+
+    apiFetch<NodeCodeResponse>(path, token)
+      .then((response) => {
+        if (!cancelled) onCacheNodeCode(node.id, response);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError({ nodeID: node.id, message: err.message });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedCode?.node_id, node.id, onCacheNodeCode, prID, repoID, token]);
+
+  const codeForNode = cachedCode?.node_id === node.id ? cachedCode : null;
+  const errorForNode = error?.nodeID === node.id ? error.message : null;
+  const loading = !codeForNode && !errorForNode;
+  const sourceSegment = codeForNode?.head ?? codeForNode?.base;
+  const calleeIDs = calleesOf(node.id, edges);
+  const callSiteLines = buildCallSiteLines(sourceSegment, calleeIDs, allNodes);
+
+  return (
+    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+      <PanelCloseButton onClose={onClose} />
+
+      <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
+        {node.file_path}
+      </p>
+
+      {pkgPrefix && (
+        <p style={{ fontSize: 11, color: "#EF5DA8", marginBottom: 4, fontWeight: 500 }}>
+          {pkgPrefix}
+        </p>
+      )}
+
+      <h2 style={{ fontSize: 22, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
+        {node.full_name}
+      </h2>
+
+      {node.change_type === "renamed" && (node.old_full_name || node.old_file_path) && (
+        <div style={{ background: "#F5F5F5", border: "1px solid #D4D4D4", borderRadius: 6, color: "#555555", fontSize: 12, lineHeight: 1.5, marginBottom: 14, padding: 10 }}>
+          {node.old_full_name && <div>Renamed from {node.old_full_name}</div>}
+          {node.old_file_path && node.old_file_path !== node.file_path && <div>{`${node.old_file_path} -> ${node.file_path}`}</div>}
+        </div>
+      )}
+
+      {node.summary && (
+        <p style={{ fontSize: 14, color: "#555555", lineHeight: 1.6, marginBottom: node.change_summary ? 16 : 20 }}>
+          {node.summary}
+        </p>
+      )}
+
+      {node.change_summary && (
+        <div style={{
+          background: "#F0FFF4",
+          borderLeft: "3px solid #BBF7D0",
+          borderRadius: 8,
+          padding: 12,
+          marginBottom: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: "#166534", margin: 0 }}>What&apos;s Changed?</p>
+            {node.lines_added > 0 && (
+              <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: 12, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
+                +{node.lines_added}
+              </span>
+            )}
+            {node.lines_removed > 0 && (
+              <span style={{ background: "#FEE2E2", color: "#EF4444", borderRadius: 12, padding: "1px 7px", fontSize: 11, fontWeight: 500 }}>
+                -{node.lines_removed}
+              </span>
+            )}
+          </div>
+          <p style={{ fontSize: 13, color: "#333333", lineHeight: 1.6, margin: 0 }}>{node.change_summary}</p>
+        </div>
+      )}
+
+      <RelationSection
+        label="Calls"
+        nodeIDs={calleeIDs}
+        allNodes={allNodes}
+        onSelectNode={onSelectNode}
+        lineNumbers={callSiteLines}
+      />
+
+      <RelationSection
+        label="Is Called By"
+        nodeIDs={callersOf(node.id, edges)}
+        allNodes={allNodes}
+        onSelectNode={onSelectNode}
+      />
+
+      <TestSection tests={node.tests ?? []} />
+
+      <div style={{ marginTop: 6 }}>
+        <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>
+          Diff
+        </p>
+        <ComponentCodeBlock node={node} codeForNode={codeForNode} error={errorForNode} loading={loading} />
+      </div>
+    </div>
+  );
+}
+
+function ComponentCodeBlock({
+  node,
+  codeForNode,
+  error,
+  loading,
+}: {
+  node: GraphNode;
+  codeForNode: NodeCodeResponse | null;
+  error: string | null;
+  loading: boolean;
+}) {
+  const canShowDiff = Boolean(node.diff_hunk || codeForNode?.diff_hunk);
+  const plainSegment = codeForNode?.head ?? codeForNode?.base;
+  const shouldShowDiff = Boolean(node.change_type && canShowDiff);
+
+  if (loading) {
+    return <p style={{ color: "#777777", fontSize: 13, margin: 0 }}>Loading diff…</p>;
+  }
+
+  if (error) {
+    return (
+      <div style={{ background: "#FEE2E2", borderRadius: 6, color: "#991B1B", fontSize: 12, lineHeight: 1.5, padding: 10 }}>
+        {error}
+      </div>
+    );
+  }
+
+  if (shouldShowDiff && codeForNode && (codeForNode.base || codeForNode.head)) {
+    return <FullComponentDiffViewer base={codeForNode.base} head={codeForNode.head} />;
+  }
+
+  if (shouldShowDiff && (!codeForNode || (!codeForNode.base && !codeForNode.head))) {
+    return <UnifiedDiffViewer patch={codeForNode?.diff_hunk ?? node.diff_hunk ?? ""} />;
+  }
+
+  if (!shouldShowDiff && plainSegment) {
+    return <SourceViewer segment={plainSegment} />;
+  }
+
+  if (!shouldShowDiff && codeForNode?.diff_hunk) {
+    return <UnifiedDiffViewer patch={codeForNode.diff_hunk} />;
+  }
+
+  return <div style={{ color: "#666666", fontSize: 12 }}>Diff unavailable</div>;
 }
 
 function FileDiffPanel({ file, onClose }: { file: PRFileDiff; onClose: () => void }) {
@@ -629,7 +831,7 @@ function FileDiffPanel({ file, onClose }: { file: PRFileDiff; onClose: () => voi
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <PanelToolbar backOnClick={onClose} />
+      <PanelCloseButton onClose={onClose} />
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
         {file.filename}
       </p>
@@ -647,6 +849,34 @@ function FileDiffPanel({ file, onClose }: { file: PRFileDiff; onClose: () => voi
           Diff unavailable
         </div>
       )}
+    </div>
+  );
+}
+
+function PanelCloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+      <button
+        type="button"
+        aria-label="Close change panel"
+        title="Close"
+        onClick={onClose}
+        style={{
+          alignItems: "center",
+          background: "#CFCFCF",
+          border: "none",
+          borderRadius: 4,
+          color: "#333333",
+          cursor: "pointer",
+          display: "inline-flex",
+          height: 28,
+          justifyContent: "center",
+          padding: 0,
+          width: 28,
+        }}
+      >
+        <X size={16} strokeWidth={2} />
+      </button>
     </div>
   );
 }

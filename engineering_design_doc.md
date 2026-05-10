@@ -742,7 +742,7 @@ React Flow (`@xyflow/react`) with a weighted hex-grid layout:
 - The client places one node per hex cell, keeps boundary nodes near the outer ring, and runs small local swaps to shorten visible edges.
 - Node `kind` drives the card colour; `node_type` drives seed placement and changed-node diff pills
 - Edges use a custom smart Bezier renderer that attaches to natural points on the raw card body, excludes diff pills from edge geometry, keeps anchors at least 20px away from corners, separates multiple anchors on the same face by at least 20px when space allows, and makes curves leave and enter perpendicular to the chosen faces
-- In PR view, `NodeDetailPanel` keeps the PR overview visible and clicking a graph/test/file change opens a middle `ComponentChangePanel` between the overview and the graph. Graph/test rows show component overview plus diff/code mode; documentation and other rows show the GitHub file patch.
+- In PR view, `NodeDetailPanel` keeps the PR overview visible and clicking a graph/test/file change opens a resizable middle `ComponentChangePanel` between the overview and the graph. Graph/test rows show the component overview followed by the diff/code view in one scroll; documentation and other rows show the GitHub file patch. Opening or resizing the panel refits the graph into the remaining canvas.
 
 ### Data Fetching
 
