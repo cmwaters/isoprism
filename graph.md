@@ -27,9 +27,13 @@ The API serves the canonical function-level graph directly.
 
 ## Views
 
-### Repo-Wide View
+### Repo View
 
-Repo graph seed nodes are entrypoint functions.
+The repo page does not load the repo-wide graph by default. It opens with the PR queue and an empty graph canvas so large repositories do not pay the base-graph query/render cost before the user chooses a PR.
+
+The repo graph API still supports repo-wide graph responses for future exploration surfaces.
+
+Repo-wide graph seed nodes are entrypoint functions.
 
 For Go, the first entrypoint signal is `main`.
 

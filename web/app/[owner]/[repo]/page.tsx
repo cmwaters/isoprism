@@ -24,7 +24,6 @@ export default async function CanonicalRepoPage({ params }: Props) {
   if (!repo) redirect("/");
 
   let queue: QueueResponse = { prs: [] };
-  let graph: RepoGraphResponse | null = null;
 
   try {
     queue = await apiFetch<QueueResponse>(`/api/v1/repos/${repo.id}/queue`, token);
@@ -32,11 +31,7 @@ export default async function CanonicalRepoPage({ params }: Props) {
     // queue may be empty while indexing or if no ready PRs exist
   }
 
-  try {
-    graph = await apiFetch<RepoGraphResponse>(`/api/v1/repos/${repo.id}/graph`, token);
-  } catch {
-    graph = { repo, nodes: [], edges: [] };
-  }
+  const graph: RepoGraphResponse = { repo, nodes: [], edges: [] };
 
   return <GraphCanvas graph={graph} prs={queue.prs} repoID={repo.id} repo={repo} token={token} />;
 }

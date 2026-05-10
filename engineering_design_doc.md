@@ -750,7 +750,7 @@ React Flow (`@xyflow/react`) with a weighted hex-grid layout:
 ### Data Fetching
 
 - **PR Queue page**: Server Component; fetches queue from Go API on every request. Manual refresh via `router.refresh()`.
-- **Repo/PR Graph page**: The GitHub-shaped repo URL resolves to the internal repo ID, fetches the repo graph and PR queue, and passes them to the shared client-side `GraphCanvas`. Clicking a PR fetches `/prs/number/{number}/graph` in place and caches it for quick switching while the browser URL remains `/{owner}/{repo}`.
+- **Repo/PR Graph page**: The GitHub-shaped repo URL resolves to the internal repo ID, fetches the PR queue, and mounts `GraphCanvas` with an empty repo graph shell so the repo-wide graph is not loaded by default. Clicking a PR fetches `/prs/number/{number}/graph` in place and caches it for quick switching while the browser URL remains `/{owner}/{repo}`.
 - **Lazy code loading**: The side panel fetches repo source from `/nodes/{nodeID}/code` or PR source/diff data from `/prs/{prID}/nodes/{nodeID}/code` only when the user opens code mode, then caches each node response in the mounted graph view.
 - **PR description markdown**: `NodeDetailPanel` renders `GraphPR.body` with `react-markdown` and `remark-gfm`; HTML is not enabled, and links open in a new tab.
 - **PR change buckets**: After the rendered PR description, the PR overview groups rows into Graph changes, Test changes, Documentation changes, and Other changes. Graph/test rows come from component metadata (`nodes[]` and `test_changes[]`); documentation/other rows come from GitHub `files[]`.
