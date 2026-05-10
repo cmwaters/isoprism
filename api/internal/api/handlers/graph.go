@@ -1281,12 +1281,12 @@ func (h *GraphHandler) GetNodeCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var changeType, diffHunk *string
+	var changeType, diffHunk, oldFullName, oldFilePath *string
 	_ = h.DB.QueryRow(ctx, `
-		select change_type, diff_hunk
+		select change_type, diff_hunk, old_full_name, old_file_path
 		from pr_node_changes
 		where pull_request_id=$1 and node_id=$2
-	`, prID, nodeID).Scan(&changeType, &diffHunk)
+	`, prID, nodeID).Scan(&changeType, &diffHunk, &oldFullName, &oldFilePath)
 
 	findNode := func(commitSHA string) *nodeMeta {
 		if commitSHA == "" {
@@ -1304,7 +1304,25 @@ func (h *GraphHandler) GetNodeCode(w http.ResponseWriter, r *http.Request) {
 		return &n
 	}
 
-	baseNode := findNode(baseCommit)
+	baseLookupFullName, baseLookupFilePath := baseLookupIdentity(selected.fullName, selected.filePath, changeType, oldFullName, oldFilePath)
+	selectedForBaseLookup := selected
+	selectedForBaseLookup.fullName = baseLookupFullName
+	selectedForBaseLookup.filePath = baseLookupFilePath
+	baseNode := func() *nodeMeta {
+		if baseCommit == "" {
+			return nil
+		}
+		var n nodeMeta
+		err := h.DB.QueryRow(ctx, `
+			select id, full_name, file_path, language, line_start, line_end
+			from code_nodes
+			where repo_id=$1 and commit_sha=$2 and full_name=$3 and file_path=$4
+		`, repoID, baseCommit, selectedForBaseLookup.fullName, selectedForBaseLookup.filePath).Scan(&n.id, &n.fullName, &n.filePath, &n.language, &n.lineStart, &n.lineEnd)
+		if err != nil {
+			return nil
+		}
+		return &n
+	}()
 	headNode := findNode(headCommit)
 
 	if changeType == nil {
@@ -1357,6 +1375,18 @@ func (h *GraphHandler) GetNodeCode(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func baseLookupIdentity(selectedFullName, selectedFilePath string, changeType, oldFullName, oldFilePath *string) (string, string) {
+	if changeType != nil && *changeType == "renamed" {
+		if oldFullName != nil && *oldFullName != "" {
+			selectedFullName = *oldFullName
+		}
+		if oldFilePath != nil && *oldFilePath != "" {
+			selectedFilePath = *oldFilePath
+		}
+	}
+	return selectedFullName, selectedFilePath
 }
 
 func sliceSourceLines(source string, startLine, endLine int) string {
