@@ -158,7 +158,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 				    outputs = excluded.outputs
 			returning id
 		`, repoID, headSHA, n.FullName, n.FilePath,
-			n.LineStart, n.LineEnd, inputs, outputs, n.Language, n.Kind, n.BodyHash,
+			n.LineStart, n.LineEnd, string(inputs), string(outputs), n.Language, n.Kind, n.BodyHash,
 		).Scan(&id)
 		if err != nil {
 			log.Printf("RepoInit: insert node %s: %v", n.FullName, err)

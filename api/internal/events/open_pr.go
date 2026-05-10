@@ -227,9 +227,10 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 					    line_end = excluded.line_end
 				returning id
 			`, repoID, headSHA, n.FullName, n.FilePath,
-				n.LineStart, n.LineEnd, inputs, outputs, n.Language, n.Kind, n.BodyHash,
+				n.LineStart, n.LineEnd, string(inputs), string(outputs), n.Language, n.Kind, n.BodyHash,
 			).Scan(&nodeID)
 			if err != nil {
+				log.Printf("OpenPR: failed to upsert head node %s for pr %s: %v", n.FullName, prID, err)
 				stats.HeadNodeUpsertErrors++
 				continue
 			}
@@ -316,7 +317,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 								    line_end = excluded.line_end
 							returning id
 						`, repoID, baseCommit, baseNode.FullName, baseNode.FilePath,
-							baseNode.LineStart, baseNode.LineEnd, inputs, outputs, baseNode.Language, baseNode.Kind, baseNode.BodyHash,
+							baseNode.LineStart, baseNode.LineEnd, string(inputs), string(outputs), baseNode.Language, baseNode.Kind, baseNode.BodyHash,
 						).Scan(&nodeID)
 					}
 					if nodeID != "" {
@@ -576,6 +577,9 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	var finalErr string
 	if stats.ChangedNodesDetected > 0 && stats.NodeChangesPersisted == 0 {
 		finalErr = "detected changed nodes but persisted zero pr_node_changes"
+		log.Printf("OpenPR: warning for pr %s: %s", prID, finalErr)
+	} else if stats.HeadNodesParsed > 0 && stats.HeadNodesUpserted == 0 && stats.HeadNodeUpsertErrors > 0 {
+		finalErr = "parsed head nodes but failed to upsert all code_nodes"
 		log.Printf("OpenPR: warning for pr %s: %s", prID, finalErr)
 	}
 	markPRProcessing(ctx, db, prID, "ready", stats, finalErr)
