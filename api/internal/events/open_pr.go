@@ -699,7 +699,7 @@ func markPRProcessing(ctx context.Context, db *pgxpool.Pool, prID, graphStatus s
 			processing_error = $3,
 			processing_stats = $4
 		where id = $5
-	`, graphStatus, currentProcessorCommitSHA(), nullIfEmpty(processingError), statsJSON, prID)
+	`, graphStatus, currentProcessorCommitSHA(), nullIfEmpty(processingError), string(statsJSON), prID)
 	if err != nil {
 		log.Printf("OpenPR: failed to update processing metadata for pr %s: %v", prID, err)
 	}
