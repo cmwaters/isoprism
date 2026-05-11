@@ -26,7 +26,7 @@ npm run build
 
 The pilot starts at `/pilot/register`. Prospective testers submit the registration form, including how they currently review code, whether AI writes most of their software, and whether they want to pilot Isoprism for one week with one repository.
 
-Admins review registrations at `/admin`, generate an access code, and send the invite email through Resend. The invite link goes to `/pilot/{token}`, which forwards into the login/GitHub setup flow. The review email goes to `/pilot/review/{token}` and saves the end-of-pilot review form.
+Admins review registrations at `/admin`, generate an access code, and send the invite email through Resend. The invite link goes to `/pilot/{token}`, which forwards into the login/GitHub setup flow. A review email can only be sent after the invite has been generated and the pilot user has registered with GitHub; it goes to `/pilot/review/{token}` and saves the end-of-pilot review form.
 
 The current root route is login-first: unauthenticated visitors go to `/login`, and signed-in visitors only skip login when `GET /api/v1/auth/status?user_id=...` returns a ready repo (`/{owner}/{repo}`) or an installed-but-unindexed repo (`/onboarding/repos`). If auth status returns `/onboarding`, root maps that to `/login`; the OAuth callback keeps `/onboarding` so newly signed-in GitHub users without a connected Isoprism repo are prompted to install the GitHub App and grant repo permissions.
 
@@ -58,10 +58,10 @@ The pilot admin console is available at `/admin`. It prompts for the admin passw
 Admin capabilities:
 
 - Review Registration and Review forms.
-- Add pilot users manually.
+- Add pilot users manually with a name and optional email.
 - Generate an access code and send the pilot invite email through Resend.
-- Track started pilots by setup date, selected repo, and submitted issue/feature counts.
-- Send a review email after the pilot period.
+- Track started pilots by setup date, selected repo, and submitted issue/feature counts. The selected repo is updated when the pilot user indexes a repo and replaces the requested public repo from registration.
+- Send a review email after the pilot period once the pilot user has been invited and has registered with GitHub.
 - Delete pilot users.
 
 The API routes are:

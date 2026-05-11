@@ -11,6 +11,7 @@ type PilotUser = {
   status: string;
   link: string;
   token?: string | null;
+  user_id?: string | null;
   accepted_at?: string | null;
   selected_repo_full_name?: string | null;
   trial_starts_at?: string | null;
@@ -46,7 +47,7 @@ export default function AdminPage() {
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [manual, setManual] = useState({ name: "", email: "", languages: "", public_repo_url: "" });
+  const [manual, setManual] = useState({ name: "", email: "" });
 
   const activePassword = savedPassword || password;
 
@@ -109,11 +110,9 @@ export default function AdminPage() {
         body: JSON.stringify({
           name: manual.name.trim(),
           email: manual.email.trim(),
-          languages: manual.languages.trim(),
-          public_repo_url: manual.public_repo_url.trim(),
         }),
       });
-      setManual({ name: "", email: "", languages: "", public_repo_url: "" });
+      setManual({ name: "", email: "" });
       setMessage("Pilot user added.");
       await loadAll();
     } catch (err) {
@@ -181,8 +180,13 @@ export default function AdminPage() {
             <p style={copyStyle}>Review registrations, invite pilot users, and collect end-of-pilot reviews.</p>
           </div>
           <div style={buttonRowStyle}>
-            <button style={secondaryButtonStyle} onClick={() => void loadAll()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
-            <button style={secondaryButtonStyle} onClick={() => { setSavedPassword(""); setPassword(""); window.localStorage.removeItem(PASSWORD_STORAGE_KEY); }}>Lock</button>
+            <button
+              style={secondaryButtonStyle}
+              title="Lock the admin page and forget the saved password."
+              onClick={() => { setSavedPassword(""); setPassword(""); window.localStorage.removeItem(PASSWORD_STORAGE_KEY); }}
+            >
+              Lock
+            </button>
           </div>
         </header>
 
@@ -201,14 +205,12 @@ export default function AdminPage() {
               <form style={manualGridStyle} onSubmit={createManualUser}>
                 <input style={inputStyle} value={manual.name} onChange={(event) => setManual({ ...manual, name: event.target.value })} placeholder="Name" />
                 <input style={inputStyle} value={manual.email} onChange={(event) => setManual({ ...manual, email: event.target.value })} placeholder="Email" />
-                <input style={inputStyle} value={manual.languages} onChange={(event) => setManual({ ...manual, languages: event.target.value })} placeholder="Pilot languages" />
-                <input style={inputStyle} value={manual.public_repo_url} onChange={(event) => setManual({ ...manual, public_repo_url: event.target.value })} placeholder="Public repo URL" />
                 <button style={primaryButtonStyle} disabled={!manual.name.trim() || busy === "create"}>{busy === "create" ? "Adding..." : "Add user"}</button>
               </form>
             </section>
 
             <UserSection title="Registered" users={registered} forms={userForms} expanded={expanded} setExpanded={setExpanded} busy={busy} onAction={runUserAction} />
-            <UserSection title="Invited and active" users={invited} forms={userForms} expanded={expanded} setExpanded={setExpanded} busy={busy} onAction={runUserAction} />
+            <UserSection title="Invited" users={invited} forms={userForms} expanded={expanded} setExpanded={setExpanded} busy={busy} onAction={runUserAction} />
           </div>
         ) : (
           <section style={panelStyle}>
@@ -249,6 +251,14 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
       {users.length === 0 ? <Empty>No users in this section.</Empty> : users.map((user) => {
         const open = expanded === user.id;
         const linkedForms = forms.get(user.id) ?? [];
+        const canSendReviewEmail = Boolean(user.email && user.token && user.user_id);
+        const reviewDisabledReason = !user.email
+          ? "A review email needs an email address."
+          : !user.token
+            ? "Send the pilot invite first."
+            : !user.user_id
+              ? "The pilot user needs to register a GitHub account first."
+              : undefined;
         return (
           <div key={user.id} style={userCardStyle}>
             <button style={userButtonStyle} onClick={() => setExpanded(open ? "" : user.id)}>
@@ -268,7 +278,14 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
                 <Info label="Registration form" value={linkedForms.find((form) => form.form_type === "registration")?.id ?? "None"} />
                 <div style={buttonRowStyle}>
                   <button style={secondaryButtonStyle} disabled={!user.email || busy === `invite:${user.id}`} onClick={() => onAction(user, "invite")}>{busy === `invite:${user.id}` ? "Sending..." : "Send invite"}</button>
-                  <button style={secondaryButtonStyle} disabled={!user.email || busy === `review-email:${user.id}`} onClick={() => onAction(user, "review-email")}>{busy === `review-email:${user.id}` ? "Sending..." : "Send review email"}</button>
+                  <button
+                    style={canSendReviewEmail ? secondaryButtonStyle : disabledButtonStyle}
+                    title={reviewDisabledReason}
+                    disabled={!canSendReviewEmail || busy === `review-email:${user.id}`}
+                    onClick={() => onAction(user, "review-email")}
+                  >
+                    {busy === `review-email:${user.id}` ? "Sending..." : "Send review email"}
+                  </button>
                   <button style={dangerButtonStyle} disabled={busy === `delete:${user.id}`} onClick={() => onAction(user, "delete")}>{busy === `delete:${user.id}` ? "Deleting..." : "Delete"}</button>
                 </div>
               </div>
@@ -312,14 +329,15 @@ const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 12, fontWei
 const titleStyle: React.CSSProperties = { margin: 0, fontSize: 30, lineHeight: 1.15 };
 const copyStyle: React.CSSProperties = { margin: "7px 0 0", color: "#666", fontSize: 14, lineHeight: 1.5 };
 const tabsStyle: React.CSSProperties = { display: "flex", gap: 8, marginBottom: 18 };
-const tabStyle: React.CSSProperties = { height: 34, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 12px", cursor: "pointer" };
+const tabStyle: React.CSSProperties = { height: 34, borderWidth: 1, borderStyle: "solid", borderColor: "#D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 12px", cursor: "pointer" };
 const activeTabStyle: React.CSSProperties = { ...tabStyle, background: "#111", color: "#FFF", borderColor: "#111" };
 const panelStyle: React.CSSProperties = { border: "1px solid #D4D4D4", borderRadius: 8, background: "#FFF", padding: 18 };
 const sectionTitleStyle: React.CSSProperties = { margin: "0 0 12px", fontSize: 17 };
-const manualGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr)) auto", gap: 8 };
+const manualGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr)) auto", gap: 8 };
 const inputStyle: React.CSSProperties = { height: 40, border: "1px solid #D4D4D4", borderRadius: 6, padding: "0 11px", fontSize: 14 };
 const primaryButtonStyle: React.CSSProperties = { height: 40, border: 0, borderRadius: 6, background: "#111", color: "#FFF", padding: "0 14px", cursor: "pointer", fontWeight: 700 };
-const secondaryButtonStyle: React.CSSProperties = { height: 34, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 11px", cursor: "pointer", fontWeight: 650 };
+const secondaryButtonStyle: React.CSSProperties = { height: 34, borderWidth: 1, borderStyle: "solid", borderColor: "#D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 11px", cursor: "pointer", fontWeight: 650 };
+const disabledButtonStyle: React.CSSProperties = { ...secondaryButtonStyle, background: "#F1F1F1", color: "#888", cursor: "not-allowed" };
 const dangerButtonStyle: React.CSSProperties = { ...secondaryButtonStyle, borderColor: "#E7B5B5", background: "#FFF1F1", color: "#8A1F1F" };
 const buttonRowStyle: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
 const tableHeaderStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", padding: "0 8px 8px" };

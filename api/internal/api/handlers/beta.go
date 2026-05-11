@@ -453,9 +453,20 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 		err = h.DB.QueryRow(r.Context(), `
 			update pilot_users
 			set review_token = $1, review_sent_at = now()
-			where id = $2 and email is not null and email <> ''
+			where id = $2
+				and email is not null and email <> ''
+				and token is not null
+				and user_id is not null
 			returning name, email
 		`, token, testerID).Scan(&name, &email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "pilot user must be invited and registered with GitHub before review email", http.StatusConflict)
+			return
+		}
+		if err != nil {
+			http.Error(w, "failed to create review email", http.StatusInternalServerError)
+			return
+		}
 		link = reviewLink(h.FrontendURL, token)
 	} else {
 		err = h.DB.QueryRow(r.Context(), `
