@@ -212,7 +212,8 @@ Expected behavior:
 - `renamed`: preserves `old_full_name` / `old_file_path` and uses a component-scoped GitHub patch slice when changed lines are available.
 - `modified`: uses a component-scoped slice of the GitHub patch; added component stats are counted from the synthetic component hunk so moved/copied body lines are not undercounted as unchanged context.
 - Caller/callee context nodes are not PR changes; they show the head version when available.
-- If GitHub source fetching fails, the UI still uses `diff_hunk` from graph processing when present.
+- The UI reconstructs a full component diff from source only when the required sides are available: both `base` and `head` for `modified` / `renamed`, `head` for `added`, and `base` for `deleted`.
+- If source fetching or identity lookup leaves a PR change without the required side, the UI uses `diff_hunk` from graph processing so it does not render a modified component as entirely added or deleted.
 
 ## Development debug endpoints
 

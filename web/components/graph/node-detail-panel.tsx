@@ -809,11 +809,11 @@ function ComponentCodeBlock({
     );
   }
 
-  if (shouldShowDiff && codeForNode && (codeForNode.base || codeForNode.head)) {
+  if (shouldShowDiff && codeForNode && shouldRenderFullComponentDiff(node.change_type, codeForNode)) {
     return <FullComponentDiffViewer base={codeForNode.base} head={codeForNode.head} />;
   }
 
-  if (shouldShowDiff && (!codeForNode || (!codeForNode.base && !codeForNode.head))) {
+  if (shouldShowDiff) {
     return <UnifiedDiffViewer patch={codeForNode?.diff_hunk ?? node.diff_hunk ?? ""} />;
   }
 
@@ -1144,11 +1144,11 @@ function CodePanel({
         </div>
       )}
 
-      {!loading && !errorForNode && shouldShowDiff && codeForNode && (codeForNode.base || codeForNode.head) && (
+      {!loading && !errorForNode && shouldShowDiff && codeForNode && shouldRenderFullComponentDiff(node.change_type, codeForNode) && (
         <FullComponentDiffViewer base={codeForNode.base} head={codeForNode.head} />
       )}
 
-      {!loading && !errorForNode && shouldShowDiff && (!codeForNode || (!codeForNode.base && !codeForNode.head)) && (
+      {!loading && !errorForNode && shouldShowDiff && (!codeForNode || !shouldRenderFullComponentDiff(node.change_type, codeForNode)) && (
         <UnifiedDiffViewer patch={codeForNode?.diff_hunk ?? node.diff_hunk ?? ""} />
       )}
 
@@ -1333,6 +1333,22 @@ function FullComponentDiffViewer({
 
 function displayLineNumber(line: ComponentDiffLine): number | undefined {
   return line.kind === "removed" ? line.oldLine : line.newLine;
+}
+
+function shouldRenderFullComponentDiff(
+  changeType: GraphNode["change_type"],
+  codeForNode: NodeCodeResponse
+): boolean {
+  if (changeType === "added") {
+    return Boolean(codeForNode.head);
+  }
+  if (changeType === "deleted") {
+    return Boolean(codeForNode.base);
+  }
+  if (changeType === "modified" || changeType === "renamed") {
+    return Boolean(codeForNode.base && codeForNode.head);
+  }
+  return Boolean(codeForNode.base || codeForNode.head);
 }
 
 function buildFullComponentDiff(

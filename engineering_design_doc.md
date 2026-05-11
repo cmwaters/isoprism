@@ -556,6 +556,8 @@ GET    /api/v1/repos/{repoID}/prs/number/{number}/graph   function-level PR grap
 GET    /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code lazy PR node source/diff
 ```
 
+The PR node code view reconstructs a full component diff from fetched source only when the relevant source sides are present: both base and head for modified or renamed nodes, head for added nodes, and base for deleted nodes. If source lookup is incomplete, the frontend renders the persisted `diff_hunk` from `pr_node_changes` so a partial source response does not turn a real modification into an all-added or all-deleted display.
+
 ### Beta Access Rules
 
 - A tester can only start from a valid beta invite token.
