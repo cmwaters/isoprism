@@ -34,6 +34,10 @@ type PilotForm = {
   submitted_at: string;
 };
 
+type AdminRequestInit = RequestInit & {
+  local?: boolean;
+};
+
 const PASSWORD_STORAGE_KEY = "isoprism_admin_password";
 
 export default function AdminPage() {
@@ -60,13 +64,14 @@ export default function AdminPage() {
     }
   }, []);
 
-  async function adminFetch<T>(path: string, options?: RequestInit, explicitPassword = activePassword): Promise<T> {
-    const response = await fetch(`${API_URL}${path}`, {
-      ...options,
+  async function adminFetch<T>(path: string, options?: AdminRequestInit, explicitPassword = activePassword): Promise<T> {
+    const { local, ...fetchOptions } = options ?? {};
+    const response = await fetch(local ? path : `${API_URL}${path}`, {
+      ...fetchOptions,
       headers: {
         "Content-Type": "application/json",
         "X-Admin-Password": explicitPassword,
-        ...options?.headers,
+        ...fetchOptions.headers,
       },
     });
     if (!response.ok) {
@@ -134,7 +139,7 @@ export default function AdminPage() {
         await adminFetch(`/api/v1/admin/pilot/users/${user.id}`, { method: "DELETE" });
         setMessage("Pilot user deleted.");
       } else {
-        const result = await adminFetch<{ link: string }>(`/api/v1/admin/pilot/users/${user.id}/${action}`, { method: "POST" });
+        const result = await adminFetch<{ link: string }>(`/api/admin/pilot/users/${user.id}/${action}`, { method: "POST", local: true });
         setMessage(`${action === "invite" ? "Invite" : "Review"} email sent. ${result.link}`);
       }
       await loadAll();
