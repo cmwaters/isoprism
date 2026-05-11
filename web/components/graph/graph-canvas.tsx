@@ -473,22 +473,63 @@ function sameTestEntry(test: APIGraphNode, ref: { full_name: string; file_path: 
 function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | null): UnifiedGraph {
   if (!isPRGraph(graph) || !testNode) return graph;
 
-  const targets = graph.nodes.filter((node) => (node.tests ?? []).some((test) => sameTestEntry(testNode, test)));
+  const testChanges = graph.test_changes ?? [];
+  const testChangeByID = new Map(testChanges.map((node) => [node.id, node]));
+  const reachableTestIDs = new Set([testNode.id]);
+  const queue = [testNode.id];
+
+  for (let head = 0; head < queue.length; head++) {
+    const currentID = queue[head];
+    for (const edge of graph.edges) {
+      if (edge.caller_id !== currentID || !testChangeByID.has(edge.callee_id) || reachableTestIDs.has(edge.callee_id)) {
+        continue;
+      }
+      reachableTestIDs.add(edge.callee_id);
+      queue.push(edge.callee_id);
+    }
+  }
+
+  const testNodes = Array.from(reachableTestIDs)
+    .map((id) => testChangeByID.get(id))
+    .filter((node): node is APIGraphNode => Boolean(node))
+    .map((node, index) => ({
+      ...node,
+      graph_depth: index === 0 ? 0 : 1,
+      boundary: false,
+    }));
+  const reachableTestNodeIDs = new Set(testNodes.map((node) => node.id));
+  const directTargets = graph.nodes.filter((node) => (node.tests ?? []).some((test) => sameTestEntry(testNode, test)));
+  const edgeTargets = graph.nodes.filter((node) => graph.edges.some((edge) => reachableTestNodeIDs.has(edge.caller_id) && edge.callee_id === node.id));
+  const targetByID = new Map([...directTargets, ...edgeTargets].map((node) => [node.id, node]));
+  const targets = Array.from(targetByID.values());
+  const nodeIDs = new Set([...reachableTestNodeIDs, ...targets.map((node) => node.id)]);
+  const edges = graph.edges.filter((edge) => nodeIDs.has(edge.caller_id) && nodeIDs.has(edge.callee_id));
+  const seenEdges = new Set(edges.map((edge) => `${edge.caller_id}->${edge.callee_id}`));
+  const fallbackEdges = directTargets.flatMap((node) => {
+    const key = `${testNode.id}->${node.id}`;
+    if (seenEdges.has(key)) return [];
+    seenEdges.add(key);
+    return [{
+      caller_id: testNode.id,
+      callee_id: node.id,
+      weight: 1,
+      underlying_edge_count: 1,
+    }];
+  });
+
   const nodes = [
-    { ...testNode, graph_depth: 0, boundary: false, degree: targets.length, weight: Math.max(testNode.weight ?? 0, targets.length) },
-    ...targets.map((node) => ({ ...node, graph_depth: 1, boundary: false })),
+    ...testNodes.map((node) => ({
+      ...node,
+      degree: edges.filter((edge) => edge.caller_id === node.id || edge.callee_id === node.id).length,
+      weight: Math.max(node.weight ?? 0, targets.length),
+    })),
+    ...targets.map((node) => ({ ...node, graph_depth: 2, boundary: false })),
   ];
-  const edges = targets.map((node) => ({
-    caller_id: testNode.id,
-    callee_id: node.id,
-    weight: 1,
-    underlying_edge_count: 1,
-  }));
 
   return {
     ...graph,
     nodes,
-    edges,
+    edges: [...edges, ...fallbackEdges],
   };
 }
 

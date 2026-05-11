@@ -158,11 +158,11 @@ interface PRFileDiff {
 }
 ```
 
-`files[]` is fetched from GitHub's pull request files endpoint and is the source of truth for PR-level diff totals and rendered patches. It includes docs and non-graph files. `nodes[]` remains the default semantic production graph. Changed test functions are returned separately in `test_changes[]` with the same component-level fields as graph nodes (`change_type`, `diff_hunk`, `lines_added`, `lines_removed`, and rename metadata).
+`files[]` is fetched from GitHub's pull request files endpoint and is the source of truth for PR-level diff totals and rendered patches. It includes docs and non-graph files. `nodes[]` remains the default semantic production graph. Changed test functions are returned separately in `test_changes[]` with the same component-level fields as graph nodes (`change_type`, `diff_hunk`, `lines_added`, `lines_removed`, and rename metadata). `test_changes[]` includes changed test helpers so selected test-entrypoint graphs can show their helper chain, but the PR overview's Test changes list only shows `is_test_entrypoint` rows.
 
 The PR overview groups changes into four sections after the rendered description:
 - **Graph changes**: changed production functions/types represented in the graph.
-- **Test changes**: changed test functions from `test_changes[]`.
+- **Test changes**: changed test entrypoints from `test_changes[]`; changed test helpers remain available to the focused test graph but are not listed as review entrypoints.
 - **Documentation changes**: Markdown files from `files[]`.
 - **Other changes**: remaining file diffs not captured by the graph, tests, or docs.
 

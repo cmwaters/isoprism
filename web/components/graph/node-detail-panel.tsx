@@ -330,6 +330,7 @@ function PRSummaryPanel({
   onBackToRepo: () => void;
 }) {
   const changedNodes = allNodes.filter((n) => n.node_type === "changed");
+  const testEntrypointChanges = testChanges.filter((node) => node.is_test_entrypoint);
   const totalAdded = files.reduce((s, file) => s + (file.additions || 0), 0);
   const totalRemoved = files.reduce((s, file) => s + (file.deletions || 0), 0);
   const graphFilePaths = new Set(changedNodes.map((node) => node.file_path));
@@ -408,7 +409,7 @@ function PRSummaryPanel({
         title="Test changes"
         emptyText="No test function changes."
       >
-        {testChanges.map((node) => (
+        {testEntrypointChanges.map((node) => (
           <NodeChangeRow
             key={node.id}
             node={node}

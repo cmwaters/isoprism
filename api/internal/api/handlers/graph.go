@@ -303,6 +303,49 @@ func canonicalizeGraphEdges(edges []models.GraphEdge, canonicalizeID func(string
 	return result
 }
 
+func appendTestFocusEdges(
+	edges []models.GraphEdge,
+	allEdges []graphEdgeRow,
+	testChanges []models.GraphNode,
+	finalNodeMap map[string]models.GraphNode,
+	canonicalizeID func(string) string,
+) []models.GraphEdge {
+	testIDs := map[string]bool{}
+	for _, n := range testChanges {
+		testIDs[n.ID] = true
+	}
+	if len(testIDs) == 0 {
+		return edges
+	}
+
+	visibleProductionIDs := map[string]bool{}
+	for id := range finalNodeMap {
+		visibleProductionIDs[id] = true
+	}
+
+	seen := map[string]bool{}
+	for _, e := range edges {
+		seen[e.CallerID+"|"+e.CalleeID] = true
+	}
+	for _, e := range allEdges {
+		source := canonicalizeID(e.callerID)
+		target := canonicalizeID(e.calleeID)
+		if source == "" || target == "" || source == target || !testIDs[source] {
+			continue
+		}
+		if !testIDs[target] && !visibleProductionIDs[target] {
+			continue
+		}
+		key := source + "|" + target
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		edges = append(edges, models.GraphEdge{CallerID: source, CalleeID: target, Weight: 1, UnderlyingEdgeCount: 1})
+	}
+	return edges
+}
+
 func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
 	adj := map[string]map[string]bool{}
 	callerCount := map[string]int{}
@@ -1076,6 +1119,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	edges = appendTestFocusEdges(edges, allEdges, testChanges, finalNodeMap, canonicalizeID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.GraphResponse{
