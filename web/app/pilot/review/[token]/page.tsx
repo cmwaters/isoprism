@@ -45,29 +45,47 @@ export default function PilotReviewPage() {
   return (
     <main style={pageStyle}>
       <form style={formStyle} onSubmit={submit}>
-        <div>
-          <div style={eyebrowStyle}>Isoprism pilot</div>
-          <h1 style={titleStyle}>Pilot review</h1>
+        <div style={headerBlockStyle}>
+          <div style={eyebrowStyle}>Pilot review</div>
+          <h1 style={titleStyle}>Share your review experience</h1>
         </div>
-        <input style={inputStyle} type="number" min={1} max={5} placeholder="Isoprism helped me understand PRs faster (1-5)" value={form.faster_rating} onChange={(event) => setForm({ ...form, faster_rating: event.target.value })} />
-        <input style={inputStyle} type="number" min={1} max={5} placeholder="The graph made review risk clearer (1-5)" value={form.risk_clarity_rating} onChange={(event) => setForm({ ...form, risk_clarity_rating: event.target.value })} />
-        <textarea style={textareaStyle} placeholder="What was confusing or missing?" value={form.confusing_or_missing} onChange={(event) => setForm({ ...form, confusing_or_missing: event.target.value })} />
-        <textarea style={textareaStyle} placeholder="What bugs did you hit?" value={form.bugs_hit} onChange={(event) => setForm({ ...form, bugs_hit: event.target.value })} />
-        <textarea style={textareaStyle} placeholder="What should we build next?" value={form.build_next} onChange={(event) => setForm({ ...form, build_next: event.target.value })} />
-        <input style={inputStyle} placeholder="Would you keep using Isoprism for PR review?" value={form.would_keep_using} onChange={(event) => setForm({ ...form, would_keep_using: event.target.value })} />
-        <button style={primaryButtonStyle} disabled={status === "submitting" || !token}>{status === "submitting" ? "Submitting..." : "Submit review"}</button>
-        {message && <div style={status === "error" ? errorStyle : successStyle}>{message}</div>}
+
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Review impact</h2>
+          <div style={twoColumnStyle}>
+            <input style={inputStyle} type="number" min={1} max={5} placeholder="Understood PRs faster (1-5)" value={form.faster_rating} onChange={(event) => setForm({ ...form, faster_rating: event.target.value })} />
+            <input style={inputStyle} type="number" min={1} max={5} placeholder="Review risk clearer (1-5)" value={form.risk_clarity_rating} onChange={(event) => setForm({ ...form, risk_clarity_rating: event.target.value })} />
+          </div>
+        </section>
+
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Pilot notes</h2>
+          <textarea style={textareaStyle} placeholder="What was confusing or missing?" value={form.confusing_or_missing} onChange={(event) => setForm({ ...form, confusing_or_missing: event.target.value })} />
+          <textarea style={textareaStyle} placeholder="What bugs did you hit?" value={form.bugs_hit} onChange={(event) => setForm({ ...form, bugs_hit: event.target.value })} />
+          <textarea style={textareaStyle} placeholder="What should we build next?" value={form.build_next} onChange={(event) => setForm({ ...form, build_next: event.target.value })} />
+          <input style={inputStyle} placeholder="Would you keep using Isoprism for PR review?" value={form.would_keep_using} onChange={(event) => setForm({ ...form, would_keep_using: event.target.value })} />
+        </section>
+
+        <div style={footerStyle}>
+          {message && <div style={status === "error" ? errorStyle : successStyle}>{message}</div>}
+          <button style={primaryButtonStyle} disabled={status === "submitting" || !token}>{status === "submitting" ? "Submitting..." : "Submit review"}</button>
+        </div>
       </form>
     </main>
   );
 }
 
-const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "#EBE9E9", color: "#111", padding: "42px 20px" };
-const formStyle: React.CSSProperties = { width: "min(680px, 100%)", margin: "0 auto", display: "grid", gap: 12 };
-const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 12, fontWeight: 750, textTransform: "uppercase", marginBottom: 6 };
-const titleStyle: React.CSSProperties = { margin: 0, fontSize: 32, lineHeight: 1.12 };
+const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "#EBE9E9", color: "#111", padding: "34px 24px 48px" };
+const formStyle: React.CSSProperties = { width: "min(820px, 100%)", margin: "0 auto", display: "grid", gap: 14 };
+const headerBlockStyle: React.CSSProperties = { padding: "6px 0 4px" };
+const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 7 };
+const titleStyle: React.CSSProperties = { margin: 0, fontSize: 24, lineHeight: 1.18, fontWeight: 750 };
+const sectionStyle: React.CSSProperties = { border: "1px solid #D4D4D4", borderRadius: 8, background: "#FFFFFF", padding: 18, display: "grid", gap: 12 };
+const sectionTitleStyle: React.CSSProperties = { margin: 0, color: "#111111", fontSize: 15, fontWeight: 750 };
+const twoColumnStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 };
 const inputStyle: React.CSSProperties = { height: 42, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 11px", fontSize: 14 };
-const textareaStyle: React.CSSProperties = { ...inputStyle, height: 96, padding: 11, resize: "vertical" };
-const primaryButtonStyle: React.CSSProperties = { height: 42, border: 0, borderRadius: 6, background: "#111", color: "#FFF", padding: "0 16px", cursor: "pointer", fontWeight: 700 };
+const textareaStyle: React.CSSProperties = { ...inputStyle, height: 92, padding: 11, resize: "vertical", lineHeight: 1.45 };
+const footerStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" };
+const primaryButtonStyle: React.CSSProperties = { height: 40, border: 0, borderRadius: 6, background: "#111", color: "#FFF", padding: "0 14px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
 const successStyle: React.CSSProperties = { border: "1px solid #BFE2C5", borderRadius: 8, background: "#EEF8F0", color: "#225B2D", padding: 12 };
 const errorStyle: React.CSSProperties = { border: "1px solid #F3B4B4", borderRadius: 8, background: "#FFF1F1", color: "#991B1B", padding: 12 };

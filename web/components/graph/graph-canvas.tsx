@@ -22,7 +22,7 @@ import "@xyflow/react/dist/style.css";
 import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
-import { SettingsView } from "@/app/[owner]/settings/page";
+import { SettingsView } from "@/components/settings/settings-view";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel, { ComponentChangePanel, type SelectedPRChange } from "./node-detail-panel";
 
