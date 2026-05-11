@@ -48,6 +48,8 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		FeedbackToken: cfg.GitHubFeedbackToken,
 		FeedbackRepo:  cfg.GitHubFeedbackRepo,
 		AdminPassword: cfg.AdminPassword,
+		ResendAPIKey:  cfg.ResendAPIKey,
+		EmailFrom:     cfg.PilotEmailFrom,
 		FrontendURL:   cfg.FrontendURL,
 		DB:            db,
 	}
@@ -150,6 +152,15 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	r.Get("/api/v1/admin/beta/testers", betaHandler.ListBetaTesters)
 	r.Post("/api/v1/admin/beta/testers", betaHandler.CreateBetaTester)
 	r.Delete("/api/v1/admin/beta/testers/{testerID}", betaHandler.DeleteBetaTester)
+	r.Get("/api/v1/admin/pilot/users", betaHandler.ListBetaTesters)
+	r.Post("/api/v1/admin/pilot/users", betaHandler.CreateBetaTester)
+	r.Delete("/api/v1/admin/pilot/users/{testerID}", betaHandler.DeleteBetaTester)
+	r.Get("/api/v1/admin/pilot/forms", betaHandler.ListPilotForms)
+	r.Post("/api/v1/admin/pilot/users/{testerID}/invite", betaHandler.InvitePilotUser)
+	r.Post("/api/v1/admin/pilot/users/{testerID}/review-email", betaHandler.SendReviewEmail)
+	r.Post("/api/v1/pilot/register", betaHandler.RegisterPilotInterest)
+	r.Post("/api/v1/pilot/invites/{token}/accept", betaHandler.AcceptPilotInvite)
+	r.Post("/api/v1/pilot/review/{token}", betaHandler.SubmitPilotReview)
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
@@ -211,6 +222,7 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 			http.Error(w, "github branch error", http.StatusInternalServerError)
 			return
 		}
+		markPilotRepoSelected(ctx, db, userID, repoID)
 
 		var jobStatus string
 		_ = db.QueryRow(ctx, `
@@ -268,6 +280,17 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 			"commit_sha": headSHA,
 		})
 	}
+}
+
+func markPilotRepoSelected(ctx context.Context, db *pgxpool.Pool, userID, repoID string) {
+	_, _ = db.Exec(ctx, `
+		update pilot_users
+		set selected_repo_id = $1,
+			trial_starts_at = coalesce(trial_starts_at, now()),
+			trial_ends_at = coalesce(trial_ends_at, now() + interval '7 days'),
+			status = case when status in ('registered', 'invited') then 'active' else status end
+		where user_id = $2
+	`, repoID, userID)
 }
 
 func supabaseAuthMiddleware(_ string) func(http.Handler) http.Handler {

@@ -38,7 +38,7 @@
 1. Product name "Isoprism" in 20px semibold, `#111111`
 2. 32px gap
 3. Lead copy — 18px, `#333333`, line-height 1.65: "This is a prototype, not a fully fledged product. It serves to answer one simple question: is there a better way of understanding and reviewing code changes?"
-4. Beta expectation copy — 15px, `#555555`, line-height 1.7: "This is for beta testers. The expectation is to use this prototype where possible for reviewing PRs. You will connect this to your GitHub and select a single repository."
+4. Pilot expectation copy — 15px, `#555555`, line-height 1.7: "This is for pilot users. The expectation is to use this prototype where possible for reviewing PRs. You will connect this to your GitHub and select a single repository."
 5. Trial copy — 15px, `#555555`, line-height 1.7: "There will be a footer for submitting feature requests and bug reports. You are expected to trial this for a week and fill out a short questionnaire at the end."
 6. 36px gap
 7. Invite status line — only when entered through a beta link. Text: "Beta invite verified." — 12px, `#666666`
@@ -317,23 +317,29 @@ At the end of the seven-day trial, show a short questionnaire prompt. It may be 
 
 Route: `/admin`
 
-The admin console is for managing beta testers. It is protected by an admin password before tester data is loaded.
+The admin console is for managing pilot users and submitted forms. It is protected by an admin password before tester data is loaded.
 
-**Create tester:**
-- Name input
-- Generate tester button
-- Output: tester name, raw token, full invite link
+**Tabs:**
+- Pilot Users
+- Forms
 
-**Monitor testers:**
+**Pilot Users:**
 - Tester name
-- Invite state: new / active / completed / revoked / expired
-- Whether the invite link has been used
+- Email
+- Registration form link/id
+- Invite state: registered / invited / active / completed
 - Selected repository
 - Trial start/end dates
+- Issue and feature submission counts
 - Questionnaire status
-- Link to questionnaire answers
+- Send invite email
+- Send review email
+- Add or delete users manually
 
-The admin console must not show raw invite tokens after creation.
+**Forms:**
+- Registration submissions
+- Review submissions
+- Full answer JSON for each submitted form
 
 ---
 
@@ -357,4 +363,4 @@ The admin console must not show raw invite tokens after creation.
 | `BetaFeedbackBanner` | Black footer banner with bug/feature links and centered feedback form |
 | `FeedbackModal` | Bug/feature feedback form with current repo/PR/node context, app commit, and source commit |
 | `QuestionnairePage` | End-of-week beta questionnaire |
-| `AdminBetaConsole` | Operator-only beta tester creation and monitoring page |
+| `AdminPilotConsole` | Operator-only pilot user, registration form, and review form management page |

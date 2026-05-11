@@ -23,6 +23,8 @@ type Config struct {
 	GitHubFeedbackToken string
 	GitHubFeedbackRepo  string
 	AdminPassword       string
+	ResendAPIKey        string
+	PilotEmailFrom      string
 
 	FrontendURL  string
 	FrontendURLs []string
@@ -43,6 +45,8 @@ func Load() (*Config, error) {
 		GitHubFeedbackToken:    getEnv("GITHUB_FEEDBACK_TOKEN", ""),
 		GitHubFeedbackRepo:     getEnv("GITHUB_FEEDBACK_REPO", ""),
 		AdminPassword:          getEnv("ADMIN_PASSWORD", ""),
+		ResendAPIKey:           getEnv("RESEND_API_KEY", ""),
+		PilotEmailFrom:         getEnv("PILOT_EMAIL_FROM", "Isoprism <pilot@isoprism.com>"),
 		FrontendURL:            getEnv("FRONTEND_URL", "https://isoprism.com"),
 		CommitSHA:              firstEnv("ISOPRISM_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "GIT_COMMIT_SHA"),
 	}

@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-Settings should be a single operational page. The beta tester should be able to:
+Settings should be a single operational page. The pilot user should be able to:
 
 - See their GitHub connection
 - Manage the Isoprism GitHub App installation on GitHub
@@ -57,4 +57,4 @@ For the beta, only one repository should be considered the active trial reposito
 - Billing
 - Notifications
 - Audit logs
-- Multiple active repositories per beta tester
+- Multiple active repositories per pilot user

@@ -4,50 +4,49 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "@/lib/api";
 
-type BetaQuestionnaire = {
-  faster_rating?: number | null;
-  risk_clarity_rating?: number | null;
-  confusing_or_missing?: string | null;
-  bugs_hit?: string | null;
-  build_next?: string | null;
-  would_keep_using?: string | null;
-};
-
-type BetaTester = {
+type PilotUser = {
   id: string;
   name: string;
+  email?: string | null;
+  status: string;
   link: string;
   token?: string | null;
-  email?: string | null;
-  invited_at: string;
   accepted_at?: string | null;
-  completed_at?: string | null;
-  user_id?: string | null;
-  selected_repo_id?: string | null;
   selected_repo_full_name?: string | null;
+  trial_starts_at?: string | null;
+  trial_ends_at?: string | null;
+  review_sent_at?: string | null;
+  pilot_languages?: string | null;
+  public_repo_url?: string | null;
+  issue_count: number;
+  feature_count: number;
   questionnaire_submitted_at?: string | null;
-  questionnaire?: BetaQuestionnaire | null;
 };
 
-type CreateBetaTesterResponse = BetaTester & {
-  token: string;
-  link: string;
+type PilotForm = {
+  id: string;
+  pilot_user_id?: string | null;
+  form_type: "registration" | "review";
+  name?: string | null;
+  email?: string | null;
+  answers: Record<string, unknown>;
+  submitted_at: string;
 };
 
 const PASSWORD_STORAGE_KEY = "isoprism_admin_password";
 
-export default function BetaAdminPage() {
+export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [savedPassword, setSavedPassword] = useState("");
-  const [name, setName] = useState("");
-  const [testers, setTesters] = useState<BetaTester[]>([]);
-  const [created, setCreated] = useState<CreateBetaTesterResponse | null>(null);
-  const [expandedID, setExpandedID] = useState<string | null>(null);
+  const [tab, setTab] = useState<"users" | "forms">("users");
+  const [users, setUsers] = useState<PilotUser[]>([]);
+  const [forms, setForms] = useState<PilotForm[]>([]);
+  const [expanded, setExpanded] = useState("");
   const [loading, setLoading] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [deletingID, setDeletingID] = useState("");
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState("");
+  const [manual, setManual] = useState({ name: "", email: "", languages: "", public_repo_url: "" });
 
   const activePassword = savedPassword || password;
 
@@ -55,26 +54,7 @@ export default function BetaAdminPage() {
     const stored = window.localStorage.getItem(PASSWORD_STORAGE_KEY) ?? "";
     if (stored) {
       setSavedPassword(stored);
-      setLoading(true);
-      fetch(`${API_URL}/api/v1/admin/beta/testers`, {
-        headers: {
-          "X-Admin-Password": stored,
-        },
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(text || `Admin API error ${response.status}`);
-          }
-          return response.json() as Promise<{ testers: BetaTester[] }>;
-        })
-        .then((result) => setTesters(result.testers ?? []))
-        .catch((err) => {
-          setSavedPassword("");
-          window.localStorage.removeItem(PASSWORD_STORAGE_KEY);
-          setError(err instanceof Error ? err.message : "Could not load beta testers.");
-        })
-        .finally(() => setLoading(false));
+      void loadAll(stored);
     }
   }, []);
 
@@ -87,643 +67,271 @@ export default function BetaAdminPage() {
         ...options?.headers,
       },
     });
-
     if (!response.ok) {
       const text = await response.text();
       throw new Error(text || `Admin API error ${response.status}`);
     }
-
+    if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
   }
 
-  async function loadTesters(explicitPassword = activePassword) {
+  async function loadAll(explicitPassword = activePassword) {
     if (!explicitPassword) return;
     setLoading(true);
     setError("");
-
     try {
-      const result = await adminFetch<{ testers: BetaTester[] }>("/api/v1/admin/beta/testers", undefined, explicitPassword);
-      setTesters(result.testers ?? []);
+      const [userResult, formResult] = await Promise.all([
+        adminFetch<{ testers: PilotUser[] }>("/api/v1/admin/pilot/users", undefined, explicitPassword),
+        adminFetch<{ forms: PilotForm[] }>("/api/v1/admin/pilot/forms", undefined, explicitPassword),
+      ]);
+      setUsers(userResult.testers ?? []);
+      setForms(formResult.forms ?? []);
       setSavedPassword(explicitPassword);
       window.localStorage.setItem(PASSWORD_STORAGE_KEY, explicitPassword);
     } catch (err) {
       setSavedPassword("");
       window.localStorage.removeItem(PASSWORD_STORAGE_KEY);
-      setError(err instanceof Error ? err.message : "Could not load beta testers.");
+      setError(err instanceof Error ? err.message : "Could not load admin data.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function createTester(event: React.FormEvent) {
+  async function createManualUser(event: React.FormEvent) {
     event.preventDefault();
-    if (!name.trim()) return;
-
-    setCreating(true);
-    setCreated(null);
+    if (!manual.name.trim()) return;
+    setBusy("create");
     setError("");
-
+    setMessage("");
     try {
-      const result = await adminFetch<CreateBetaTesterResponse>("/api/v1/admin/beta/testers", {
+      await adminFetch("/api/v1/admin/pilot/users", {
         method: "POST",
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({
+          name: manual.name.trim(),
+          email: manual.email.trim(),
+          languages: manual.languages.trim(),
+          public_repo_url: manual.public_repo_url.trim(),
+        }),
       });
-      setCreated(result);
-      setName("");
-      await loadTesters();
+      setManual({ name: "", email: "", languages: "", public_repo_url: "" });
+      setMessage("Pilot user added.");
+      await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create beta tester.");
+      setError(err instanceof Error ? err.message : "Could not add pilot user.");
     } finally {
-      setCreating(false);
+      setBusy("");
     }
   }
 
-  async function copyValue(value: string, label: string) {
-    try {
-      await writeClipboard(value);
-      setError("");
-      setCopied(label);
-      window.setTimeout(() => setCopied((current) => current === label ? "" : current), 1600);
-    } catch {
-      setError("Could not copy to clipboard.");
-    }
-  }
-
-  async function deleteTester(tester: BetaTester) {
-    if (!window.confirm(`Delete ${tester.name}?`)) return;
-
-    setDeletingID(tester.id);
+  async function runUserAction(user: PilotUser, action: "invite" | "review-email" | "delete") {
+    const label = `${action}:${user.id}`;
+    if (action === "delete" && !window.confirm(`Delete ${user.name}?`)) return;
+    setBusy(label);
     setError("");
-
+    setMessage("");
     try {
-      const response = await fetch(`${API_URL}/api/v1/admin/beta/testers/${tester.id}`, {
-        method: "DELETE",
-        headers: {
-          "X-Admin-Password": activePassword,
-        },
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `Admin API error ${response.status}`);
+      if (action === "delete") {
+        await adminFetch(`/api/v1/admin/pilot/users/${user.id}`, { method: "DELETE" });
+        setMessage("Pilot user deleted.");
+      } else {
+        const result = await adminFetch<{ link: string }>(`/api/v1/admin/pilot/users/${user.id}/${action}`, { method: "POST" });
+        setMessage(`${action === "invite" ? "Invite" : "Review"} email sent. ${result.link}`);
       }
-      setCreated((current) => current?.id === tester.id ? null : current);
-      setExpandedID((current) => current === tester.id ? null : current);
-      await loadTesters();
+      await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete beta tester.");
+      setError(err instanceof Error ? err.message : "Action failed.");
     } finally {
-      setDeletingID("");
+      setBusy("");
     }
   }
 
-  const sortedTesters = useMemo(() => testers, [testers]);
+  const userForms = useMemo(() => {
+    const byUser = new Map<string, PilotForm[]>();
+    for (const form of forms) {
+      if (!form.pilot_user_id) continue;
+      byUser.set(form.pilot_user_id, [...(byUser.get(form.pilot_user_id) ?? []), form]);
+    }
+    return byUser;
+  }, [forms]);
+
+  const registered = users.filter((user) => user.status === "registered" || !user.token);
+  const invited = users.filter((user) => user.status !== "registered" && user.token);
 
   if (!savedPassword) {
     return (
-      <AdminShell>
-        <section style={loginPanelStyle}>
-          <form
-            style={{ display: "grid", gap: 12 }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void loadTesters(password);
-            }}
-          >
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Admin password"
-              style={inputStyle}
-            />
-            <button style={primaryButtonStyle} disabled={!password || loading}>
-              {loading ? "Checking..." : "Unlock"}
-            </button>
+      <Shell>
+        <main style={loginStyle}>
+          <form style={stackStyle} onSubmit={(event) => { event.preventDefault(); void loadAll(password); }}>
+            <input style={inputStyle} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Admin password" />
+            <button style={primaryButtonStyle} disabled={!password || loading}>{loading ? "Checking..." : "Unlock"}</button>
           </form>
-
-          {error && <div style={errorStyle}>{error}</div>}
-        </section>
-      </AdminShell>
+          {error && <Notice tone="error">{error}</Notice>}
+        </main>
+      </Shell>
     );
   }
 
   return (
-    <AdminShell>
+    <Shell>
       <main style={mainStyle}>
         <header style={headerStyle}>
           <div>
             <div style={eyebrowStyle}>Admin</div>
-            <h1 style={titleStyle}>Beta testers</h1>
-            <p style={copyStyle}>Create invite links, monitor setup progress, and review questionnaire answers.</p>
+            <h1 style={titleStyle}>Pilot</h1>
+            <p style={copyStyle}>Review registrations, invite pilot users, and collect end-of-pilot reviews.</p>
           </div>
-          <button
-            style={secondaryButtonStyle}
-            onClick={() => {
-              setSavedPassword("");
-              setPassword("");
-              window.localStorage.removeItem(PASSWORD_STORAGE_KEY);
-            }}
-          >
-            Lock
-          </button>
+          <div style={buttonRowStyle}>
+            <button style={secondaryButtonStyle} onClick={() => void loadAll()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
+            <button style={secondaryButtonStyle} onClick={() => { setSavedPassword(""); setPassword(""); window.localStorage.removeItem(PASSWORD_STORAGE_KEY); }}>Lock</button>
+          </div>
         </header>
 
-        {error && <div style={errorStyle}>{error}</div>}
+        <div style={tabsStyle}>
+          <button style={tab === "users" ? activeTabStyle : tabStyle} onClick={() => setTab("users")}>Pilot Users</button>
+          <button style={tab === "forms" ? activeTabStyle : tabStyle} onClick={() => setTab("forms")}>Forms</button>
+        </div>
 
-        <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Create tester</h2>
-          <form style={createGridStyle} onSubmit={createTester}>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Tester name"
-              style={inputStyle}
-            />
-            <button style={primaryButtonStyle} disabled={!name.trim() || creating}>
-              {creating ? "Creating..." : "Create"}
-            </button>
-          </form>
+        {message && <Notice tone="success">{message}</Notice>}
+        {error && <Notice tone="error">{error}</Notice>}
 
-          {created && (
-            <div style={createdBoxStyle}>
-              <CopyRow label="Tester" value={created.name} copied={copied} onCopy={copyValue} />
-              <div style={smallLabelStyle}>Invite link</div>
-              <CopyRow label="Invite link" value={created.link} copied={copied} onCopy={copyValue} code />
-            </div>
-          )}
-        </section>
+        {tab === "users" ? (
+          <div style={stackStyle}>
+            <section style={panelStyle}>
+              <h2 style={sectionTitleStyle}>Add user manually</h2>
+              <form style={manualGridStyle} onSubmit={createManualUser}>
+                <input style={inputStyle} value={manual.name} onChange={(event) => setManual({ ...manual, name: event.target.value })} placeholder="Name" />
+                <input style={inputStyle} value={manual.email} onChange={(event) => setManual({ ...manual, email: event.target.value })} placeholder="Email" />
+                <input style={inputStyle} value={manual.languages} onChange={(event) => setManual({ ...manual, languages: event.target.value })} placeholder="Pilot languages" />
+                <input style={inputStyle} value={manual.public_repo_url} onChange={(event) => setManual({ ...manual, public_repo_url: event.target.value })} placeholder="Public repo URL" />
+                <button style={primaryButtonStyle} disabled={!manual.name.trim() || busy === "create"}>{busy === "create" ? "Adding..." : "Add user"}</button>
+              </form>
+            </section>
 
-        <section style={flatSectionStyle}>
-          <div style={tableActionStyle}>
-            <button style={secondaryButtonStyle} onClick={() => void loadTesters()} disabled={loading}>
-              {loading ? "Refreshing..." : "Refresh"}
-            </button>
+            <UserSection title="Registered" users={registered} forms={userForms} expanded={expanded} setExpanded={setExpanded} busy={busy} onAction={runUserAction} />
+            <UserSection title="Invited and active" users={invited} forms={userForms} expanded={expanded} setExpanded={setExpanded} busy={busy} onAction={runUserAction} />
           </div>
-
-          <div style={tableStyle}>
+        ) : (
+          <section style={panelStyle}>
             <div style={tableHeaderStyle}>
-              <span>Tester</span>
-              <span>Invite link</span>
-              <span>Repository</span>
-              <span>Questionnaire</span>
+              <span>Type</span>
+              <span>Person</span>
+              <span>Submitted</span>
             </div>
+            {forms.length === 0 ? <Empty>No forms yet.</Empty> : forms.map((form) => (
+              <details key={form.id} style={detailCardStyle}>
+                <summary style={summaryStyle}>
+                  <span>{titleCase(form.form_type)}</span>
+                  <span>{form.name ?? form.email ?? "Anonymous"}</span>
+                  <span>{formatDate(form.submitted_at)}</span>
+                </summary>
+                <pre style={preStyle}>{JSON.stringify(form.answers, null, 2)}</pre>
+              </details>
+            ))}
+          </section>
+        )}
+      </main>
+    </Shell>
+  );
+}
 
-            {sortedTesters.length === 0 ? (
-              <div style={emptyStyle}>No beta testers yet.</div>
-            ) : (
-              sortedTesters.map((tester) => {
-                const expanded = expandedID === tester.id;
-                return (
-                  <div key={tester.id} style={testerRowStyle}>
-                    <button style={rowButtonStyle} onClick={() => setExpandedID(expanded ? null : tester.id)}>
-                      <div>
-                        <div style={rowTitleStyle}>{tester.name}</div>
-                        <div style={rowMetaStyle}>{tester.user_id ?? "None"}</div>
-                      </div>
-                      <div style={rowMetaStrongStyle}>{tester.link || "Not available"}</div>
-                      <div style={rowMetaStrongStyle}>{tester.selected_repo_full_name ?? "Not set up"}</div>
-                      <div style={rowMetaStrongStyle}>{tester.questionnaire_submitted_at ? "Submitted" : "Pending"}</div>
-                    </button>
-
-                    {expanded && (
-                      <div style={detailStyle}>
-                        <CopyDetail label="ID" value={tester.user_id ?? "None"} copied={copied} onCopy={copyValue} />
-                        <Detail label="Account set up" value={tester.accepted_at ? formatDate(tester.accepted_at) : "None"} />
-                        <CopyDetail
-                          label="Invite link"
-                          value={tester.link || "Not available"}
-                          copied={copied}
-                          onCopy={copyValue}
-                        />
-                        <CopyDetail label="Selected repo ID" value={tester.selected_repo_id ?? "None"} copied={copied} onCopy={copyValue} />
-                        <div style={detailItemStyle}>
-                          <div style={smallLabelStyle}>Delete tester</div>
-                          <button
-                            style={dangerButtonStyle}
-                            onClick={() => void deleteTester(tester)}
-                            disabled={deletingID === tester.id}
-                          >
-                            {deletingID === tester.id ? "Deleting..." : "Delete"}
-                          </button>
-                        </div>
-                        {tester.questionnaire ? (
-                          <div style={questionnaireStyle}>
-                            <Detail label="Faster rating" value={String(tester.questionnaire.faster_rating ?? "None")} />
-                            <Detail label="Risk clarity" value={String(tester.questionnaire.risk_clarity_rating ?? "None")} />
-                            <Detail label="Confusing or missing" value={tester.questionnaire.confusing_or_missing ?? "None"} />
-                            <Detail label="Bugs hit" value={tester.questionnaire.bugs_hit ?? "None"} />
-                            <Detail label="Build next" value={tester.questionnaire.build_next ?? "None"} />
-                            <Detail label="Would keep using" value={tester.questionnaire.would_keep_using ?? "None"} />
-                          </div>
-                        ) : (
-                          <div style={emptyDetailStyle}>No questionnaire response yet.</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+function UserSection({ title, users, forms, expanded, setExpanded, busy, onAction }: {
+  title: string;
+  users: PilotUser[];
+  forms: Map<string, PilotForm[]>;
+  expanded: string;
+  setExpanded: (id: string) => void;
+  busy: string;
+  onAction: (user: PilotUser, action: "invite" | "review-email" | "delete") => void;
+}) {
+  return (
+    <section style={panelStyle}>
+      <h2 style={sectionTitleStyle}>{title}</h2>
+      {users.length === 0 ? <Empty>No users in this section.</Empty> : users.map((user) => {
+        const open = expanded === user.id;
+        const linkedForms = forms.get(user.id) ?? [];
+        return (
+          <div key={user.id} style={userCardStyle}>
+            <button style={userButtonStyle} onClick={() => setExpanded(open ? "" : user.id)}>
+              <div>
+                <strong>{user.name}</strong>
+                <div style={mutedStyle}>{user.email ?? "No email"}</div>
+              </div>
+              <div>{user.selected_repo_full_name ?? user.public_repo_url ?? "No repo yet"}</div>
+              <div>{user.issue_count} issues / {user.feature_count} features</div>
+              <div>{user.questionnaire_submitted_at ? "Review done" : user.review_sent_at ? "Review sent" : user.status}</div>
+            </button>
+            {open && (
+              <div style={expandedStyle}>
+                <Info label="Started" value={user.trial_starts_at ? formatDate(user.trial_starts_at) : "Not started"} />
+                <Info label="Invite link" value={user.link || "Not generated"} />
+                <Info label="Languages" value={user.pilot_languages ?? "None"} />
+                <Info label="Registration form" value={linkedForms.find((form) => form.form_type === "registration")?.id ?? "None"} />
+                <div style={buttonRowStyle}>
+                  <button style={secondaryButtonStyle} disabled={!user.email || busy === `invite:${user.id}`} onClick={() => onAction(user, "invite")}>{busy === `invite:${user.id}` ? "Sending..." : "Send invite"}</button>
+                  <button style={secondaryButtonStyle} disabled={!user.email || busy === `review-email:${user.id}`} onClick={() => onAction(user, "review-email")}>{busy === `review-email:${user.id}` ? "Sending..." : "Send review email"}</button>
+                  <button style={dangerButtonStyle} disabled={busy === `delete:${user.id}`} onClick={() => onAction(user, "delete")}>{busy === `delete:${user.id}` ? "Deleting..." : "Delete"}</button>
+                </div>
+              </div>
             )}
           </div>
-        </section>
-      </main>
-    </AdminShell>
+        );
+      })}
+    </section>
   );
 }
 
-function AdminShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ minHeight: "100vh", background: "#EBE9E9", color: "#111111" }}>
-      {children}
-    </div>
-  );
+function Info({ label, value }: { label: string; value: string }) {
+  return <div><div style={smallLabelStyle}>{label}</div><div style={valueStyle}>{value}</div></div>;
 }
 
-async function writeClipboard(value: string) {
-  if (navigator.clipboard?.writeText && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(value);
-      return;
-    } catch {
-      // Fall back for local/in-app browsers that expose clipboard but reject writes.
-    }
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  textarea.style.top = "0";
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  const copied = document.execCommand("copy");
-  document.body.removeChild(textarea);
-
-  if (!copied) {
-    throw new Error("copy failed");
-  }
+function Shell({ children }: { children: React.ReactNode }) {
+  return <div style={{ minHeight: "100vh", background: "#EBE9E9", color: "#111111" }}>{children}</div>;
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={detailItemStyle}>
-      <div style={smallLabelStyle}>{label}</div>
-      <div style={detailValueStyle}>{value}</div>
-    </div>
-  );
+function Notice({ children, tone }: { children: React.ReactNode; tone: "success" | "error" }) {
+  return <div style={tone === "success" ? successStyle : errorStyle}>{children}</div>;
 }
 
-function CopyDetail({
-  label,
-  value,
-  copied,
-  onCopy,
-}: {
-  label: string;
-  value: string;
-  copied: string;
-  onCopy: (value: string, label: string) => void;
-}) {
-  const canCopy = !["None", "Not linked", "Not stored", "Not available"].includes(value);
-  return (
-    <div style={detailItemStyle}>
-      <div style={smallLabelStyle}>{label}</div>
-      <div style={copyValueRowStyle}>
-        <div style={detailValueStyle}>{value}</div>
-        {canCopy && (
-          <button style={copyButtonStyle} onClick={() => onCopy(value, label)}>
-            {copied === label ? "Copied" : "Copy"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CopyRow({
-  label,
-  value,
-  copied,
-  onCopy,
-  code = false,
-}: {
-  label: string;
-  value: string;
-  copied: string;
-  onCopy: (value: string, label: string) => void;
-  code?: boolean;
-}) {
-  return (
-    <div style={copyRowStyle}>
-      {code ? <code style={copyCodeStyle}>{value}</code> : <div style={detailValueStyle}>{value}</div>}
-      <button style={copyButtonStyle} onClick={() => onCopy(value, label)}>
-        {copied === label ? "Copied" : "Copy"}
-      </button>
-    </div>
-  );
+function Empty({ children }: { children: React.ReactNode }) {
+  return <div style={emptyStyle}>{children}</div>;
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-const mainStyle: React.CSSProperties = {
-  width: "min(1040px, 100%)",
-  margin: "0 auto",
-  padding: "48px 24px",
-};
+function titleCase(value: string) {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
 
-const loginPanelStyle: React.CSSProperties = {
-  width: "min(420px, 100%)",
-  margin: "0 auto",
-  padding: "120px 24px 48px",
-};
-
-const headerStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: 20,
-  marginBottom: 24,
-};
-
-const eyebrowStyle: React.CSSProperties = {
-  color: "#777777",
-  fontSize: 12,
-  fontWeight: 700,
-  textTransform: "uppercase",
-  marginBottom: 7,
-};
-
-const titleStyle: React.CSSProperties = {
-  margin: 0,
-  color: "#111111",
-  fontSize: 30,
-  lineHeight: 1.18,
-  fontWeight: 750,
-};
-
-const copyStyle: React.CSSProperties = {
-  color: "#666666",
-  fontSize: 14,
-  lineHeight: 1.55,
-  margin: "7px 0 0",
-};
-
-const sectionStyle: React.CSSProperties = {
-  border: "1px solid #D4D4D4",
-  borderRadius: 8,
-  background: "#FFFFFF",
-  padding: 20,
-  marginBottom: 16,
-};
-
-const flatSectionStyle: React.CSSProperties = {
-  marginTop: 20,
-};
-
-const tableActionStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "flex-end",
-  gap: 12,
-  marginBottom: 14,
-};
-
-const sectionTitleStyle: React.CSSProperties = {
-  margin: "0 0 14px",
-  color: "#111111",
-  fontSize: 17,
-  fontWeight: 700,
-};
-
-const createGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(180px, 1fr) auto",
-  gap: 8,
-  alignItems: "center",
-};
-
-const inputStyle: React.CSSProperties = {
-  height: 40,
-  border: "1px solid #D4D4D4",
-  borderRadius: 6,
-  background: "#FFFFFF",
-  color: "#111111",
-  padding: "0 11px",
-  fontSize: 14,
-  outline: "none",
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  height: 40,
-  borderRadius: 6,
-  border: "none",
-  background: "#111111",
-  color: "#FFFFFF",
-  padding: "0 14px",
-  cursor: "pointer",
-  fontSize: 13,
-  fontWeight: 650,
-};
-
-const secondaryButtonStyle: React.CSSProperties = {
-  height: 36,
-  borderRadius: 6,
-  border: "1px solid #D4D4D4",
-  background: "#FFFFFF",
-  color: "#333333",
-  padding: "0 12px",
-  cursor: "pointer",
-  fontSize: 13,
-  fontWeight: 650,
-};
-
-const createdBoxStyle: React.CSSProperties = {
-  border: "1px solid #BFE2C5",
-  background: "#EEF8F0",
-  borderRadius: 8,
-  padding: 12,
-  marginTop: 14,
-  display: "grid",
-  gap: 7,
-};
-
-const codeBlockStyle: React.CSSProperties = {
-  display: "block",
-  border: "1px solid #D4D4D4",
-  borderRadius: 6,
-  background: "#FFFFFF",
-  color: "#111111",
-  padding: 8,
-  overflowWrap: "anywhere",
-  fontSize: 12,
-};
-
-const copyRowStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) auto",
-  alignItems: "center",
-  gap: 8,
-};
-
-const copyCodeStyle: React.CSSProperties = {
-  ...codeBlockStyle,
-  minWidth: 0,
-};
-
-const copyValueRowStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) auto",
-  alignItems: "center",
-  gap: 8,
-};
-
-const copyButtonStyle: React.CSSProperties = {
-  height: 30,
-  borderRadius: 6,
-  border: "1px solid #D4D4D4",
-  background: "#FFFFFF",
-  color: "#333333",
-  padding: "0 9px",
-  cursor: "pointer",
-  fontSize: 12,
-  fontWeight: 650,
-  whiteSpace: "nowrap",
-};
-
-const tableStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 8,
-};
-
-const tableHeaderStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1.1fr minmax(220px, 1.5fr) 1.1fr 0.8fr",
-  gap: 10,
-  color: "#777777",
-  fontSize: 11,
-  fontWeight: 700,
-  textTransform: "uppercase",
-  padding: "0 12px",
-};
-
-const testerRowStyle: React.CSSProperties = {
-  border: "1px solid #E0E0E0",
-  borderRadius: 8,
-  background: "#EBE9E9",
-  overflow: "hidden",
-};
-
-const rowButtonStyle: React.CSSProperties = {
-  width: "100%",
-  display: "grid",
-  gridTemplateColumns: "1.1fr minmax(220px, 1.5fr) 1.1fr 0.8fr",
-  gap: 10,
-  alignItems: "center",
-  minHeight: 58,
-  border: "none",
-  background: "transparent",
-  padding: "10px 12px",
-  cursor: "pointer",
-  textAlign: "left",
-};
-
-const dangerButtonStyle: React.CSSProperties = {
-  minWidth: 74,
-  border: "1px solid #E7B5B5",
-  borderRadius: 6,
-  background: "#FFF1F1",
-  color: "#8A1F1F",
-  padding: "0 10px",
-  cursor: "pointer",
-  fontSize: 12,
-  fontWeight: 650,
-};
-
-const rowTitleStyle: React.CSSProperties = {
-  color: "#111111",
-  fontSize: 14,
-  fontWeight: 700,
-};
-
-const rowMetaStyle: React.CSSProperties = {
-  color: "#777777",
-  fontSize: 12,
-  marginTop: 2,
-};
-
-const rowMetaStrongStyle: React.CSSProperties = {
-  color: "#444444",
-  fontSize: 13,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-
-const detailStyle: React.CSSProperties = {
-  borderTop: "1px solid #E0E0E0",
-  padding: 12,
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 10,
-};
-
-const questionnaireStyle: React.CSSProperties = {
-  gridColumn: "1 / -1",
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 10,
-  borderTop: "1px solid #E0E0E0",
-  paddingTop: 10,
-};
-
-const detailItemStyle: React.CSSProperties = {
-  minWidth: 0,
-};
-
-const smallLabelStyle: React.CSSProperties = {
-  color: "#777777",
-  fontSize: 11,
-  fontWeight: 700,
-  textTransform: "uppercase",
-  marginBottom: 4,
-};
-
-const detailValueStyle: React.CSSProperties = {
-  color: "#222222",
-  fontSize: 13,
-  lineHeight: 1.45,
-  overflowWrap: "anywhere",
-};
-
-const emptyStyle: React.CSSProperties = {
-  border: "1px dashed #D4D4D4",
-  borderRadius: 8,
-  background: "#FAFAFA",
-  padding: "28px 16px",
-  color: "#777777",
-  fontSize: 13,
-  textAlign: "center",
-};
-
-const emptyDetailStyle: React.CSSProperties = {
-  gridColumn: "1 / -1",
-  color: "#777777",
-  fontSize: 13,
-};
-
-const errorStyle: React.CSSProperties = {
-  border: "1px solid #F3B4B4",
-  borderRadius: 8,
-  background: "#FFF1F1",
-  color: "#991B1B",
-  padding: "10px 12px",
-  fontSize: 13,
-  marginTop: 14,
-};
+const mainStyle: React.CSSProperties = { width: "min(1180px, 100%)", margin: "0 auto", padding: "42px 24px" };
+const loginStyle: React.CSSProperties = { width: "min(420px, 100%)", margin: "0 auto", padding: "120px 24px 48px" };
+const stackStyle: React.CSSProperties = { display: "grid", gap: 14 };
+const headerStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 20, alignItems: "flex-start", marginBottom: 22 };
+const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 12, fontWeight: 750, textTransform: "uppercase", marginBottom: 6 };
+const titleStyle: React.CSSProperties = { margin: 0, fontSize: 30, lineHeight: 1.15 };
+const copyStyle: React.CSSProperties = { margin: "7px 0 0", color: "#666", fontSize: 14, lineHeight: 1.5 };
+const tabsStyle: React.CSSProperties = { display: "flex", gap: 8, marginBottom: 18 };
+const tabStyle: React.CSSProperties = { height: 34, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 12px", cursor: "pointer" };
+const activeTabStyle: React.CSSProperties = { ...tabStyle, background: "#111", color: "#FFF", borderColor: "#111" };
+const panelStyle: React.CSSProperties = { border: "1px solid #D4D4D4", borderRadius: 8, background: "#FFF", padding: 18 };
+const sectionTitleStyle: React.CSSProperties = { margin: "0 0 12px", fontSize: 17 };
+const manualGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr)) auto", gap: 8 };
+const inputStyle: React.CSSProperties = { height: 40, border: "1px solid #D4D4D4", borderRadius: 6, padding: "0 11px", fontSize: 14 };
+const primaryButtonStyle: React.CSSProperties = { height: 40, border: 0, borderRadius: 6, background: "#111", color: "#FFF", padding: "0 14px", cursor: "pointer", fontWeight: 700 };
+const secondaryButtonStyle: React.CSSProperties = { height: 34, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 11px", cursor: "pointer", fontWeight: 650 };
+const dangerButtonStyle: React.CSSProperties = { ...secondaryButtonStyle, borderColor: "#E7B5B5", background: "#FFF1F1", color: "#8A1F1F" };
+const buttonRowStyle: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
+const tableHeaderStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", padding: "0 8px 8px" };
+const detailCardStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: "10px 8px" };
+const summaryStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, cursor: "pointer", fontSize: 13 };
+const preStyle: React.CSSProperties = { margin: "12px 0 0", padding: 12, borderRadius: 6, background: "#F7F7F7", overflow: "auto", fontSize: 12 };
+const userCardStyle: React.CSSProperties = { border: "1px solid #E0E0E0", borderRadius: 8, overflow: "hidden", marginTop: 8, background: "#F7F7F7" };
+const userButtonStyle: React.CSSProperties = { width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 0.7fr", gap: 12, border: 0, background: "transparent", padding: 12, cursor: "pointer", textAlign: "left", alignItems: "center" };
+const expandedStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 };
+const mutedStyle: React.CSSProperties = { color: "#777", fontSize: 12, marginTop: 2 };
+const smallLabelStyle: React.CSSProperties = { color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 4 };
+const valueStyle: React.CSSProperties = { color: "#222", fontSize: 13, overflowWrap: "anywhere" };
+const emptyStyle: React.CSSProperties = { border: "1px dashed #D4D4D4", borderRadius: 8, padding: 24, color: "#777", textAlign: "center", fontSize: 13 };
+const successStyle: React.CSSProperties = { border: "1px solid #BFE2C5", borderRadius: 8, background: "#EEF8F0", color: "#225B2D", padding: "10px 12px", fontSize: 13, marginBottom: 14 };
+const errorStyle: React.CSSProperties = { border: "1px solid #F3B4B4", borderRadius: 8, background: "#FFF1F1", color: "#991B1B", padding: "10px 12px", fontSize: 13, marginBottom: 14 };

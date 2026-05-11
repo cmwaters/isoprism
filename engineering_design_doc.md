@@ -261,19 +261,25 @@ pr_analyses
   created_at       timestamptz
 ```
 
-### Planned Beta Tables
+### Pilot Tables
 
-The current production graph schema does not yet model the beta loop. To support the intended tester flow, add a small beta access layer:
+The pilot flow is registration-first. Prospective testers submit `/pilot/register`, admins review Registration forms, and selected users receive a generated access-code link by email. Review responses are saved through `/pilot/review/{token}`.
 
 ```sql
--- One row per pilot invite link.
+-- One row per pilot user.
 pilot_users
   id                    uuid PK
-  name                  text               -- beta tester name entered by the admin
-  token                 text UNIQUE        -- raw invite token for prototype simplicity
-  email                 text               -- optional operator note, not used for auth
-  status                text DEFAULT 'new' -- 'new' | 'active' | 'completed' | 'revoked' | 'expired'
+  name                  text
+  email                 text
+  status                text DEFAULT 'registered'
+  token                 text UNIQUE        -- generated when the admin sends the invite
   invited_at            timestamptz
+  review_token          text UNIQUE
+  review_sent_at        timestamptz
+  pilot_languages       text
+  public_repo_url       text
+  issue_count           int
+  feature_count         int
   expires_at            timestamptz
   accepted_at           timestamptz
   completed_at          timestamptz
@@ -283,7 +289,18 @@ pilot_users
   trial_ends_at         timestamptz
   created_at            timestamptz
 
--- One questionnaire response per pilot invite.
+-- Registration and review form submissions.
+pilot_forms
+  id                    uuid PK
+  pilot_user_id         uuid FK -> pilot_users
+  form_type             text               -- 'registration' | 'review'
+  name                  text
+  email                 text
+  answers               jsonb
+  submitted_at          timestamptz
+  created_at            timestamptz
+
+-- One review questionnaire response per pilot user, kept for the existing review UI contract.
 pilot_questionaire
   id                    uuid PK
   invite_id             uuid FK -> pilot_users UNIQUE
@@ -301,23 +318,20 @@ pilot_questionaire
 
 The selected repository should be enforced at the product layer and, ideally, by API checks: once `selected_repo_id` is set for an active invite, the tester should not be able to index a second repository through normal UI/API paths.
 
-### Planned Admin Console
+### Pilot Admin Console
 
-The beta admin console should live at `/admin` and require an operator-only check before rendering data.
+The pilot admin console lives at `/admin` and requires `ADMIN_PASSWORD` before rendering data.
 
 It should let an operator:
 
-- Enter a beta tester by name
-- Generate a raw invite token
-- Copy the full invite link
-- Monitor whether the tester has used the link
-- See which repository the tester has selected
-- See trial start/end status
-- Review submitted questionnaire answers
+- Review Registration and Review forms
+- See registered pilot users and link to their registration form
+- Add or delete pilot users manually
+- Generate an access-code link and send the invite email with Resend
+- Track invited/active pilots by setup date, selected repo, and issue/feature submissions
+- Send a review email after the pilot period
 
-The admin page should not expose raw tokens after creation. If a link is lost, the operator should revoke the old invite and generate a new one.
-
-The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send the password as `X-Admin-Password`; the API compares it server-side before listing or creating beta testers.
+The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send the password as `X-Admin-Password`; the API compares it server-side before listing forms, listing users, creating users, deleting users, or sending pilot emails.
 
 ### Design Notes
 
@@ -513,19 +527,20 @@ api/
 POST /webhooks/github
 GET  /api/v1/github/callback
 GET  /api/v1/auth/status
-GET  /api/v1/beta/invites/{token}/status
+POST /api/v1/pilot/register
+POST /api/v1/pilot/review/{token}
+POST /api/v1/pilot/invites/{token}/accept
+GET  /api/v1/admin/pilot/users
+POST /api/v1/admin/pilot/users
+DELETE /api/v1/admin/pilot/users/{userID}
+GET  /api/v1/admin/pilot/forms
+POST /api/v1/admin/pilot/users/{userID}/invite
+POST /api/v1/admin/pilot/users/{userID}/review-email
 ```
 
 **Authenticated**
 ```
-POST   /api/v1/beta/invites/{token}/accept
-GET    /api/v1/beta/trial
 POST   /api/v1/beta/feedback
-POST   /api/v1/beta/questionnaire
-
-GET    /api/v1/admin/beta/testers
-POST   /api/v1/admin/beta/testers
-GET    /api/v1/admin/beta/testers/{betaID}
 
 GET    /api/v1/me/repos                                   list repos for current user
 DELETE /api/v1/me

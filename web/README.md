@@ -22,13 +22,13 @@ npm run lint
 npm run build
 ```
 
-## Auth routing
+## Pilot registration and auth
 
-The intended beta route is invite-first: testers receive a unique link containing an access token, connect GitHub, authorize the Isoprism GitHub App, and select one repository for a one-week trial.
+The pilot starts at `/pilot/register`. Prospective testers submit the registration form, including how they currently review code, whether AI writes most of their software, and whether they want to pilot Isoprism for one week with one repository.
+
+Admins review registrations at `/admin`, generate an access code, and send the invite email through Resend. The invite link goes to `/pilot/{token}`, which forwards into the login/GitHub setup flow. The review email goes to `/pilot/review/{token}` and saves the end-of-pilot review form.
 
 The current root route is login-first: unauthenticated visitors go to `/login`, and signed-in visitors only skip login when `GET /api/v1/auth/status?user_id=...` returns a ready repo (`/{owner}/{repo}`) or an installed-but-unindexed repo (`/onboarding/repos`). If auth status returns `/onboarding`, root maps that to `/login`; the OAuth callback keeps `/onboarding` so newly signed-in GitHub users without a connected Isoprism repo are prompted to install the GitHub App and grant repo permissions.
-
-To fully match the beta loop, routing should preserve invite context across OAuth and GitHub App installation, reject invalid or completed beta tokens, lock the tester to one selected repository, show trial status for seven days, and ask for the questionnaire once the trial window ends.
 
 The GitHub OAuth login requests `read:user`, `user:email`, and `read:org`. The org scope lets the settings UI discover private organization memberships when GitHub exposes them to the signed-in user's OAuth token.
 
@@ -51,25 +51,34 @@ When a different repository is indexed from settings, the page shows the same `I
 
 GitHub App install and permission changes still happen on GitHub.
 
-## Beta admin
+## Pilot admin
 
-The beta admin console is available at `/admin`. It prompts for the admin password and then calls the Go API with `X-Admin-Password`.
+The pilot admin console is available at `/admin`. It prompts for the admin password and then calls the Go API with `X-Admin-Password`.
 
 Admin capabilities:
 
-- Create a beta tester by name, with an optional email/note.
-- Generate a raw token and invite link.
-- Store the invite token directly for admin display and invite lookup.
-- Monitor each tester's invite link, selected repository, and questionnaire answers.
+- Review Registration and Review forms.
+- Add pilot users manually.
+- Generate an access code and send the pilot invite email through Resend.
+- Track started pilots by setup date, selected repo, and submitted issue/feature counts.
+- Send a review email after the pilot period.
+- Delete pilot users.
 
 The API routes are:
 
 ```http
-GET  /api/v1/admin/beta/testers
-POST /api/v1/admin/beta/testers
+POST /api/v1/pilot/register
+POST /api/v1/pilot/review/{token}
+POST /api/v1/pilot/invites/{token}/accept
+GET  /api/v1/admin/pilot/users
+POST /api/v1/admin/pilot/users
+DELETE /api/v1/admin/pilot/users/{userID}
+GET  /api/v1/admin/pilot/forms
+POST /api/v1/admin/pilot/users/{userID}/invite
+POST /api/v1/admin/pilot/users/{userID}/review-email
 ```
 
-The Railway API must have `ADMIN_PASSWORD` set before this page can unlock.
+The Railway API must have `ADMIN_PASSWORD` set before this page can unlock. Sending emails also requires `RESEND_API_KEY`; `PILOT_EMAIL_FROM` controls the sender address.
 
 ## Repository Graph View
 

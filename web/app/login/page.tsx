@@ -9,10 +9,13 @@ export default function LoginPage() {
 
   async function signInWithGitHub() {
     setLoading(true);
+    const pilot = new URLSearchParams(window.location.search).get("pilot");
+    const callback = new URL("/auth/callback", window.location.origin);
+    if (pilot) callback.searchParams.set("pilot", pilot);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "github",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: callback.toString(),
         scopes: "read:user user:email read:org",
       },
     });
@@ -39,7 +42,7 @@ export default function LoginPage() {
           </p>
 
           <p style={{ color: "#555555", fontSize: 15, lineHeight: 1.7, margin: 0 }}>
-            This is for beta testers. The expectation is to use this prototype where possible
+            This is for pilot users. The expectation is to use this prototype where possible
             for reviewing PRs. You will connect this to your GitHub and select a single
             repository.
           </p>

@@ -8,13 +8,13 @@
 
 **Hypothesis:** A graph representation of software changes — showing the functions affected, their inputs and outputs, and what changed about each — is faster and more effective than reading a code diff when trying to understand a pull request.
 
-This prototype exists to test that hypothesis with invited beta testers, real repos, and real PR review work. Nothing else.
+This prototype exists to test that hypothesis with pilot users, real repos, and real PR review work. Nothing else.
 
-### Beta Tester Contract
+### Pilot Contract
 
-The prototype loop is invite-only.
+The prototype loop is registration-first and admin-approved.
 
-Each beta tester receives a unique access link containing an invitation token. That token grants permission to start the Isoprism beta flow. The tester then connects GitHub, installs or authorizes the Isoprism GitHub App, selects exactly one repository, and uses Isoprism for one week while reviewing PRs in that repository.
+Prospective pilot users register at `/pilot/register` and answer a short form about how they review software as AI writes more code. If they are interested in the pilot, they provide name, email, working language/s, and an optional public repo link. An admin reviews registrations, sends selected users an access-code invite by email, and the user then connects GitHub, installs or authorizes the Isoprism GitHub App, selects exactly one repository, and uses Isoprism for one week while reviewing PRs in that repository.
 
 During the trial week, the tester should be prompted to request features and report bugs whenever they hit friction. At the end of the week, Isoprism should ask them to complete a short questionnaire about whether the graph view helped them review PRs faster and with more confidence.
 
@@ -39,17 +39,21 @@ This reconstruction is slow, error-prone, and scales poorly with PR size or code
 
 ## 3. The Prototype Flow
 
-The prototype has one narrow invited-tester flow. Every design and engineering decision should serve this flow.
+The prototype has one narrow pilot flow. Every design and engineering decision should serve this flow.
 
-### Entry — Invite Link
+### Entry — Registration
 
-The tester starts from a link containing a unique token, for example:
+The tester starts from the public registration form:
 
 ```text
-https://isoprism.com/beta/{token}
+https://isoprism.com/pilot/register
 ```
 
-The token must be valid, unused or active, and tied to one tester record. Invalid, expired, or already-completed tokens should show a clear access state and should not allow GitHub connection.
+Admins can send selected users an access-code link after reviewing the registration:
+
+```text
+https://isoprism.com/pilot/{token}
+```
 
 ---
 
@@ -57,7 +61,7 @@ The token must be valid, unused or active, and tied to one tester record. Invali
 
 The tester lands on the site through their invite link. The page sets expectations before GitHub connection: Isoprism is a prototype, not a fully fledged product; the beta exists to answer whether there is a better way to understand and review code changes.
 
-The page explains that beta testers should use the prototype where possible while reviewing PRs, connect GitHub, select a single repository, submit feature requests and bug reports through the product footer, trial it for one week, and complete a short questionnaire at the end. No email, no password, no form. One button: "Connect GitHub".
+The page explains that pilot users should use the prototype where possible while reviewing PRs, connect GitHub, select a single repository, submit feature requests and bug reports through the product footer, trial it for one week, and complete a short questionnaire at the end. One button: "Connect GitHub".
 
 Direct visits to `isoprism.com` should not start the beta unless there is an active invite token associated with the session or account. If the GitHub OAuth callback shows the signed-in tester has not connected Isoprism yet, the tester is sent to install the GitHub App and grant repository permissions.
 
@@ -147,13 +151,13 @@ The questionnaire should capture:
 
 ---
 
-### Admin — Beta Tester Console
+### Admin — Pilot Console
 
-Operators need a simple admin page for managing the beta loop.
+Operators need a simple admin page for managing the pilot loop.
 
-The admin page should allow an operator to enter a beta tester by name, generate a token and invite link, and monitor whether the invite has been used. It should also show which repository the tester has set up and their questionnaire answers once submitted.
+The admin page should have two tabs: Pilot Users and Forms. Pilot Users lists registered users, links to their registration form, lets an admin add or delete users manually, generates access-code invite emails through Resend, tracks setup date, selected repository, and issue/feature counts, and sends the end-of-pilot review email. Forms lists Registration and Review submissions.
 
-Invite tokens are stored directly for prototype simplicity so the admin page can keep showing invite links.
+The review email links to `/pilot/review/{token}` and reuses the existing short review questionnaire.
 
 ---
 
@@ -176,7 +180,7 @@ That is the core product metric. The beta loop also succeeds when the tester com
 - Not a code review tool. Users cannot comment, approve, or request changes.
 - Not a team tool. There are no orgs, members, or permissions in the prototype.
 - Not an analytics product. There are no insights, charts, or trend views.
-- Not multi-repo. One repo per beta tester.
+- Not multi-repo. One repo per pilot user.
 - Not open signup. Access requires a valid beta invite token.
 
 These features may follow if the hypothesis proves true. For now, they are out of scope.

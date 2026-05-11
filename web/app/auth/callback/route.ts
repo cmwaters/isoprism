@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = searchParams.get("next");
+  const pilot = searchParams.get("pilot");
 
   if (code) {
     const supabase = await createClient();
@@ -18,6 +19,17 @@ export async function GET(request: NextRequest) {
 
       // Otherwise, ask the shared auth-status helper where to send the user.
       const userId = data.session.user.id;
+      if (pilot) {
+        try {
+          await fetch(`${API_URL}/api/v1/pilot/invites/${encodeURIComponent(pilot)}/accept`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: userId }),
+          });
+        } catch {
+          // Continue through normal auth routing; invalid pilot links are handled operationally.
+        }
+      }
 
       try {
         const statusRes = await fetch(

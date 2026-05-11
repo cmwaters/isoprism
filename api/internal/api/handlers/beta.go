@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 	"time"
@@ -19,6 +21,8 @@ type BetaHandler struct {
 	FeedbackToken string
 	FeedbackRepo  string
 	AdminPassword string
+	ResendAPIKey  string
+	EmailFrom     string
 	FrontendURL   string
 	DB            *pgxpool.Pool
 }
@@ -46,7 +50,10 @@ type createIssueRequest struct {
 }
 
 type CreateBetaTesterRequest struct {
-	Name string `json:"name"`
+	Name          string `json:"name"`
+	Email         string `json:"email"`
+	Languages     string `json:"languages"`
+	PublicRepoURL string `json:"public_repo_url"`
 }
 
 type CreateBetaTesterResponse struct {
@@ -60,7 +67,7 @@ type BetaTester struct {
 	Name                     string                  `json:"name"`
 	Email                    *string                 `json:"email"`
 	Status                   string                  `json:"status"`
-	InvitedAt                time.Time               `json:"invited_at"`
+	InvitedAt                *time.Time              `json:"invited_at"`
 	AcceptedAt               *time.Time              `json:"accepted_at"`
 	CompletedAt              *time.Time              `json:"completed_at"`
 	UserID                   *string                 `json:"user_id"`
@@ -68,6 +75,11 @@ type BetaTester struct {
 	SelectedRepoFullName     *string                 `json:"selected_repo_full_name"`
 	TrialStartsAt            *time.Time              `json:"trial_starts_at"`
 	TrialEndsAt              *time.Time              `json:"trial_ends_at"`
+	ReviewSentAt             *time.Time              `json:"review_sent_at"`
+	PilotLanguages           *string                 `json:"pilot_languages"`
+	PublicRepoURL            *string                 `json:"public_repo_url"`
+	IssueCount               int                     `json:"issue_count"`
+	FeatureCount             int                     `json:"feature_count"`
 	QuestionnaireSubmittedAt *time.Time              `json:"questionnaire_submitted_at"`
 	Questionnaire            *BetaQuestionnaireAdmin `json:"questionnaire"`
 	Token                    *string                 `json:"token,omitempty"`
@@ -83,6 +95,44 @@ type BetaQuestionnaireAdmin struct {
 	WouldKeepUsing     *string `json:"would_keep_using"`
 }
 
+type PilotRegistrationRequest struct {
+	AIWritesMostSoftware string `json:"ai_writes_most_software"`
+	CurrentReviewTools   string `json:"current_review_tools"`
+	ReviewWorkPercent    int    `json:"review_work_percent"`
+	RoleChange           string `json:"role_change"`
+	ReviewPainPoints     string `json:"review_pain_points"`
+	AIReviewDifference   string `json:"ai_review_difference"`
+	OtherComments        string `json:"other_comments"`
+	InterestedInPilot    bool   `json:"interested_in_pilot"`
+	Name                 string `json:"name"`
+	Email                string `json:"email"`
+	PilotLanguages       string `json:"pilot_languages"`
+	PublicRepoURL        string `json:"public_repo_url"`
+}
+
+type PilotReviewRequest struct {
+	FasterRating       *int   `json:"faster_rating"`
+	RiskClarityRating  *int   `json:"risk_clarity_rating"`
+	ConfusingOrMissing string `json:"confusing_or_missing"`
+	BugsHit            string `json:"bugs_hit"`
+	BuildNext          string `json:"build_next"`
+	WouldKeepUsing     string `json:"would_keep_using"`
+}
+
+type AcceptPilotInviteRequest struct {
+	UserID string `json:"user_id"`
+}
+
+type PilotForm struct {
+	ID          string          `json:"id"`
+	PilotUserID *string         `json:"pilot_user_id"`
+	FormType    string          `json:"form_type"`
+	Name        *string         `json:"name"`
+	Email       *string         `json:"email"`
+	Answers     json.RawMessage `json:"answers"`
+	SubmittedAt time.Time       `json:"submitted_at"`
+}
+
 // GET /api/v1/admin/beta/testers
 func (h *BetaHandler) ListBetaTesters(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizedAdmin(r) {
@@ -94,7 +144,10 @@ func (h *BetaHandler) ListBetaTesters(w http.ResponseWriter, r *http.Request) {
 		select
 			b.id, b.name, b.email, b.status, b.invited_at, b.token,
 			b.accepted_at, b.completed_at, b.user_id, b.selected_repo_id,
-			r.full_name, b.trial_starts_at, b.trial_ends_at,
+			r.full_name, b.trial_starts_at, b.trial_ends_at, b.review_sent_at,
+			b.pilot_languages, b.public_repo_url,
+			b.issue_count,
+			b.feature_count,
 			q.submitted_at, q.faster_rating, q.risk_clarity_rating,
 			q.confusing_or_missing, q.bugs_hit, q.build_next, q.would_keep_using
 		from pilot_users b
@@ -135,24 +188,22 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Languages = strings.TrimSpace(req.Languages)
+	req.PublicRepoURL = strings.TrimSpace(req.PublicRepoURL)
 	if req.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
 
-	token, err := newInviteToken()
-	if err != nil {
-		http.Error(w, "failed to generate token", http.StatusInternalServerError)
-		return
-	}
 	var tester BetaTester
-	err = h.DB.QueryRow(r.Context(), `
-		insert into pilot_users (name, token)
-		values ($1, $2)
+	err := h.DB.QueryRow(r.Context(), `
+		insert into pilot_users (name, email, pilot_languages, public_repo_url, status)
+		values ($1, nullif($2, ''), nullif($3, ''), nullif($4, ''), 'registered')
 		returning id, name, email, status, invited_at, token,
 			accepted_at, completed_at, user_id, selected_repo_id,
 			trial_starts_at, trial_ends_at
-	`, req.Name, token).Scan(
+	`, req.Name, req.Email, req.Languages, req.PublicRepoURL).Scan(
 		&tester.ID, &tester.Name, &tester.Email, &tester.Status,
 		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
 		&tester.SelectedRepoID, &tester.TrialStartsAt, &tester.TrialEndsAt,
@@ -161,15 +212,112 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to create tester", http.StatusInternalServerError)
 		return
 	}
-	tester.Link = inviteLink(h.FrontendURL, token)
+	if tester.Token != nil {
+		tester.Link = inviteLink(h.FrontendURL, *tester.Token)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(CreateBetaTesterResponse{
 		BetaTester: tester,
-		Token:      token,
+		Token:      valueFromPtr(tester.Token),
 		Link:       tester.Link,
 	})
+}
+
+// POST /api/v1/pilot/register
+func (h *BetaHandler) RegisterPilotInterest(w http.ResponseWriter, r *http.Request) {
+	var req PilotRegistrationRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		http.Error(w, "invalid registration payload", http.StatusBadRequest)
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Email = strings.TrimSpace(req.Email)
+	req.PilotLanguages = strings.TrimSpace(req.PilotLanguages)
+	req.PublicRepoURL = strings.TrimSpace(req.PublicRepoURL)
+	if req.InterestedInPilot && (req.Name == "" || req.Email == "") {
+		http.Error(w, "name and email are required for pilot interest", http.StatusBadRequest)
+		return
+	}
+
+	answers, err := json.Marshal(req)
+	if err != nil {
+		http.Error(w, "failed to encode registration", http.StatusInternalServerError)
+		return
+	}
+
+	var pilotUserID *string
+	if req.InterestedInPilot {
+		var id string
+		err = h.DB.QueryRow(r.Context(), `
+			insert into pilot_users (name, email, status, pilot_languages, public_repo_url)
+			values ($1, $2, 'registered', nullif($3, ''), nullif($4, ''))
+			returning id
+		`, req.Name, req.Email, req.PilotLanguages, req.PublicRepoURL).Scan(&id)
+		if err != nil {
+			http.Error(w, "failed to create pilot user", http.StatusInternalServerError)
+			return
+		}
+		pilotUserID = &id
+	}
+
+	var formID string
+	err = h.DB.QueryRow(r.Context(), `
+		insert into pilot_forms (pilot_user_id, form_type, name, email, answers)
+		values ($1, 'registration', nullif($2, ''), nullif($3, ''), $4::jsonb)
+		returning id
+	`, pilotUserID, req.Name, req.Email, string(answers)).Scan(&formID)
+	if err != nil {
+		http.Error(w, "failed to save registration", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "submitted",
+		"form_id":       formID,
+		"pilot_user_id": pilotUserID,
+	})
+}
+
+// POST /api/v1/pilot/invites/{token}/accept
+func (h *BetaHandler) AcceptPilotInvite(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(chi.URLParam(r, "token"))
+	if token == "" {
+		http.Error(w, "invite token is required", http.StatusBadRequest)
+		return
+	}
+	var req AcceptPilotInviteRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		http.Error(w, "invalid invite payload", http.StatusBadRequest)
+		return
+	}
+	req.UserID = strings.TrimSpace(req.UserID)
+	if req.UserID == "" {
+		http.Error(w, "user id is required", http.StatusBadRequest)
+		return
+	}
+
+	tag, err := h.DB.Exec(r.Context(), `
+		update pilot_users
+		set user_id = $1,
+			accepted_at = coalesce(accepted_at, now()),
+			status = case when status = 'registered' then 'invited' else status end
+		where token = $2
+	`, req.UserID, token)
+	if err != nil {
+		http.Error(w, "failed to accept invite", http.StatusInternalServerError)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		http.Error(w, "invite not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 }
 
 // DELETE /api/v1/admin/beta/testers/{testerID}
@@ -196,6 +344,170 @@ func (h *BetaHandler) DeleteBetaTester(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GET /api/v1/admin/pilot/forms
+func (h *BetaHandler) ListPilotForms(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizedAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	rows, err := h.DB.Query(r.Context(), `
+		select id, pilot_user_id, form_type, name, email, answers, submitted_at
+		from pilot_forms
+		order by submitted_at desc
+	`)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	forms := make([]PilotForm, 0)
+	for rows.Next() {
+		var form PilotForm
+		if err := rows.Scan(&form.ID, &form.PilotUserID, &form.FormType, &form.Name, &form.Email, &form.Answers, &form.SubmittedAt); err != nil {
+			http.Error(w, "scan error", http.StatusInternalServerError)
+			return
+		}
+		forms = append(forms, form)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"forms": forms})
+}
+
+// POST /api/v1/admin/pilot/users/{testerID}/invite
+func (h *BetaHandler) InvitePilotUser(w http.ResponseWriter, r *http.Request) {
+	h.sendPilotEmail(w, r, "invite")
+}
+
+// POST /api/v1/admin/pilot/users/{testerID}/review-email
+func (h *BetaHandler) SendReviewEmail(w http.ResponseWriter, r *http.Request) {
+	h.sendPilotEmail(w, r, "review")
+}
+
+func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kind string) {
+	if !h.authorizedAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if h.ResendAPIKey == "" {
+		http.Error(w, "RESEND_API_KEY is not configured", http.StatusNotImplemented)
+		return
+	}
+
+	testerID := strings.TrimSpace(chi.URLParam(r, "testerID"))
+	if testerID == "" {
+		http.Error(w, "tester id is required", http.StatusBadRequest)
+		return
+	}
+
+	token, err := newInviteToken()
+	if err != nil {
+		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	var name, email string
+	var link string
+	if kind == "review" {
+		err = h.DB.QueryRow(r.Context(), `
+			update pilot_users
+			set review_token = $1, review_sent_at = now()
+			where id = $2 and email is not null and email <> ''
+			returning name, email
+		`, token, testerID).Scan(&name, &email)
+		link = reviewLink(h.FrontendURL, token)
+	} else {
+		err = h.DB.QueryRow(r.Context(), `
+			update pilot_users
+			set token = $1, status = 'invited', invited_at = now()
+			where id = $2 and email is not null and email <> ''
+			returning name, email
+		`, token, testerID).Scan(&name, &email)
+		link = inviteLink(h.FrontendURL, token)
+	}
+	if err != nil {
+		http.Error(w, "pilot user with email not found", http.StatusNotFound)
+		return
+	}
+
+	subject := "Your Isoprism pilot invite"
+	html := fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for your interest in the Isoprism pilot.</p><p>The pilot is one week using one repository to explore whether Isoprism helps engineers understand how AI has built their software.</p><p><a href="%s">Start the pilot</a></p>`, htmlEscape(name), link)
+	if kind == "review" {
+		subject = "Share your Isoprism pilot review"
+		html = fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for trying the Isoprism pilot. Could you complete the short review questionnaire?</p><p><a href="%s">Complete the pilot review</a></p>`, htmlEscape(name), link)
+	}
+	if err := h.sendResendEmail(r.Context(), email, subject, html); err != nil {
+		http.Error(w, "failed to send email", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "sent",
+		"link":   link,
+	})
+}
+
+// POST /api/v1/pilot/review/{token}
+func (h *BetaHandler) SubmitPilotReview(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(chi.URLParam(r, "token"))
+	if token == "" {
+		http.Error(w, "review token is required", http.StatusBadRequest)
+		return
+	}
+	var req PilotReviewRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		http.Error(w, "invalid review payload", http.StatusBadRequest)
+		return
+	}
+
+	answers, err := json.Marshal(req)
+	if err != nil {
+		http.Error(w, "failed to encode review", http.StatusInternalServerError)
+		return
+	}
+
+	var userID, name, email string
+	err = h.DB.QueryRow(r.Context(), `
+		select id, name, coalesce(email, '')
+		from pilot_users
+		where review_token = $1
+	`, token).Scan(&userID, &name, &email)
+	if err != nil {
+		http.Error(w, "review link not found", http.StatusNotFound)
+		return
+	}
+
+	_, err = h.DB.Exec(r.Context(), `
+		insert into pilot_forms (pilot_user_id, form_type, name, email, answers)
+		values ($1, 'review', nullif($2, ''), nullif($3, ''), $4::jsonb)
+	`, userID, name, email, string(answers))
+	if err != nil {
+		http.Error(w, "failed to save review", http.StatusInternalServerError)
+		return
+	}
+
+	_, _ = h.DB.Exec(r.Context(), `
+		insert into pilot_questionaire (
+			invite_id, faster_rating, risk_clarity_rating, confusing_or_missing,
+			bugs_hit, build_next, would_keep_using
+		) values ($1, $2, $3, $4, $5, $6, $7)
+		on conflict (invite_id) do update set
+			faster_rating = excluded.faster_rating,
+			risk_clarity_rating = excluded.risk_clarity_rating,
+			confusing_or_missing = excluded.confusing_or_missing,
+			bugs_hit = excluded.bugs_hit,
+			build_next = excluded.build_next,
+			would_keep_using = excluded.would_keep_using,
+			submitted_at = now()
+	`, userID, req.FasterRating, req.RiskClarityRating, req.ConfusingOrMissing, req.BugsHit, req.BuildNext, req.WouldKeepUsing)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "submitted"})
 }
 
 // POST /api/v1/beta/feedback
@@ -275,6 +587,15 @@ func (h *BetaHandler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to decode GitHub issue", http.StatusBadGateway)
 		return
 	}
+	if userID != "" {
+		column := "issue_count"
+		if req.Type == "feature" {
+			column = "feature_count"
+		}
+		_, _ = h.DB.Exec(r.Context(), fmt.Sprintf(`
+			update pilot_users set %s = %s + 1 where user_id = $1
+		`, column, column), userID)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -352,7 +673,8 @@ func scanBetaTester(row betaTesterScanner, frontendURL string) (BetaTester, erro
 		&tester.ID, &tester.Name, &tester.Email, &tester.Status,
 		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
 		&tester.SelectedRepoID, &tester.SelectedRepoFullName, &tester.TrialStartsAt,
-		&tester.TrialEndsAt, &submittedAt, &questionnaire.FasterRating,
+		&tester.TrialEndsAt, &tester.ReviewSentAt, &tester.PilotLanguages, &tester.PublicRepoURL,
+		&tester.IssueCount, &tester.FeatureCount, &submittedAt, &questionnaire.FasterRating,
 		&questionnaire.RiskClarityRating, &questionnaire.ConfusingOrMissing,
 		&questionnaire.BugsHit, &questionnaire.BuildNext, &questionnaire.WouldKeepUsing,
 	)
@@ -377,10 +699,58 @@ func newInviteToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+func (h *BetaHandler) sendResendEmail(ctx context.Context, to, subject, htmlBody string) error {
+	payload, err := json.Marshal(map[string]interface{}{
+		"from":    h.EmailFrom,
+		"to":      []string{to},
+		"subject": subject,
+		"html":    htmlBody,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+h.ResendAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("resend returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func inviteLink(frontendURL, token string) string {
 	base := strings.TrimRight(frontendURL, "/")
 	if token == "" {
-		return base + "/beta/{token}"
+		return base + "/pilot/{token}"
 	}
-	return base + "/beta/" + token
+	return base + "/pilot/" + token
+}
+
+func reviewLink(frontendURL, token string) string {
+	base := strings.TrimRight(frontendURL, "/")
+	if token == "" {
+		return base + "/pilot/review/{token}"
+	}
+	return base + "/pilot/review/" + token
+}
+
+func valueFromPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func htmlEscape(value string) string {
+	return html.EscapeString(value)
 }

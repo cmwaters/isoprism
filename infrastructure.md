@@ -168,7 +168,9 @@ supabase db dump --linked | grep -E "pr_check_runs|pr_review_threads|pr_review_r
 | `OPENAI_API_KEY` | Railway service env | Go API config only; currently unused by AI call sites |
 | `GITHUB_FEEDBACK_TOKEN` | Railway service env | Go API → creates GitHub issues for beta bug reports and feature requests |
 | `GITHUB_FEEDBACK_REPO` | Railway service env | Go API → `owner/repo` target for beta feedback issues |
-| `ADMIN_PASSWORD` | Railway service env | Go API → password gate for `/api/v1/admin/beta/testers` |
+| `ADMIN_PASSWORD` | Railway service env | Go API → password gate for pilot admin endpoints |
+| `RESEND_API_KEY` | Railway service env | Go API → sends pilot invite and review emails |
+| `PILOT_EMAIL_FROM` | Railway service env | Go API → sender address for pilot emails |
 | `NEXT_PUBLIC_SUPABASE_URL` | Vercel project env | Next.js |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel project env | Next.js |
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel project env | Next.js server (if needed) |
