@@ -239,28 +239,9 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			}
 			stats.HeadNodesUpserted++
 
-			changeType := "added"
-			var baseNode *parser.Node
-			if candidate, exists := baseNodesByName[n.FullName]; exists {
-				matchedBase[semanticNodeKey(candidate)] = true
-				if candidate.BodyHash == n.BodyHash {
-					if file.Status != "renamed" || candidate.FilePath == n.FilePath {
-						continue // unchanged
-					}
-					changeType = "renamed"
-					baseNode = &candidate
-				} else {
-					changeType = "modified"
-					baseNode = &candidate
-				}
-			} else if candidate, ok := firstUnmatchedBaseNodeWithHash(baseNodesByHash[n.BodyHash], matchedBase); ok {
-				matchedBase[semanticNodeKey(candidate)] = true
-				changeType = "renamed"
-				baseNode = &candidate
-			} else if candidate, ok := firstUnmatchedOverlappingBaseNode(baseNodesByName, matchedBase, n); ok {
-				matchedBase[semanticNodeKey(candidate)] = true
-				changeType = "renamed"
-				baseNode = &candidate
+			changeType, baseNode, unchanged := classifyHeadNodeChange(n, file.Status, baseNodesByName, baseNodesByHash, matchedBase)
+			if unchanged {
+				continue
 			}
 
 			var oldFullName, oldFilePath *string
@@ -827,20 +808,30 @@ func firstUnmatchedBaseNodeWithHash(nodes []parser.Node, matched map[string]bool
 	return parser.Node{}, false
 }
 
-func firstUnmatchedOverlappingBaseNode(nodes map[string]parser.Node, matched map[string]bool, head parser.Node) (parser.Node, bool) {
-	for _, n := range nodes {
-		if matched[semanticNodeKey(n)] || n.Kind != head.Kind || n.FilePath != head.FilePath {
-			continue
+func classifyHeadNodeChange(
+	head parser.Node,
+	fileStatus string,
+	baseNodesByName map[string]parser.Node,
+	baseNodesByHash map[string][]parser.Node,
+	matched map[string]bool,
+) (string, *parser.Node, bool) {
+	if candidate, exists := baseNodesByName[head.FullName]; exists {
+		matched[semanticNodeKey(candidate)] = true
+		if candidate.BodyHash == head.BodyHash {
+			if fileStatus != "renamed" || candidate.FilePath == head.FilePath {
+				return "", nil, true
+			}
+			return "renamed", &candidate, false
 		}
-		if lineRangesOverlap(n.LineStart, n.LineEnd, head.LineStart, head.LineEnd) {
-			return n, true
-		}
+		return "modified", &candidate, false
 	}
-	return parser.Node{}, false
-}
 
-func lineRangesOverlap(aStart, aEnd, bStart, bEnd int) bool {
-	return aStart <= bEnd && bStart <= aEnd
+	if candidate, ok := firstUnmatchedBaseNodeWithHash(baseNodesByHash[head.BodyHash], matched); ok {
+		matched[semanticNodeKey(candidate)] = true
+		return "renamed", &candidate, false
+	}
+
+	return "added", nil, false
 }
 
 func prefixSourceLines(source string, prefix byte) string {
