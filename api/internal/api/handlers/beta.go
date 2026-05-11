@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -21,13 +22,13 @@ import (
 )
 
 type BetaHandler struct {
-	FeedbackToken string
-	FeedbackRepo  string
-	AdminPassword string
-	ResendAPIKey  string
-	EmailFrom     string
-	FrontendURL   string
-	DB            *pgxpool.Pool
+	FeedbackToken  string
+	FeedbackRepo   string
+	AdminPassword  string
+	MailtrapAPIKey string
+	EmailFrom      string
+	FrontendURL    string
+	DB             *pgxpool.Pool
 }
 
 type FeedbackRequest struct {
@@ -430,8 +431,8 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if h.ResendAPIKey == "" {
-		http.Error(w, "RESEND_API_KEY is not configured", http.StatusNotImplemented)
+	if h.MailtrapAPIKey == "" {
+		http.Error(w, "MAILTRAP_API_KEY is not configured", http.StatusNotImplemented)
 		return
 	}
 
@@ -488,7 +489,7 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 		subject = "Share your Isoprism pilot review"
 		html = fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for trying the Isoprism pilot. Could you complete the short review questionnaire?</p><p><a href="%s">Complete the pilot review</a></p>`, htmlEscape(name), link)
 	}
-	if err := h.sendResendEmail(r.Context(), email, subject, html); err != nil {
+	if err := h.sendMailtrapEmail(r.Context(), email, subject, html); err != nil {
 		http.Error(w, "failed to send email", http.StatusBadGateway)
 		return
 	}
@@ -747,10 +748,19 @@ func newInviteToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-func (h *BetaHandler) sendResendEmail(ctx context.Context, to, subject, htmlBody string) error {
+func (h *BetaHandler) sendMailtrapEmail(ctx context.Context, to, subject, htmlBody string) error {
+	from, err := mail.ParseAddress(h.EmailFrom)
+	if err != nil {
+		return err
+	}
+	fromPayload := map[string]string{"email": from.Address}
+	if from.Name != "" {
+		fromPayload["name"] = from.Name
+	}
+
 	payload, err := json.Marshal(map[string]interface{}{
-		"from":    h.EmailFrom,
-		"to":      []string{to},
+		"from":    fromPayload,
+		"to":      []map[string]string{{"email": to}},
 		"subject": subject,
 		"html":    htmlBody,
 	})
@@ -758,11 +768,11 @@ func (h *BetaHandler) sendResendEmail(ctx context.Context, to, subject, htmlBody
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://send.api.mailtrap.io/api/send", bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+h.ResendAPIKey)
+	req.Header.Set("Authorization", "Bearer "+h.MailtrapAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
@@ -771,7 +781,7 @@ func (h *BetaHandler) sendResendEmail(ctx context.Context, to, subject, htmlBody
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("resend returned status %d", resp.StatusCode)
+		return fmt.Errorf("mailtrap returned status %d", resp.StatusCode)
 	}
 	return nil
 }

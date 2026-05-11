@@ -45,13 +45,13 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	queueHandler := &handlers.QueueHandler{DB: db}
 	graphHandler := &handlers.GraphHandler{DB: db, AppClient: appClient}
 	betaHandler := &handlers.BetaHandler{
-		FeedbackToken: cfg.GitHubFeedbackToken,
-		FeedbackRepo:  cfg.GitHubFeedbackRepo,
-		AdminPassword: cfg.AdminPassword,
-		ResendAPIKey:  cfg.ResendAPIKey,
-		EmailFrom:     cfg.PilotEmailFrom,
-		FrontendURL:   cfg.FrontendURL,
-		DB:            db,
+		FeedbackToken:  cfg.GitHubFeedbackToken,
+		FeedbackRepo:   cfg.GitHubFeedbackRepo,
+		AdminPassword:  cfg.AdminPassword,
+		MailtrapAPIKey: cfg.MailtrapAPIKey,
+		EmailFrom:      cfg.PilotEmailFrom,
+		FrontendURL:    cfg.FrontendURL,
+		DB:             db,
 	}
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
