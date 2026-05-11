@@ -486,7 +486,7 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 	}
 
 	subject := "Your Isoprism pilot invite"
-	html := fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for your interest in the Isoprism pilot.</p><p>The pilot is one week using one repository to explore whether Isoprism helps engineers understand how AI has built their software.</p><p><a href="%s">Start the pilot</a></p>`, htmlEscape(name), link)
+	html := fmt.Sprintf(`<p>Hey %s</p><p>Thanks for your interest in the Isoprism pilot. We'd love to have you help us out.</p><p><a href="%s">Click this link to get started.</a> You will be asked to connect your Github and select a repository to work from.</p><p>At the end of the week, you should receive another email to fill out a quick survey to tell us how it went. Feel free to submit any feature requests or bugs along the way.</p>`, htmlEscape(name), link)
 	if kind == "review" {
 		subject = "Share your Isoprism pilot review"
 		html = fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for trying the Isoprism pilot. Could you complete the short review questionnaire?</p><p><a href="%s">Complete the pilot review</a></p>`, htmlEscape(name), link)
