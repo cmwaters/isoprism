@@ -50,34 +50,61 @@ export default function PilotRegisterPage() {
   return (
     <main style={pageStyle}>
       <form style={formStyle} onSubmit={submit}>
-        <div>
-          <div style={eyebrowStyle}>Isoprism pilot</div>
+        <div style={headerBlockStyle}>
+          <div style={eyebrowStyle}>Pilot registration</div>
           <h1 style={titleStyle}>Register interest</h1>
-          <p style={copyStyle}>A short survey about how engineers understand code changes as AI writes more software.</p>
+          <p style={copyStyle}>We&apos;d like to better understand how AI has changed the workflows of software engineers so we can better rethink how new workflows should look like.</p>
         </div>
 
-        <Field label="Does AI write most of your software?">
-          <Segmented value={form.ai_writes_most_software} options={["Yes", "No"]} onChange={(value) => setForm({ ...form, ai_writes_most_software: value })} />
-        </Field>
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Review context</h2>
+          <div style={stackStyle}>
+            <Field label="Does AI write most of your software?">
+              <Segmented value={form.ai_writes_most_software} options={["Yes", "No"]} onChange={(value) => setForm({ ...form, ai_writes_most_software: value })} />
+            </Field>
 
-        <Field label="What do you use currently to review software?">
-          <Segmented value={form.current_review_tools} options={["Github", "IDE", "Other"]} onChange={(value) => setForm({ ...form, current_review_tools: value })} />
-        </Field>
+            <Field label="What do you use currently to review software?">
+              <div style={toolRowStyle}>
+                <Segmented value={form.current_review_tools} options={["Github", "IDE"]} onChange={(value) => setForm({ ...form, current_review_tools: value })} />
+                <input
+                  style={toolInputStyle}
+                  placeholder="Something else..."
+                  value={form.current_review_tools === "Github" || form.current_review_tools === "IDE" ? "" : form.current_review_tools}
+                  onChange={(event) => setForm({ ...form, current_review_tools: event.target.value })}
+                />
+              </div>
+            </Field>
 
-        <Field label="How much of your work is spent reviewing code?">
-          <input style={inputStyle} type="number" min={0} max={100} value={form.review_work_percent} onChange={(event) => setForm({ ...form, review_work_percent: Number(event.target.value) })} />
-        </Field>
+            <Field label="How much of your work is spent reviewing code?">
+              <div style={rangeRowStyle}>
+                <input
+                  aria-label="Review work rating"
+                  style={rangeStyle}
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={form.review_work_percent}
+                  onChange={(event) => setForm({ ...form, review_work_percent: Number(event.target.value) })}
+                />
+                <span style={rangeValueStyle}>{form.review_work_percent}%</span>
+              </div>
+            </Field>
+          </div>
 
-        <Textarea label="What has changed in your role as an engineer in the last 12 months?" value={form.role_change} onChange={(value) => setForm({ ...form, role_change: value })} />
-        <Textarea label="What pain points, if any, do you currently face in reviewing software?" value={form.review_pain_points} onChange={(value) => setForm({ ...form, review_pain_points: value })} />
-        <Textarea label="Do you review software written by AI any differently to humans, if so how?" value={form.ai_review_difference} onChange={(value) => setForm({ ...form, ai_review_difference: value })} />
-        <Textarea label="Any other comments that would be valuable on understanding code changes?" value={form.other_comments} onChange={(value) => setForm({ ...form, other_comments: value })} />
+          <h2 style={sectionTitleStyle}>Change review workflow</h2>
+          <Textarea label="What has changed in your role as an engineer in the last 12 months: with the advent of AI?" value={form.role_change} onChange={(value) => setForm({ ...form, role_change: value })} />
+          <Textarea label="What pain points, if any, do you currently face in reviewing software?" value={form.review_pain_points} onChange={(value) => setForm({ ...form, review_pain_points: value })} />
+          <Textarea label="Do you review software written by AI any differently to humans, if so how?" value={form.ai_review_difference} onChange={(value) => setForm({ ...form, ai_review_difference: value })} />
+          <Textarea label="Any other comments that would be valuable on understanding code changes?" value={form.other_comments} onChange={(value) => setForm({ ...form, other_comments: value })} />
+        </section>
 
-        <section style={pilotBoxStyle}>
-          <Field label="Would you be interested in piloting a prototype to help engineers understand how AI has built your software?">
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Pilot interest</h2>
+          <Field label="Would you be interested in piloting a prototype aiming at helping engineers understand the systems that AI builds?">
             <Segmented value={form.interested_in_pilot} options={["Yes", "No"]} onChange={(value) => setForm({ ...form, interested_in_pilot: value.toLowerCase() })} />
           </Field>
-          <p style={copyStyle}>The pilot is one week using Isoprism with one repository. You will connect GitHub, choose one repo, use the prototype during PR review, and complete a short review at the end.</p>
+          <p style={copyStyle}>The pilot is one week using Isoprism with one repository. You are expected to connect to GitHub, choose one repo, use the prototype during PR review, and complete a short review at the end.</p>
           {interested && (
             <div style={detailsGridStyle}>
               <input style={inputStyle} required placeholder="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
@@ -88,8 +115,10 @@ export default function PilotRegisterPage() {
           )}
         </section>
 
-        <button style={primaryButtonStyle} disabled={status === "submitting"}>{status === "submitting" ? "Submitting..." : "Submit"}</button>
-        {message && <div style={status === "error" ? errorStyle : successStyle}>{message}</div>}
+        <div style={footerStyle}>
+          {message && <div style={status === "error" ? errorStyle : successStyle}>{message}</div>}
+          <button style={primaryButtonStyle} disabled={status === "submitting"}>{status === "submitting" ? "Submitting..." : "Submit registration"}</button>
+        </div>
       </form>
     </main>
   );
@@ -107,20 +136,29 @@ function Segmented({ value, options, onChange }: { value: string; options: strin
   return <div style={segmentedStyle}>{options.map((option) => <button key={option} type="button" style={value.toLowerCase() === option.toLowerCase() ? activeSegmentStyle : segmentStyle} onClick={() => onChange(option)}>{option}</button>)}</div>;
 }
 
-const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "#EBE9E9", color: "#111", padding: "42px 20px" };
-const formStyle: React.CSSProperties = { width: "min(760px, 100%)", margin: "0 auto", display: "grid", gap: 18 };
-const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 12, fontWeight: 750, textTransform: "uppercase", marginBottom: 6 };
-const titleStyle: React.CSSProperties = { margin: 0, fontSize: 32, lineHeight: 1.12 };
+const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "#EBE9E9", color: "#111", padding: "34px 24px 48px", display: "grid", alignItems: "center" };
+const formStyle: React.CSSProperties = { width: "min(920px, 100%)", margin: "0 auto", display: "grid", gap: 14 };
+const headerBlockStyle: React.CSSProperties = { padding: "6px 0 4px" };
+const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 7 };
+const titleStyle: React.CSSProperties = { margin: 0, fontSize: 24, lineHeight: 1.18, fontWeight: 750 };
 const copyStyle: React.CSSProperties = { color: "#666", fontSize: 14, lineHeight: 1.55, margin: "6px 0 0" };
+const sectionStyle: React.CSSProperties = { border: "1px solid #D4D4D4", borderRadius: 8, background: "#FFFFFF", padding: 18, display: "grid", gap: 14 };
+const sectionTitleStyle: React.CSSProperties = { margin: 0, color: "#111111", fontSize: 15, fontWeight: 750 };
+const stackStyle: React.CSSProperties = { display: "grid", gap: 14 };
 const fieldStyle: React.CSSProperties = { display: "grid", gap: 7 };
-const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 700 };
+const labelStyle: React.CSSProperties = { color: "#333333", fontSize: 13, fontWeight: 700, lineHeight: 1.35 };
 const inputStyle: React.CSSProperties = { height: 42, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 11px", fontSize: 14 };
-const textareaStyle: React.CSSProperties = { ...inputStyle, height: 96, padding: 11, resize: "vertical" };
+const textareaStyle: React.CSSProperties = { ...inputStyle, height: 92, padding: 11, resize: "vertical", lineHeight: 1.45 };
 const segmentedStyle: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8 };
-const segmentStyle: React.CSSProperties = { height: 36, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 12px", cursor: "pointer" };
-const activeSegmentStyle: React.CSSProperties = { ...segmentStyle, background: "#111", color: "#FFF", borderColor: "#111" };
-const pilotBoxStyle: React.CSSProperties = { border: "1px solid #D4D4D4", borderRadius: 8, background: "#FFF", padding: 16, display: "grid", gap: 12 };
+const segmentStyle: React.CSSProperties = { height: 34, borderWidth: 1, borderStyle: "solid", borderColor: "#D4D4D4", borderRadius: 6, background: "#FAFAFA", color: "#333333", padding: "0 12px", cursor: "pointer", fontSize: 13, fontWeight: 650 };
+const activeSegmentStyle: React.CSSProperties = { ...segmentStyle, background: "#111", color: "#FFF", borderWidth: 1, borderStyle: "solid", borderColor: "#111" };
+const rangeRowStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "minmax(180px, 1fr) auto", alignItems: "center", gap: 12 };
+const rangeStyle: React.CSSProperties = { width: "100%", accentColor: "#111111", cursor: "pointer" };
+const rangeValueStyle: React.CSSProperties = { minWidth: 34, color: "#333333", fontSize: 13, fontWeight: 700, textAlign: "right" };
+const toolRowStyle: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" };
+const toolInputStyle: React.CSSProperties = { ...inputStyle, flex: "1 1 220px", minWidth: 0 };
 const detailsGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 };
-const primaryButtonStyle: React.CSSProperties = { height: 42, border: 0, borderRadius: 6, background: "#111", color: "#FFF", padding: "0 16px", cursor: "pointer", fontWeight: 700 };
+const footerStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" };
+const primaryButtonStyle: React.CSSProperties = { height: 40, border: 0, borderRadius: 6, background: "#111", color: "#FFF", padding: "0 14px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
 const successStyle: React.CSSProperties = { border: "1px solid #BFE2C5", borderRadius: 8, background: "#EEF8F0", color: "#225B2D", padding: 12 };
 const errorStyle: React.CSSProperties = { border: "1px solid #F3B4B4", borderRadius: 8, background: "#FFF1F1", color: "#991B1B", padding: 12 };
