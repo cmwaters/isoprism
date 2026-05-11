@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -233,12 +236,30 @@ func (h *BetaHandler) RegisterPilotInterest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
-	req.Email = strings.TrimSpace(req.Email)
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.PilotLanguages = strings.TrimSpace(req.PilotLanguages)
 	req.PublicRepoURL = strings.TrimSpace(req.PublicRepoURL)
 	if req.InterestedInPilot && (req.Name == "" || req.Email == "") {
 		http.Error(w, "name and email are required for pilot interest", http.StatusBadRequest)
 		return
+	}
+	if req.Email != "" {
+		var existingID string
+		err := h.DB.QueryRow(r.Context(), `
+			select id
+			from pilot_forms
+			where form_type = 'registration'
+			  and lower(email) = lower($1)
+			limit 1
+		`, req.Email).Scan(&existingID)
+		if err == nil {
+			http.Error(w, "this email has already been registered", http.StatusConflict)
+			return
+		}
+		if err != pgx.ErrNoRows {
+			http.Error(w, "failed to check registration", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	answers, err := json.Marshal(req)
@@ -247,10 +268,17 @@ func (h *BetaHandler) RegisterPilotInterest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	tx, err := h.DB.Begin(r.Context())
+	if err != nil {
+		http.Error(w, "failed to start registration", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
 	var pilotUserID *string
 	if req.InterestedInPilot {
 		var id string
-		err = h.DB.QueryRow(r.Context(), `
+		err = tx.QueryRow(r.Context(), `
 			insert into pilot_users (name, email, status, pilot_languages, public_repo_url)
 			values ($1, $2, 'registered', nullif($3, ''), nullif($4, ''))
 			returning id
@@ -263,12 +291,21 @@ func (h *BetaHandler) RegisterPilotInterest(w http.ResponseWriter, r *http.Reque
 	}
 
 	var formID string
-	err = h.DB.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		insert into pilot_forms (pilot_user_id, form_type, name, email, answers)
 		values ($1, 'registration', nullif($2, ''), nullif($3, ''), $4::jsonb)
 		returning id
 	`, pilotUserID, req.Name, req.Email, string(answers)).Scan(&formID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			http.Error(w, "this email has already been registered", http.StatusConflict)
+			return
+		}
+		http.Error(w, "failed to save registration", http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
 		http.Error(w, "failed to save registration", http.StatusInternalServerError)
 		return
 	}

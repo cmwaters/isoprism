@@ -78,6 +78,8 @@ POST /api/v1/admin/pilot/users/{userID}/invite
 POST /api/v1/admin/pilot/users/{userID}/review-email
 ```
 
+Registration emails are unique for the registration form. A second submission with the same email returns `409 Conflict` and does not create another pilot user.
+
 The Railway API must have `ADMIN_PASSWORD` set before this page can unlock. Sending emails also requires `RESEND_API_KEY`; `PILOT_EMAIL_FROM` controls the sender address.
 
 ## Repository Graph View
