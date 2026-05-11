@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
+	"log"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -490,7 +492,8 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 		html = fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for trying the Isoprism pilot. Could you complete the short review questionnaire?</p><p><a href="%s">Complete the pilot review</a></p>`, htmlEscape(name), link)
 	}
 	if err := h.sendMailtrapEmail(r.Context(), email, subject, html); err != nil {
-		http.Error(w, "failed to send email", http.StatusBadGateway)
+		log.Printf("pilot %s email failed for pilot_user_id=%s: %v", kind, testerID, err)
+		http.Error(w, "failed to send email: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
@@ -781,7 +784,8 @@ func (h *BetaHandler) sendMailtrapEmail(ctx context.Context, to, subject, htmlBo
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("mailtrap returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("mailtrap returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
 }
