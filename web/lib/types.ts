@@ -65,8 +65,8 @@ export interface GraphNode {
   outputs: GraphNodeTypeRef[];
   language: string;
   kind: string;
-  is_test_code: boolean;
-  is_test_entrypoint: boolean;
+  is_test: boolean;
+  is_entrypoint: boolean;
   node_type: "changed" | "caller" | "callee" | "entrypoint" | "context";
   doc_comment?: string;
   summary?: string;

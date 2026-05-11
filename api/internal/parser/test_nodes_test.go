@@ -22,10 +22,10 @@ func helper() {
 	}
 	nodeByName := map[string]bool{"service:service.CreateUser": true}
 	for _, n := range nodes {
-		if !n.IsTestCode {
+		if !n.IsTest {
 			t.Fatalf("%s was not marked as test code", n.FullName)
 		}
-		if n.Name == "TestCreateUser" && !n.IsTestEntrypoint {
+		if n.Name == "TestCreateUser" && !n.IsEntrypoint {
 			t.Fatalf("%s was not marked as a test entrypoint", n.FullName)
 		}
 		nodeByName[n.FullName] = true
@@ -54,11 +54,11 @@ describe("users", () => {
 	nodeByName := map[string]bool{"saveUser": true}
 	foundEntrypoint := false
 	for _, n := range nodes {
-		if !n.IsTestCode {
+		if !n.IsTest {
 			t.Fatalf("%s was not marked as test code", n.FullName)
 		}
 		if n.Name == "saves a user" {
-			foundEntrypoint = n.IsTestEntrypoint
+			foundEntrypoint = n.IsEntrypoint
 		}
 		nodeByName[n.FullName] = true
 	}

@@ -58,7 +58,7 @@ type rawPRNodeChange struct {
 }
 
 func isTestGraphNode(node models.GraphNode) bool {
-	if node.IsTestCode {
+	if node.IsTest {
 		return true
 	}
 	normalized := strings.ReplaceAll(strings.ToLower(node.FilePath), "\\", "/")
@@ -209,8 +209,8 @@ func (h *GraphHandler) attachTestsFromEdges(ctx context.Context, repoID string, 
 		select r.target_id, t.full_name, t.file_path, t.line_start, t.line_end
 		from reachable r
 		join code_nodes t on t.id = r.current_id
-		where t.is_test_code = true
-		  and t.is_test_entrypoint = true
+		where t.is_test = true
+		  and t.is_entrypoint = true
 		order by t.file_path, t.line_start, t.full_name
 	`, repoID, commitSHAs, targetIDs)
 	if err != nil {
@@ -540,7 +540,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 
 	nodeRows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test, is_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
 		from code_nodes
 		where repo_id=$1 and commit_sha=$2
 		order by file_path, line_start
@@ -561,7 +561,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		var docComment, summary string
 		if err := nodeRows.Scan(
 			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &docComment, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTest, &n.IsEntrypoint, &docComment, &summary,
 		); err != nil {
 			continue
 		}
@@ -911,7 +911,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	nodeRows, err := h.DB.Query(ctx, `
 		select id, commit_sha, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test, is_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
 		from code_nodes where id = any($1::uuid[])
 	`, idList)
 	if err != nil {
@@ -929,7 +929,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		var docComment, summary string
 		if err := nodeRows.Scan(
 			&n.ID, &commitSHA, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &docComment, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTest, &n.IsEntrypoint, &docComment, &summary,
 		); err != nil {
 			continue
 		}
@@ -1170,7 +1170,7 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 
 	rows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test, is_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
 		from code_nodes
 		where id = any($1::uuid[])
 	`, changedIDs)
@@ -1187,7 +1187,7 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 		var docComment, summary string
 		if err := rows.Scan(
 			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &docComment, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTest, &n.IsEntrypoint, &docComment, &summary,
 		); err != nil {
 			continue
 		}

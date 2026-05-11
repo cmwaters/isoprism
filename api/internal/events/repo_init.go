@@ -147,7 +147,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 		err := db.QueryRow(ctx, `
 			insert into code_nodes (repo_id, commit_sha, full_name, file_path,
 				line_start, line_end, inputs, outputs, language, kind, body_hash,
-				doc_comment, is_test_code, is_test_entrypoint)
+				doc_comment, is_test, is_entrypoint)
 			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 			on conflict (repo_id, commit_sha, full_name, file_path) do update
 				set body_hash = excluded.body_hash,
@@ -156,12 +156,12 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 				    line_start = excluded.line_start,
 				    line_end = excluded.line_end,
 				    doc_comment = excluded.doc_comment,
-				    is_test_code = excluded.is_test_code,
-				    is_test_entrypoint = excluded.is_test_entrypoint
+				    is_test = excluded.is_test,
+				    is_entrypoint = excluded.is_entrypoint
 			returning id
 		`, repoID, headSHA, n.FullName, n.FilePath,
 			n.LineStart, n.LineEnd, string(inputs), string(outputs), n.Language, n.Kind, n.BodyHash,
-			nullIfEmpty(n.DocComment), n.IsTestCode, n.IsTestEntrypoint,
+			nullIfEmpty(n.DocComment), n.IsTest, n.IsEntrypoint,
 		).Scan(&id)
 		if err != nil {
 			log.Printf("RepoInit: insert node %s: %v", n.FullName, err)
@@ -233,7 +233,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 
 			inputs := make([]ai.NodeInput, 0, len(batch))
 			for _, n := range batch {
-				if n.IsTestCode {
+				if n.IsTest {
 					continue
 				}
 				// Only enrich nodes without an existing summary

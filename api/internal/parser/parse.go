@@ -16,20 +16,20 @@ import (
 
 // Node represents one extracted code element (function, method, type, etc.).
 type Node struct {
-	Name             string
-	FullName         string
-	FilePath         string
-	LineStart        int
-	LineEnd          int
-	Inputs           []Param
-	Outputs          []Param
-	Language         string
-	Kind             string
-	BodyHash         string
-	Body             string
-	DocComment       string
-	IsTestCode       bool
-	IsTestEntrypoint bool
+	Name         string
+	FullName     string
+	FilePath     string
+	LineStart    int
+	LineEnd      int
+	Inputs       []Param
+	Outputs      []Param
+	Language     string
+	Kind         string
+	BodyHash     string
+	Body         string
+	DocComment   string
+	IsTest       bool
+	IsEntrypoint bool
 }
 
 type Param struct {
@@ -187,39 +187,39 @@ func parseGoTree(src []byte, filePath string, root *sitter.Node) []Node {
 	return nodes
 }
 
-func makeGoNode(src []byte, filePath string, n *sitter.Node, name, fullName, kind string, isTestCode bool) Node {
+func makeGoNode(src []byte, filePath string, n *sitter.Node, name, fullName, kind string, isTest bool) Node {
 	return Node{
-		Name:             name,
-		FullName:         fullName,
-		FilePath:         filePath,
-		LineStart:        int(n.StartPosition().Row) + 1,
-		LineEnd:          int(n.EndPosition().Row) + 1,
-		Inputs:           goParams(src, n.ChildByFieldName("parameters")),
-		Outputs:          goOutputs(src, n.ChildByFieldName("result")),
-		Language:         "go",
-		Kind:             kind,
-		BodyHash:         bodyHash(nodeBytes(src, n)),
-		Body:             text(src, n),
-		DocComment:       docCommentAbove(src, int(n.StartPosition().Row)+1),
-		IsTestCode:       isTestCode,
-		IsTestEntrypoint: strings.HasPrefix(name, "Test"),
+		Name:         name,
+		FullName:     fullName,
+		FilePath:     filePath,
+		LineStart:    int(n.StartPosition().Row) + 1,
+		LineEnd:      int(n.EndPosition().Row) + 1,
+		Inputs:       goParams(src, n.ChildByFieldName("parameters")),
+		Outputs:      goOutputs(src, n.ChildByFieldName("result")),
+		Language:     "go",
+		Kind:         kind,
+		BodyHash:     bodyHash(nodeBytes(src, n)),
+		Body:         text(src, n),
+		DocComment:   docCommentAbove(src, int(n.StartPosition().Row)+1),
+		IsTest:       isTest,
+		IsEntrypoint: strings.HasPrefix(name, "Test"),
 	}
 }
 
-func makeBaseNode(src []byte, filePath string, n *sitter.Node, name, fullName, lang, kind string, isTestCode, isTestEntrypoint bool) Node {
+func makeBaseNode(src []byte, filePath string, n *sitter.Node, name, fullName, lang, kind string, isTest, isEntrypoint bool) Node {
 	return Node{
-		Name:             name,
-		FullName:         fullName,
-		FilePath:         filePath,
-		LineStart:        int(n.StartPosition().Row) + 1,
-		LineEnd:          int(n.EndPosition().Row) + 1,
-		Language:         lang,
-		Kind:             kind,
-		BodyHash:         bodyHash(nodeBytes(src, n)),
-		Body:             text(src, n),
-		DocComment:       docCommentAbove(src, int(n.StartPosition().Row)+1),
-		IsTestCode:       isTestCode,
-		IsTestEntrypoint: isTestEntrypoint,
+		Name:         name,
+		FullName:     fullName,
+		FilePath:     filePath,
+		LineStart:    int(n.StartPosition().Row) + 1,
+		LineEnd:      int(n.EndPosition().Row) + 1,
+		Language:     lang,
+		Kind:         kind,
+		BodyHash:     bodyHash(nodeBytes(src, n)),
+		Body:         text(src, n),
+		DocComment:   docCommentAbove(src, int(n.StartPosition().Row)+1),
+		IsTest:       isTest,
+		IsEntrypoint: isEntrypoint,
 	}
 }
 
@@ -365,8 +365,8 @@ func parseScriptTree(src []byte, filePath, lang string, root *sitter.Node) []Nod
 	return nodes
 }
 
-func makeScriptNode(src []byte, filePath string, n *sitter.Node, name, fullName, lang, kind string, isTestCode bool) Node {
-	node := makeBaseNode(src, filePath, n, name, fullName, lang, kind, isTestCode, false)
+func makeScriptNode(src []byte, filePath string, n *sitter.Node, name, fullName, lang, kind string, isTest bool) Node {
+	node := makeBaseNode(src, filePath, n, name, fullName, lang, kind, isTest, false)
 	node.Inputs = scriptParams(src, n.ChildByFieldName("parameters"))
 	return node
 }

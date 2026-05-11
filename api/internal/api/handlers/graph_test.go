@@ -77,8 +77,8 @@ func TestAppendTestFocusEdgesKeepsChangedTestHelpersReachable(t *testing.T) {
 			{callerID: "test-entry", calleeID: "other-prod"},
 		},
 		[]models.GraphNode{
-			{ID: "test-entry", IsTestCode: true, IsTestEntrypoint: true},
-			{ID: "test-helper", IsTestCode: true, IsTestEntrypoint: false},
+			{ID: "test-entry", IsTest: true, IsEntrypoint: true},
+			{ID: "test-helper", IsTest: true, IsEntrypoint: false},
 		},
 		map[string]models.GraphNode{"prod-a": {ID: "prod-a"}},
 		func(id string) string { return id },

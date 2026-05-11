@@ -217,7 +217,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			err := db.QueryRow(ctx, `
 				insert into code_nodes (repo_id, commit_sha, full_name, file_path,
 					line_start, line_end, inputs, outputs, language, kind, body_hash,
-					doc_comment, is_test_code, is_test_entrypoint)
+					doc_comment, is_test, is_entrypoint)
 				values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 				on conflict (repo_id, commit_sha, full_name, file_path) do update
 					set body_hash = excluded.body_hash,
@@ -226,12 +226,12 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 					    line_start = excluded.line_start,
 					    line_end = excluded.line_end,
 					    doc_comment = excluded.doc_comment,
-					    is_test_code = excluded.is_test_code,
-					    is_test_entrypoint = excluded.is_test_entrypoint
+					    is_test = excluded.is_test,
+					    is_entrypoint = excluded.is_entrypoint
 				returning id
 			`, repoID, headSHA, n.FullName, n.FilePath,
 				n.LineStart, n.LineEnd, string(inputs), string(outputs), n.Language, n.Kind, n.BodyHash,
-				nullIfEmpty(n.DocComment), n.IsTestCode, n.IsTestEntrypoint,
+				nullIfEmpty(n.DocComment), n.IsTest, n.IsEntrypoint,
 			).Scan(&nodeID)
 			if err != nil {
 				log.Printf("OpenPR: failed to upsert head node %s for pr %s: %v", n.FullName, prID, err)
@@ -264,7 +264,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 				diffHunk:    componentDiffHunk(changeType, patch, n.Body, oldStart, oldEnd, n.LineStart, n.LineEnd, oldFullName, oldFilePath),
 				oldFullName: oldFullName,
 				oldFilePath: oldFilePath,
-				isTest:      n.IsTestCode,
+				isTest:      n.IsTest,
 			})
 		}
 
@@ -287,13 +287,13 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 					db.QueryRow(ctx, `
 						select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3 and file_path=$4
 					`, repoID, baseCommit, baseNode.FullName, baseNode.FilePath).Scan(&nodeID)
-					if nodeID == "" && baseNode.IsTestCode {
+					if nodeID == "" && baseNode.IsTest {
 						inputs, _ := json.Marshal(baseNode.Inputs)
 						outputs, _ := json.Marshal(baseNode.Outputs)
 						db.QueryRow(ctx, `
 							insert into code_nodes (repo_id, commit_sha, full_name, file_path,
 								line_start, line_end, inputs, outputs, language, kind, body_hash,
-								doc_comment, is_test_code, is_test_entrypoint)
+								doc_comment, is_test, is_entrypoint)
 							values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 							on conflict (repo_id, commit_sha, full_name, file_path) do update
 								set body_hash = excluded.body_hash,
@@ -302,12 +302,12 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 								    line_start = excluded.line_start,
 								    line_end = excluded.line_end,
 								    doc_comment = excluded.doc_comment,
-								    is_test_code = excluded.is_test_code,
-								    is_test_entrypoint = excluded.is_test_entrypoint
+								    is_test = excluded.is_test,
+								    is_entrypoint = excluded.is_entrypoint
 							returning id
 						`, repoID, baseCommit, baseNode.FullName, baseNode.FilePath,
 							baseNode.LineStart, baseNode.LineEnd, string(inputs), string(outputs), baseNode.Language, baseNode.Kind, baseNode.BodyHash,
-							nullIfEmpty(baseNode.DocComment), baseNode.IsTestCode, baseNode.IsTestEntrypoint,
+							nullIfEmpty(baseNode.DocComment), baseNode.IsTest, baseNode.IsEntrypoint,
 						).Scan(&nodeID)
 					}
 					if nodeID != "" {
@@ -315,7 +315,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 							node:       baseNode,
 							changeType: "deleted",
 							diffHunk:   componentDiffHunk("deleted", patch, "", baseNode.LineStart, baseNode.LineEnd, 0, 0, nil, nil),
-							isTest:     baseNode.IsTestCode,
+							isTest:     baseNode.IsTest,
 						})
 					}
 				}
@@ -594,7 +594,7 @@ func nullIfZero(n int) interface{} {
 func loadBaseNodesForPath(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA, filePath string) ([]parser.Node, error) {
 	rows, err := db.Query(ctx, `
 		select full_name, file_path, line_start, line_end, inputs, outputs, language, kind, body_hash, coalesce(doc_comment, ''),
-		       is_test_code, is_test_entrypoint
+		       is_test, is_entrypoint
 		from code_nodes
 		where repo_id=$1 and commit_sha=$2 and file_path=$3
 		order by line_start, full_name
@@ -612,7 +612,7 @@ func loadBaseNodesForPath(ctx context.Context, db *pgxpool.Pool, repoID, commitS
 		if err := rows.Scan(
 			&n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
 			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.BodyHash,
-			&docComment, &n.IsTestCode, &n.IsTestEntrypoint,
+			&docComment, &n.IsTest, &n.IsEntrypoint,
 		); err != nil {
 			return nil, err
 		}

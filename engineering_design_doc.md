@@ -210,8 +210,8 @@ code_nodes
   kind             text              -- 'function' | 'method' | 'type' | 'struct' | 'interface'
   body_hash        text              -- SHA-256 of the node body; used for change detection
   doc_comment      text              -- cleaned adjacent source comment that documents this component
-  is_test_code     boolean           -- true for parsed test files / test entrypoints
-  is_test_entrypoint boolean         -- true for explicit test entrypoints such as Go Test* functions
+  is_test     boolean           -- true for parsed test files / test entrypoints
+  is_entrypoint boolean         -- true for explicit test entrypoints such as Go Test* functions
   summary          text              -- AI: what this node does (2 sentences)
   created_at       timestamptz
   UNIQUE (repo_id, commit_sha, full_name, file_path)
@@ -344,7 +344,7 @@ The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send th
 
 **Separate base graph and PR delta.** `code_nodes` + `code_edges` are the base graph, built during `RepoInit` and kept current by `MergePR`. `pr_node_changes` is the PR-specific semantic overlay, built during `OpenPR`. The PR graph endpoint also returns GitHub's changed-file list from the Pull Request Files API so the PR view keeps full file-diff parity with GitHub, including docs, config, generated files, global variable edits, and other non-node changes that do not become graph nodes.
 
-**Tests are first-class code nodes, not default graph cards.** Test code is persisted in `code_nodes` with `is_test_code` / `is_test_entrypoint`, and test-to-production relationships are represented as `code_edges`. Default repo/PR graph responses filter test nodes out of the visible graph, then attach matching test callers to production nodes as `tests[]`. PR processing also persists changed test functions in `pr_node_changes`; the PR graph endpoint returns them in `test_changes[]` so the PR view can show test-function labels and diffs separately from graph changes. `test_changes[]` includes changed test helpers, but the PR overview lists only `is_test_entrypoint` rows. When a reviewer selects a changed test entrypoint, the frontend derives a temporary test-focused graph from that test node, reachable changed test helpers, and production nodes whose `tests[]` references or test edges match it; selecting a production component restores the normal PR diff graph.
+**Tests are first-class code nodes, not default graph cards.** Test code is persisted in `code_nodes` with `is_test` / `is_entrypoint`, and test-to-production relationships are represented as `code_edges`. Default repo/PR graph responses filter test nodes out of the visible graph, then attach matching test callers to production nodes as `tests[]`. PR processing also persists changed test functions in `pr_node_changes`; the PR graph endpoint returns them in `test_changes[]` so the PR view can show test-function labels and diffs separately from graph changes. `test_changes[]` includes changed test helpers, but the PR overview lists only rows where `is_test` and `is_entrypoint` are both true. When a reviewer selects a changed test entrypoint, the frontend derives a temporary test-focused graph from that test node, reachable changed test helpers, and production nodes whose `tests[]` references or test edges match it; selecting a production component restores the normal PR diff graph.
 
 ---
 
@@ -408,7 +408,7 @@ The backend is defined around three events. All other logic flows from them.
 2. Fetch the full file tree at that SHA via `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1`
 3. Filter to supported source files (`.go`, `.ts`, `.tsx`, `.js`, `.jsx`)
 4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse it to extract functions, methods, and types.
-5. Persist production and test nodes in `code_nodes`, setting `is_test_code` and `is_test_entrypoint` from parser metadata.
+5. Persist production and test nodes in `code_nodes`, setting `is_test` and `is_entrypoint` from parser metadata.
 6. Build call/reference edges by resolving identifiers in function and test bodies against the full node set → insert `code_edges`.
 7. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes.
 8. Generate optional AI summaries for production nodes in Claude batches of up to 30 nodes (see `ai.md`) and update `code_nodes.summary` as they arrive.
@@ -469,9 +469,9 @@ The current parser supports Go, TypeScript, TSX, JavaScript, and JSX through tre
 
 | Language | Parser | Extracted production nodes | Test code handling |
 |---|---|---|---|
-| Go | `tree-sitter-go` | functions, methods, type specs, structs, interfaces | Stores `*_test.go`, packages ending `_test`, and functions beginning `Test` as `code_nodes` with `is_test_code`; `Test*` functions are marked `is_test_entrypoint` |
-| TypeScript / TSX | `tree-sitter-typescript` / `tree-sitter-tsx` | function declarations, const/let arrow functions, class methods | Stores `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`, and `__tests__/` nodes as `is_test_code`; `test(...)` / `it(...)` calls are stored as `is_test_entrypoint` nodes |
-| JavaScript / JSX | `tree-sitter-javascript` | function declarations, const/let arrow functions, class methods | Stores `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx`, and `__tests__/` nodes as `is_test_code`; `test(...)` / `it(...)` calls are stored as `is_test_entrypoint` nodes |
+| Go | `tree-sitter-go` | functions, methods, type specs, structs, interfaces | Stores `*_test.go`, packages ending `_test`, and functions beginning `Test` as `code_nodes` with `is_test`; `Test*` functions are marked `is_entrypoint` |
+| TypeScript / TSX | `tree-sitter-typescript` / `tree-sitter-tsx` | function declarations, const/let arrow functions, class methods | Stores `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`, and `__tests__/` nodes as `is_test`; `test(...)` / `it(...)` calls are stored as `is_entrypoint` nodes |
+| JavaScript / JSX | `tree-sitter-javascript` | function declarations, const/let arrow functions, class methods | Stores `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx`, and `__tests__/` nodes as `is_test`; `test(...)` / `it(...)` calls are stored as `is_entrypoint` nodes |
 
 Rust and Python are not currently indexed.
 

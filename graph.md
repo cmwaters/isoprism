@@ -63,7 +63,7 @@ The UI renders symbol names as context plus title: package and receiver/type con
 
 Changed test functions are also stored in `pr_node_changes`, but the PR graph endpoint returns them in `test_changes[]` instead of rendering them as graph nodes. Test changes use the same labels and component diff fields as graph changes.
 
-The PR overview only lists changed test entrypoints (`is_test_entrypoint = true`) under Test changes. Changed test helpers are still returned in `test_changes[]` and test-to-test edges are included in the graph payload so selecting a test entrypoint can show the focused test tree with helper components such as setup helpers or channel-fill helpers.
+The PR overview only lists changed test entrypoints (`is_test = true` and `is_entrypoint = true`) under Test changes. Changed test helpers are still returned in `test_changes[]` and test-to-test edges are included in the graph payload so selecting a test entrypoint can show the focused test tree with helper components such as setup helpers or channel-fill helpers.
 
 After the PR description, the PR overview is grouped into:
 
