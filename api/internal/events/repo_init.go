@@ -131,12 +131,21 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	// Collect all parsed nodes and file contents
 	var allNodes []parser.Node
 	fileContents := map[string][]byte{} // filePath → full source
+	nodesByFile := map[string][]parser.Node{}
 	for fr := range results {
 		allNodes = append(allNodes, fr.nodes...)
 		fileContents[fr.path] = fr.content
+		nodesByFile[fr.path] = fr.nodes
 	}
 	log.Printf("RepoInit: parsed %d nodes", len(allNodes))
 	updateIndexJobProgress(ctx, db, repoID, headSHA, "writing_nodes", "Writing code graph nodes", len(sourceFiles), len(sourceFiles), len(allNodes), 0, 0, 0)
+
+	for filePath, nodes := range nodesByFile {
+		if err := pruneStaleCodeNodesForFile(ctx, db, repoID, headSHA, filePath, parserNodeFullNames(nodes)); err != nil {
+			fail("pruning stale code nodes", err)
+			return
+		}
+	}
 
 	// Insert code_nodes
 	nodeIDs := make(map[string]string) // full_name → db UUID
@@ -175,6 +184,10 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 
 	// Extract and insert call edges — pass full file content, not per-node snippets.
 	// parser.ParseFile requires a complete Go file; a bare function body won't parse.
+	if _, err := db.Exec(ctx, `delete from code_edges where repo_id=$1 and commit_sha=$2`, repoID, headSHA); err != nil {
+		fail("clearing stale code edges", err)
+		return
+	}
 	nodeByName := make(map[string]bool, len(allNodes))
 	for _, n := range allNodes {
 		nodeByName[n.FullName] = true

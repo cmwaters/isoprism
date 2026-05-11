@@ -189,6 +189,15 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			headNodes = parser.Parse(content, headPath)
 			stats.HeadNodesParsed += len(headNodes)
 		}
+		if file.Status != "removed" && parser.IsSupportedFile(headPath) {
+			if err := pruneStaleCodeNodesForFile(ctx, db, repoID, headSHA, headPath, parserNodeFullNames(headNodes)); err != nil {
+				log.Printf("OpenPR: prune stale head nodes %s@%s: %v", headPath, headSHA, err)
+			}
+		} else if file.Status == "removed" && parser.IsSupportedFile(headPath) {
+			if err := pruneStaleCodeNodesForFile(ctx, db, repoID, headSHA, headPath, nil); err != nil {
+				log.Printf("OpenPR: prune removed head nodes %s@%s: %v", headPath, headSHA, err)
+			}
+		}
 
 		// Load base version metadata from the indexed graph. The base graph was
 		// already parsed by RepoInit, so PR processing only fetches head content.
@@ -810,6 +819,30 @@ func firstUnmatchedBaseNodeWithHash(nodes []parser.Node, matched map[string]bool
 		}
 	}
 	return parser.Node{}, false
+}
+
+func parserNodeFullNames(nodes []parser.Node) []string {
+	names := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		names = append(names, n.FullName)
+	}
+	return names
+}
+
+func pruneStaleCodeNodesForFile(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA, filePath string, currentFullNames []string) error {
+	if len(currentFullNames) == 0 {
+		_, err := db.Exec(ctx, `
+			delete from code_nodes
+			where repo_id=$1 and commit_sha=$2 and file_path=$3
+		`, repoID, commitSHA, filePath)
+		return err
+	}
+	_, err := db.Exec(ctx, `
+		delete from code_nodes
+		where repo_id=$1 and commit_sha=$2 and file_path=$3
+		  and not (full_name = any($4))
+	`, repoID, commitSHA, filePath, currentFullNames)
+	return err
 }
 
 func classifyHeadNodeChange(
