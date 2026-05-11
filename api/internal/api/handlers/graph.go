@@ -106,6 +106,24 @@ func decodeTypeRefs(raw []byte) []models.TypeRef {
 	return refs
 }
 
+func applyNodeSummary(node *models.GraphNode, docComment, summary string) {
+	docComment = strings.TrimSpace(docComment)
+	summary = strings.TrimSpace(summary)
+	if docComment != "" {
+		node.DocComment = &docComment
+	}
+
+	switch {
+	case docComment != "" && summary != "":
+		combined := docComment + "\n\n" + summary
+		node.Summary = &combined
+	case docComment != "":
+		node.Summary = &docComment
+	case summary != "":
+		node.Summary = &summary
+	}
+}
+
 func resolveGraphTypeRefs(nodes map[string]models.GraphNode) {
 	typeIDByName := map[string]string{}
 	for id, node := range nodes {
@@ -479,7 +497,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 
 	nodeRows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
 		from code_nodes
 		where repo_id=$1 and commit_sha=$2
 		order by file_path, line_start
@@ -497,18 +515,16 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	for nodeRows.Next() {
 		var n models.GraphNode
 		var inputsRaw, outputsRaw []byte
-		var summary string
+		var docComment, summary string
 		if err := nodeRows.Scan(
 			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &docComment, &summary,
 		); err != nil {
 			continue
 		}
 		n.Inputs = decodeTypeRefs(inputsRaw)
 		n.Outputs = decodeTypeRefs(outputsRaw)
-		if summary != "" {
-			n.Summary = &summary
-		}
+		applyNodeSummary(&n, docComment, summary)
 		if isTestGraphNode(n) {
 			continue
 		}
@@ -852,7 +868,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	nodeRows, err := h.DB.Query(ctx, `
 		select id, commit_sha, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
 		from code_nodes where id = any($1::uuid[])
 	`, idList)
 	if err != nil {
@@ -867,10 +883,10 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		var n models.GraphNode
 		var commitSHA string
 		var inputsRaw, outputsRaw []byte
-		var summary string
+		var docComment, summary string
 		if err := nodeRows.Scan(
 			&n.ID, &commitSHA, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &docComment, &summary,
 		); err != nil {
 			continue
 		}
@@ -879,9 +895,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		if isTestGraphNode(n) {
 			continue
 		}
-		if summary != "" {
-			n.Summary = &summary
-		}
+		applyNodeSummary(&n, docComment, summary)
 		nodeMap[n.ID] = graphNodeRecord{node: n, commitSHA: commitSHA}
 	}
 
@@ -1112,7 +1126,7 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 
 	rows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
 		from code_nodes
 		where id = any($1::uuid[])
 	`, changedIDs)
@@ -1126,10 +1140,10 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 	for rows.Next() {
 		var n models.GraphNode
 		var inputsRaw, outputsRaw []byte
-		var summary string
+		var docComment, summary string
 		if err := rows.Scan(
 			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &docComment, &summary,
 		); err != nil {
 			continue
 		}
@@ -1138,9 +1152,7 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 		if !isTestGraphNode(n) {
 			continue
 		}
-		if summary != "" {
-			n.Summary = &summary
-		}
+		applyNodeSummary(&n, docComment, summary)
 		n.NodeType = "changed"
 		n.PackagePath = packagePathForNode(n)
 		if c, ok := changedSet[n.ID]; ok {

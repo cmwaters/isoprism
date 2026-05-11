@@ -209,6 +209,7 @@ code_nodes
   language         text              -- 'go' | 'typescript' | 'javascript'
   kind             text              -- 'function' | 'method' | 'type' | 'struct' | 'interface'
   body_hash        text              -- SHA-256 of the node body; used for change detection
+  doc_comment      text              -- cleaned adjacent source comment that documents this component
   is_test_code     boolean           -- true for parsed test files / test entrypoints
   is_test_entrypoint boolean         -- true for explicit test entrypoints such as Go Test* functions
   summary          text              -- AI: what this node does (2 sentences)
@@ -473,6 +474,8 @@ The current parser supports Go, TypeScript, TSX, JavaScript, and JSX through tre
 | JavaScript / JSX | `tree-sitter-javascript` | function declarations, const/let arrow functions, class methods | Stores `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx`, and `__tests__/` nodes as `is_test_code`; `test(...)` / `it(...)` calls are stored as `is_test_entrypoint` nodes |
 
 Rust and Python are not currently indexed.
+
+For Go, TypeScript, TSX, JavaScript, and JSX, the parser also captures the contiguous `//`, `/* ... */`, or `/** ... */` comment block immediately above a component when there is no blank line between the comment and the declaration. The cleaned text is stored as `code_nodes.doc_comment`. Graph API responses keep this raw field as `doc_comment` and prepend it to `summary` for display; AI enrichment is not modified by this comment extraction path.
 
 **Symbol identity:** Go full names include directory and package context (`path/to/package:package.Symbol`, or `path/to/package:package.Receiver.Method`) so repeated package-level names like `New` do not collide across packages. TypeScript/JavaScript full names include module path context (`path/to/module.Symbol`).
 

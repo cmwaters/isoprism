@@ -147,20 +147,21 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 		err := db.QueryRow(ctx, `
 			insert into code_nodes (repo_id, commit_sha, full_name, file_path,
 				line_start, line_end, inputs, outputs, language, kind, body_hash,
-				is_test_code, is_test_entrypoint)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+				doc_comment, is_test_code, is_test_entrypoint)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 			on conflict (repo_id, commit_sha, full_name, file_path) do update
 				set body_hash = excluded.body_hash,
 				    inputs = excluded.inputs,
 				    outputs = excluded.outputs,
 				    line_start = excluded.line_start,
 				    line_end = excluded.line_end,
+				    doc_comment = excluded.doc_comment,
 				    is_test_code = excluded.is_test_code,
 				    is_test_entrypoint = excluded.is_test_entrypoint
 			returning id
 		`, repoID, headSHA, n.FullName, n.FilePath,
 			n.LineStart, n.LineEnd, string(inputs), string(outputs), n.Language, n.Kind, n.BodyHash,
-			n.IsTestCode, n.IsTestEntrypoint,
+			nullIfEmpty(n.DocComment), n.IsTestCode, n.IsTestEntrypoint,
 		).Scan(&id)
 		if err != nil {
 			log.Printf("RepoInit: insert node %s: %v", n.FullName, err)

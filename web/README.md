@@ -201,6 +201,7 @@ interface NodeCodeResponse {
     end_line: number;
     source: string;
   };
+  doc_comment?: string;
   diff_hunk?: string;
   change_type?: "added" | "modified" | "deleted" | "renamed";
 }
@@ -213,6 +214,7 @@ Expected behavior:
 - `deleted`: points at the indexed base `code_nodes` row and uses a component-scoped slice of the GitHub patch based on the stored base line range; source is fetched only if the code panel needs it.
 - `renamed`: preserves `old_full_name` / `old_file_path` and uses a component-scoped GitHub patch slice when changed lines are available.
 - `modified`: uses a component-scoped slice of the GitHub patch; added component stats are counted from the synthetic component hunk so moved/copied body lines are not undercounted as unchanged context.
+- `doc_comment`: cleaned contiguous source comment immediately above the parsed component, if present. The graph API prepends it to `summary` for display without changing AI enrichment.
 - Rename detection is conservative: matching body hashes or rename metadata can produce `renamed`, but line overlap alone leaves the head component `added` and any unmatched base component `deleted`.
 - Caller/callee context nodes are not PR changes; they show the head version when available.
 - The UI reconstructs a full component diff from source only when the required sides are available: both `base` and `head` for `modified` / `renamed`, `head` for `added`, and `base` for `deleted`.

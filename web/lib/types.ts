@@ -68,6 +68,7 @@ export interface GraphNode {
   is_test_code: boolean;
   is_test_entrypoint: boolean;
   node_type: "changed" | "caller" | "callee" | "entrypoint" | "context";
+  doc_comment?: string;
   summary?: string;
   change_summary?: string;
   diff_hunk?: string;

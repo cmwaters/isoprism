@@ -81,6 +81,59 @@ func TestJavaScriptSpecFileIsTestFile(t *testing.T) {
 	}
 }
 
+func TestGoDocCommentAboveComponentIsCaptured(t *testing.T) {
+	src := []byte(`package service
+
+// CreateUser validates input.
+// It persists the new user.
+func CreateUser() {}
+`)
+
+	nodes := Parse(src, "service/user.go")
+	if len(nodes) != 1 {
+		t.Fatalf("len(nodes) = %d, want 1", len(nodes))
+	}
+	want := "CreateUser validates input.\nIt persists the new user."
+	if nodes[0].DocComment != want {
+		t.Fatalf("doc comment = %q, want %q", nodes[0].DocComment, want)
+	}
+}
+
+func TestBlankLineSeparatedCommentIsIgnored(t *testing.T) {
+	src := []byte(`package service
+
+// File-level note.
+
+func CreateUser() {}
+`)
+
+	nodes := Parse(src, "service/user.go")
+	if len(nodes) != 1 {
+		t.Fatalf("len(nodes) = %d, want 1", len(nodes))
+	}
+	if nodes[0].DocComment != "" {
+		t.Fatalf("doc comment = %q, want empty", nodes[0].DocComment)
+	}
+}
+
+func TestTypeScriptBlockDocCommentAboveComponentIsCaptured(t *testing.T) {
+	src := []byte(`/**
+ * Saves the user.
+ * Returns the saved record.
+ */
+export function saveUser() {}
+`)
+
+	nodes := Parse(src, "users.ts")
+	if len(nodes) != 1 {
+		t.Fatalf("len(nodes) = %d, want 1", len(nodes))
+	}
+	want := "Saves the user.\nReturns the saved record."
+	if nodes[0].DocComment != want {
+		t.Fatalf("doc comment = %q, want %q", nodes[0].DocComment, want)
+	}
+}
+
 func hasCallEdge(edges []CallEdge, caller, callee string) bool {
 	for _, edge := range edges {
 		if edge.CallerFullName == caller && edge.CalleeFullName == callee {

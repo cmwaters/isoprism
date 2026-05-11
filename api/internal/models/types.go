@@ -87,6 +87,7 @@ type CodeNode struct {
 	Language         string    `json:"language"`
 	Kind             string    `json:"kind"`
 	BodyHash         string    `json:"body_hash"`
+	DocComment       *string   `json:"doc_comment,omitempty"`
 	IsTestCode       bool      `json:"is_test_code"`
 	IsTestEntrypoint bool      `json:"is_test_entrypoint"`
 	Summary          *string   `json:"summary"`
@@ -155,6 +156,7 @@ type GraphNode struct {
 	IsTestCode       bool      `json:"is_test_code"`
 	IsTestEntrypoint bool      `json:"is_test_entrypoint"`
 	NodeType         string    `json:"node_type"` // changed | caller | callee
+	DocComment       *string   `json:"doc_comment,omitempty"`
 	Summary          *string   `json:"summary"`
 	ChangeSummary    *string   `json:"change_summary"`
 	DiffHunk         *string   `json:"diff_hunk"`

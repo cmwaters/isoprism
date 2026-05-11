@@ -27,6 +27,7 @@ type Node struct {
 	Kind             string
 	BodyHash         string
 	Body             string
+	DocComment       string
 	IsTestCode       bool
 	IsTestEntrypoint bool
 }
@@ -199,6 +200,7 @@ func makeGoNode(src []byte, filePath string, n *sitter.Node, name, fullName, kin
 		Kind:             kind,
 		BodyHash:         bodyHash(nodeBytes(src, n)),
 		Body:             text(src, n),
+		DocComment:       docCommentAbove(src, int(n.StartPosition().Row)+1),
 		IsTestCode:       isTestCode,
 		IsTestEntrypoint: strings.HasPrefix(name, "Test"),
 	}
@@ -215,6 +217,7 @@ func makeBaseNode(src []byte, filePath string, n *sitter.Node, name, fullName, l
 		Kind:             kind,
 		BodyHash:         bodyHash(nodeBytes(src, n)),
 		Body:             text(src, n),
+		DocComment:       docCommentAbove(src, int(n.StartPosition().Row)+1),
 		IsTestCode:       isTestCode,
 		IsTestEntrypoint: isTestEntrypoint,
 	}
@@ -441,6 +444,69 @@ func nodeBytes(src []byte, n *sitter.Node) []byte {
 
 func text(src []byte, n *sitter.Node) string {
 	return string(nodeBytes(src, n))
+}
+
+func docCommentAbove(src []byte, startLine int) string {
+	if startLine <= 1 {
+		return ""
+	}
+	lines := strings.Split(string(src), "\n")
+	idx := startLine - 2
+	if idx < 0 || idx >= len(lines) || strings.TrimSpace(lines[idx]) == "" {
+		return ""
+	}
+
+	var raw []string
+	trimmed := strings.TrimSpace(lines[idx])
+	if strings.HasSuffix(trimmed, "*/") {
+		for idx >= 0 {
+			line := strings.TrimSpace(lines[idx])
+			if line == "" {
+				return ""
+			}
+			raw = append([]string{line}, raw...)
+			if strings.Contains(line, "/*") {
+				break
+			}
+			idx--
+		}
+		if len(raw) == 0 || !strings.Contains(raw[0], "/*") {
+			return ""
+		}
+	} else if strings.HasPrefix(trimmed, "//") {
+		for idx >= 0 {
+			line := strings.TrimSpace(lines[idx])
+			if !strings.HasPrefix(line, "//") {
+				break
+			}
+			raw = append([]string{line}, raw...)
+			idx--
+		}
+	} else {
+		return ""
+	}
+
+	return cleanDocComment(raw)
+}
+
+func cleanDocComment(lines []string) string {
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "/**")
+		line = strings.TrimPrefix(line, "/*")
+		line = strings.TrimSuffix(line, "*/")
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "//")
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "*")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		cleaned = append(cleaned, line)
+	}
+	return strings.TrimSpace(strings.Join(cleaned, "\n"))
 }
 
 func walk(n *sitter.Node, visit func(*sitter.Node) bool) {
