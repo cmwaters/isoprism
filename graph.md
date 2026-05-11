@@ -53,6 +53,8 @@ The PR summary panel uses GitHub's Pull Request Files API as the file-diff sourc
 
 Semantic graph changes are stored separately in `pr_node_changes`. Functions, methods, structs, interfaces, and type declarations can be `added`, `modified`, `deleted`, or `renamed`; renamed nodes keep `old_full_name` and `old_file_path` so the PR view can show the previous symbol/file alongside the current one.
 
+Rename detection is intentionally conservative. A new component is considered renamed only when the processor can pair it with a base component by rename metadata or matching body hash. Line-range overlap alone does not create a rename, because insertions can shift existing components and make unrelated functions overlap. In ambiguous cases the head component remains `added` and any unmatched base component remains `deleted`.
+
 When a renamed component is opened, the detail endpoint uses the old symbol/file identity for the base version and the current identity for the head version. This keeps the rendered component diff aligned with the `+/-` counts shown on the PR cards and graph nodes. The UI reconstructs a full component diff from source only when the relevant sides are available: both base and head for modified or renamed components, head for added components, and base for deleted components. If a source lookup is incomplete, the UI falls back to the persisted `pr_node_changes.diff_hunk` instead of treating the visible side as a whole-component add or delete.
 
 The UI renders symbol names as context plus title: package and receiver/type context appears in the pink metadata label, while the black title shows only the function or method name. For example, `rpc/grpc:coregrpc.BlockAPI.Stop` renders as `grpc.BlockAPI` above `Stop`.

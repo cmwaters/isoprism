@@ -132,16 +132,44 @@ func TestComponentDiffHunkTreatsRenameOnlyAsMetadata(t *testing.T) {
 	}
 }
 
-func TestFirstUnmatchedOverlappingBaseNodeDetectsRenamedFunctionWithBodyChange(t *testing.T) {
-	base := parserNode("oldName", "file.go", "function", 20, 30)
-	head := parserNode("newName", "file.go", "function", 22, 33)
+func TestClassifyHeadNodeChangeKeepsDifferentBodyOverlapAdded(t *testing.T) {
+	base := parserNode("BlockAPI.closeAllListeners", "rpc/grpc/api.go", "method", 193, 203)
+	base.BodyHash = "old-body"
+	head := parserNode("BlockAPI.sendNonBlocking", "rpc/grpc/api.go", "method", 186, 198)
+	head.BodyHash = "new-body"
 
-	got, ok := firstUnmatchedOverlappingBaseNode(map[string]parser.Node{base.FullName: base}, map[string]bool{}, head)
-	if !ok {
-		t.Fatal("expected overlapping unmatched base node")
+	changeType, baseNode, unchanged := classifyHeadNodeChange(
+		head,
+		"modified",
+		map[string]parser.Node{base.FullName: base},
+		map[string][]parser.Node{base.BodyHash: {base}},
+		map[string]bool{},
+	)
+
+	if changeType != "added" || baseNode != nil || unchanged {
+		t.Fatalf("overlapping different-body node classified as %q base=%v unchanged=%v, want added", changeType, baseNode, unchanged)
 	}
-	if got.FullName != base.FullName {
-		t.Fatalf("matched %q, want %q", got.FullName, base.FullName)
+	if base.FilePath != head.FilePath || base.LineStart > head.LineEnd || head.LineStart > base.LineEnd {
+		t.Fatal("test setup should keep same-file line overlap")
+	}
+}
+
+func TestClassifyHeadNodeChangeUsesBodyHashForConservativeRename(t *testing.T) {
+	base := parserNode("BlockAPI.closeAllListeners", "rpc/grpc/api.go", "method", 193, 203)
+	base.BodyHash = "same-body"
+	head := parserNode("rpc/grpc:coregrpc.BlockAPI.closeAllListeners", "rpc/grpc/api.go", "method", 214, 224)
+	head.BodyHash = "same-body"
+
+	changeType, baseNode, unchanged := classifyHeadNodeChange(
+		head,
+		"modified",
+		map[string]parser.Node{base.FullName: base},
+		map[string][]parser.Node{base.BodyHash: {base}},
+		map[string]bool{},
+	)
+
+	if changeType != "renamed" || baseNode == nil || unchanged {
+		t.Fatalf("same-body node classified as %q base=%v unchanged=%v, want renamed", changeType, baseNode, unchanged)
 	}
 }
 
