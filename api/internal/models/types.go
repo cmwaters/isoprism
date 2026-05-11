@@ -75,20 +75,22 @@ type PullRequest struct {
 // ── Code graph ────────────────────────────────────────────────────────────────
 
 type CodeNode struct {
-	ID        string    `json:"id"`
-	RepoID    string    `json:"repo_id"`
-	CommitSHA string    `json:"commit_sha"`
-	FullName  string    `json:"full_name"`
-	FilePath  string    `json:"file_path"`
-	LineStart int       `json:"line_start"`
-	LineEnd   int       `json:"line_end"`
-	Inputs    []TypeRef `json:"inputs"`
-	Outputs   []TypeRef `json:"outputs"`
-	Language  string    `json:"language"`
-	Kind      string    `json:"kind"`
-	BodyHash  string    `json:"body_hash"`
-	Summary   *string   `json:"summary"`
-	CreatedAt time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	RepoID           string    `json:"repo_id"`
+	CommitSHA        string    `json:"commit_sha"`
+	FullName         string    `json:"full_name"`
+	FilePath         string    `json:"file_path"`
+	LineStart        int       `json:"line_start"`
+	LineEnd          int       `json:"line_end"`
+	Inputs           []TypeRef `json:"inputs"`
+	Outputs          []TypeRef `json:"outputs"`
+	Language         string    `json:"language"`
+	Kind             string    `json:"kind"`
+	BodyHash         string    `json:"body_hash"`
+	IsTestCode       bool      `json:"is_test_code"`
+	IsTestEntrypoint bool      `json:"is_test_entrypoint"`
+	Summary          *string   `json:"summary"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type CodeEdge struct {
@@ -140,23 +142,25 @@ type QueuePR struct {
 
 // GraphNode is a node in the PR graph response, tagged with its computed role.
 type GraphNode struct {
-	ID            string    `json:"id"`
-	FullName      string    `json:"full_name"`
-	FilePath      string    `json:"file_path"`
-	PackagePath   string    `json:"package_path,omitempty"`
-	LineStart     int       `json:"line_start"`
-	LineEnd       int       `json:"line_end"`
-	Inputs        []TypeRef `json:"inputs"`
-	Outputs       []TypeRef `json:"outputs"`
-	Language      string    `json:"language"`
-	Kind          string    `json:"kind"`
-	NodeType      string    `json:"node_type"` // changed | caller | callee
-	Summary       *string   `json:"summary"`
-	ChangeSummary *string   `json:"change_summary"`
-	DiffHunk      *string   `json:"diff_hunk"`
-	ChangeType    *string   `json:"change_type"` // added | modified | deleted | nil for unchanged
-	OldFullName   *string   `json:"old_full_name,omitempty"`
-	OldFilePath   *string   `json:"old_file_path,omitempty"`
+	ID               string    `json:"id"`
+	FullName         string    `json:"full_name"`
+	FilePath         string    `json:"file_path"`
+	PackagePath      string    `json:"package_path,omitempty"`
+	LineStart        int       `json:"line_start"`
+	LineEnd          int       `json:"line_end"`
+	Inputs           []TypeRef `json:"inputs"`
+	Outputs          []TypeRef `json:"outputs"`
+	Language         string    `json:"language"`
+	Kind             string    `json:"kind"`
+	IsTestCode       bool      `json:"is_test_code"`
+	IsTestEntrypoint bool      `json:"is_test_entrypoint"`
+	NodeType         string    `json:"node_type"` // changed | caller | callee
+	Summary          *string   `json:"summary"`
+	ChangeSummary    *string   `json:"change_summary"`
+	DiffHunk         *string   `json:"diff_hunk"`
+	ChangeType       *string   `json:"change_type"` // added | modified | deleted | nil for unchanged
+	OldFullName      *string   `json:"old_full_name,omitempty"`
+	OldFilePath      *string   `json:"old_file_path,omitempty"`
 	// Diff stats (only for changed nodes)
 	LinesAdded   int             `json:"lines_added"`
 	LinesRemoved int             `json:"lines_removed"`

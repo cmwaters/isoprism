@@ -138,6 +138,8 @@ supabase db diff --linked
 ### Migrations
 Migration files live in `supabase/migrations/` so the Supabase CLI can discover them without a temporary workdir. They use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` throughout, making them safe to re-run — **except** `CREATE POLICY` statements, which will error if the policy already exists. If in doubt, dump the schema and grep for the table name before re-running.
 
+The API fails fast at startup unless the latest row in `supabase_migrations.schema_migrations` matches `api/internal/db.RequiredMigrationVersion`. When adding a migration, apply it before deploying the API and update `RequiredMigrationVersion` to the new migration number in the same code change. The API test suite checks that this constant matches the latest local migration file.
+
 If the CLI is not logged in, use the production database URL from `api/.env`:
 
 ```bash

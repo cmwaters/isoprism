@@ -86,18 +86,31 @@ func TestComponentDiffHunkTreatsAddedComponentBodyAsAdded(t *testing.T) {
 	}
 }
 
-func TestComponentDiffHunkTreatsDeletedComponentBodyAsRemoved(t *testing.T) {
+func TestComponentDiffHunkTreatsDeletedComponentPatchLinesAsRemoved(t *testing.T) {
+	patch := strings.Join([]string{
+		"@@ -28,7 +28,3 @@",
+		" func Keep() {",
+		" }",
+		"-func Removed() {",
+		"-\tcleanup()",
+		"-}",
+		" func AlsoKeep() {",
+		" }",
+	}, "\n")
 	body := strings.Join([]string{
 		"func Removed() {",
 		"\tcleanup()",
 		"}",
 	}, "\n")
 
-	got := componentDiffHunk("deleted", "", body, 30, 32, 0, 0, nil, nil)
+	got := componentDiffHunk("deleted", patch, body, 30, 32, 0, 0, nil, nil)
 	added, removed := countDiffLines(got)
 
 	if added != 0 || removed != 3 {
 		t.Fatalf("deleted component stats = +%d -%d, want +0 -3\n%s", added, removed, got)
+	}
+	if strings.Contains(got, "Keep") || strings.Contains(got, "AlsoKeep") {
+		t.Fatalf("deleted component diff leaked neighboring lines:\n%s", got)
 	}
 }
 

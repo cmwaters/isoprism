@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -28,7 +27,6 @@ type FeedbackRequest struct {
 	Type            string `json:"type"`
 	Title           string `json:"title"`
 	Details         string `json:"details"`
-	BetaID          string `json:"beta_id"`
 	UserID          string `json:"user_id"`
 	RepoFullName    string `json:"repo_full_name"`
 	RepoID          string `json:"repo_id"`
@@ -59,7 +57,6 @@ type CreateBetaTesterResponse struct {
 
 type BetaTester struct {
 	ID                       string                  `json:"id"`
-	BetaID                   string                  `json:"beta_id"`
 	Name                     string                  `json:"name"`
 	Email                    *string                 `json:"email"`
 	Status                   string                  `json:"status"`
@@ -95,14 +92,14 @@ func (h *BetaHandler) ListBetaTesters(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.DB.Query(r.Context(), `
 		select
-			b.id, b.beta_id, b.name, b.email, b.status, b.invited_at, b.token,
+			b.id, b.name, b.email, b.status, b.invited_at, b.token,
 			b.accepted_at, b.completed_at, b.user_id, b.selected_repo_id,
 			r.full_name, b.trial_starts_at, b.trial_ends_at,
 			q.submitted_at, q.faster_rating, q.risk_clarity_rating,
 			q.confusing_or_missing, q.bugs_hit, q.build_next, q.would_keep_using
-		from beta_invites b
+		from pilot_users b
 		left join repositories r on r.id = b.selected_repo_id
-		left join beta_questionnaires q on q.invite_id = b.id
+		left join pilot_questionaire q on q.invite_id = b.id
 		order by b.created_at desc
 	`)
 	if err != nil {
@@ -148,21 +145,15 @@ func (h *BetaHandler) CreateBetaTester(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to generate token", http.StatusInternalServerError)
 		return
 	}
-	betaID, err := newBetaID(r.Context(), h.DB)
-	if err != nil {
-		http.Error(w, "failed to generate beta id", http.StatusInternalServerError)
-		return
-	}
-
 	var tester BetaTester
 	err = h.DB.QueryRow(r.Context(), `
-		insert into beta_invites (beta_id, name, token)
-		values ($1, $2, $3)
-		returning id, beta_id, name, email, status, invited_at, token,
+		insert into pilot_users (name, token)
+		values ($1, $2)
+		returning id, name, email, status, invited_at, token,
 			accepted_at, completed_at, user_id, selected_repo_id,
 			trial_starts_at, trial_ends_at
-	`, betaID, req.Name, token).Scan(
-		&tester.ID, &tester.BetaID, &tester.Name, &tester.Email, &tester.Status,
+	`, req.Name, token).Scan(
+		&tester.ID, &tester.Name, &tester.Email, &tester.Status,
 		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
 		&tester.SelectedRepoID, &tester.TrialStartsAt, &tester.TrialEndsAt,
 	)
@@ -194,7 +185,7 @@ func (h *BetaHandler) DeleteBetaTester(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.DB.Exec(r.Context(), `delete from beta_invites where id = $1`, testerID)
+	tag, err := h.DB.Exec(r.Context(), `delete from pilot_users where id = $1`, testerID)
 	if err != nil {
 		http.Error(w, "failed to delete tester", http.StatusInternalServerError)
 		return
@@ -308,7 +299,6 @@ func feedbackIssueBody(req FeedbackRequest, userID string) string {
 
 ## Context
 
-- Beta ID: %s
 - User ID: %s
 - Repository: %s
 - Repository ID: %s
@@ -320,7 +310,6 @@ func feedbackIssueBody(req FeedbackRequest, userID string) string {
 - Source commit: %s
 `,
 		req.Details,
-		valueOrUnknown(req.BetaID),
 		valueOrUnknown(userID),
 		valueOrUnknown(req.RepoFullName),
 		valueOrUnknown(req.RepoID),
@@ -360,7 +349,7 @@ func scanBetaTester(row betaTesterScanner, frontendURL string) (BetaTester, erro
 	var submittedAt *time.Time
 	var questionnaire BetaQuestionnaireAdmin
 	err := row.Scan(
-		&tester.ID, &tester.BetaID, &tester.Name, &tester.Email, &tester.Status,
+		&tester.ID, &tester.Name, &tester.Email, &tester.Status,
 		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
 		&tester.SelectedRepoID, &tester.SelectedRepoFullName, &tester.TrialStartsAt,
 		&tester.TrialEndsAt, &submittedAt, &questionnaire.FasterRating,
@@ -386,24 +375,6 @@ func newInviteToken() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(raw), nil
-}
-
-func newBetaID(ctx context.Context, db *pgxpool.Pool) (string, error) {
-	for i := 0; i < 8; i++ {
-		raw := make([]byte, 5)
-		if _, err := rand.Read(raw); err != nil {
-			return "", err
-		}
-		id := "BETA-" + strings.ToUpper(base64.RawURLEncoding.EncodeToString(raw))
-		var exists bool
-		if err := db.QueryRow(ctx, `select exists(select 1 from beta_invites where beta_id=$1)`, id).Scan(&exists); err != nil {
-			return "", err
-		}
-		if !exists {
-			return id, nil
-		}
-	}
-	return "", fmt.Errorf("could not generate unique beta id")
 }
 
 func inviteLink(frontendURL, token string) string {

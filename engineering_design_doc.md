@@ -83,7 +83,7 @@ The prototype delivers exactly one flow:
                         │           Supabase (Postgres 15)         │
                         │   repositories | pull_requests |         │
                         │   code_nodes | code_edges |              │
-                        │   code_test_references | pr_node_changes │
+                        │   pr_node_changes | pr_analyses          │
                         └──────────────────────▲──────────────────┘
                                                │ webhooks
                         ┌──────────────────────┴──────────────────┐
@@ -209,6 +209,8 @@ code_nodes
   language         text              -- 'go' | 'typescript' | 'javascript'
   kind             text              -- 'function' | 'method' | 'type' | 'struct' | 'interface'
   body_hash        text              -- SHA-256 of the node body; used for change detection
+  is_test_code     boolean           -- true for parsed test files / test entrypoints
+  is_test_entrypoint boolean         -- true for explicit test entrypoints such as Go Test* functions
   summary          text              -- AI: what this node does (2 sentences)
   created_at       timestamptz
   UNIQUE (repo_id, commit_sha, full_name, file_path)
@@ -223,22 +225,7 @@ code_edges
   created_at       timestamptz
   UNIQUE (repo_id, commit_sha, caller_id, callee_id)
 
-The graph API serves this canonical function/type graph directly. `code_nodes` and `code_edges` remain the source of truth; graph responses do not expose package/object projections.
-
--- Test references at a given commit. Test code is not inserted into
--- code_nodes/code_edges; these rows attach test entrypoints to production nodes.
-code_test_references
-  id               uuid PK
-  repo_id          uuid FK → repositories
-  commit_sha       text
-  test_name        text
-  test_full_name   text
-  test_file_path   text
-  test_line_start  int
-  test_line_end    int
-  target_node_id   uuid FK → code_nodes
-  created_at       timestamptz
-  UNIQUE (repo_id, commit_sha, test_full_name, test_file_path, target_node_id)
+The graph API serves this canonical function/type graph directly. `code_nodes` and `code_edges` remain the source of truth; graph responses do not expose package/object projections. Test nodes are stored in `code_nodes` and linked through `code_edges`, but default graph responses filter them out unless the frontend is showing a test-focused graph.
 
 -- ────────────────────────────────────────────
 -- PR delta: what changed and AI change summaries
@@ -279,12 +266,11 @@ pr_analyses
 The current production graph schema does not yet model the beta loop. To support the intended tester flow, add a small beta access layer:
 
 ```sql
--- One row per invite link.
-beta_invites
+-- One row per pilot invite link.
+pilot_users
   id                    uuid PK
-  beta_id               text UNIQUE        -- short human/reference ID used in feedback issues
   name                  text               -- beta tester name entered by the admin
-  token_hash            text UNIQUE        -- store a hash, never the raw URL token
+  token                 text UNIQUE        -- raw invite token for prototype simplicity
   email                 text               -- optional operator note, not used for auth
   status                text DEFAULT 'new' -- 'new' | 'active' | 'completed' | 'revoked' | 'expired'
   invited_at            timestamptz
@@ -297,24 +283,10 @@ beta_invites
   trial_ends_at         timestamptz
   created_at            timestamptz
 
--- Bug reports and feature requests submitted during the trial.
-beta_feedback
+-- One questionnaire response per pilot invite.
+pilot_questionaire
   id                    uuid PK
-  invite_id             uuid FK -> beta_invites
-  user_id               uuid FK -> users
-  repo_id               uuid FK -> repositories
-  pull_request_id       uuid FK -> pull_requests
-  node_id               uuid FK -> code_nodes
-  type                  text               -- 'bug' | 'feature'
-  title                 text
-  details               text
-  browser_path          text
-  created_at            timestamptz
-
--- One questionnaire response per beta invite.
-beta_questionnaires
-  id                    uuid PK
-  invite_id             uuid FK -> beta_invites UNIQUE
+  invite_id             uuid FK -> pilot_users UNIQUE
   user_id               uuid FK -> users
   repo_id               uuid FK -> repositories
   faster_rating         int
@@ -336,8 +308,7 @@ The beta admin console should live at `/admin` and require an operator-only chec
 It should let an operator:
 
 - Enter a beta tester by name
-- Generate a unique `beta_id`
-- Generate a raw invite token once and store only `token_hash`
+- Generate a raw invite token
 - Copy the full invite link
 - Monitor whether the tester has used the link
 - See which repository the tester has selected
@@ -358,7 +329,7 @@ The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send th
 
 **Separate base graph and PR delta.** `code_nodes` + `code_edges` are the base graph, built during `RepoInit` and kept current by `MergePR`. `pr_node_changes` is the PR-specific semantic overlay, built during `OpenPR`. The PR graph endpoint also returns GitHub's changed-file list from the Pull Request Files API so the PR view keeps full file-diff parity with GitHub, including docs, config, generated files, global variable edits, and other non-node changes that do not become graph nodes.
 
-**Tests are metadata and PR components, not graph nodes.** Default-branch test code is excluded from the base graph and from `code_edges`. `code_test_references` records which test entrypoints exercise each production node so the UI can show tests in the node detail panel without cluttering the graph. PR processing also persists changed test functions in `pr_node_changes`; the PR graph endpoint returns them in `test_changes[]` so the PR view can show test-function labels and diffs separately from graph changes.
+**Tests are first-class code nodes, not default graph cards.** Test code is persisted in `code_nodes` with `is_test_code` / `is_test_entrypoint`, and test-to-production relationships are represented as `code_edges`. Default repo/PR graph responses filter test nodes out of the visible graph, then attach matching test callers to production nodes as `tests[]`. PR processing also persists changed test functions in `pr_node_changes`; the PR graph endpoint returns them in `test_changes[]` so the PR view can show test-function labels and diffs separately from graph changes. When a reviewer selects a changed test entrypoint, the frontend derives a temporary test-focused graph from that test node plus production nodes whose `tests[]` references match it; selecting a production component restores the normal PR diff graph.
 
 ---
 
@@ -422,11 +393,10 @@ The backend is defined around three events. All other logic flows from them.
 2. Fetch the full file tree at that SHA via `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1`
 3. Filter to supported source files (`.go`, `.ts`, `.tsx`, `.js`, `.jsx`)
 4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse it to extract functions, methods, and types.
-5. Exclude test code from visible production call/reference edges, then build production call/reference edges by resolving identifiers in function bodies against the production node set → insert `code_edges`.
-6. Extract test entrypoints and store the production nodes they exercise in `code_test_references`. Test relationships remain indexed in the database but are exposed to the product only as `tests[]` on selected production nodes, not as visible graph cards.
-7. Persist all `code_nodes`, `code_edges`, and `code_test_references` with `commit_sha = HEAD`
-8. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes.
-9. Generate optional AI summaries for production nodes in Claude batches of up to 30 nodes (see `ai.md`) and update `code_nodes.summary` as they arrive.
+5. Persist production and test nodes in `code_nodes`, setting `is_test_code` and `is_test_entrypoint` from parser metadata.
+6. Build call/reference edges by resolving identifiers in function and test bodies against the full node set → insert `code_edges`.
+7. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes.
+8. Generate optional AI summaries for production nodes in Claude batches of up to 30 nodes (see `ai.md`) and update `code_nodes.summary` as they arrive.
 
 Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` every 2 seconds until `ready` or `failed`. The status response includes the current indexing job phase, progress percentage, counters, and a rough ETA. `ready` means the structural graph is available; summaries may continue to fill in afterward.
 
@@ -443,12 +413,12 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 1. **Validate branch and SHA:** Require `pull_requests.base_branch = repositories.default_branch` and `pull_requests.base_commit_sha = repositories.main_commit_sha`. If either check fails, mark `graph_status = 'skipped'` so the PR is hidden instead of rendered against an approximate graph. Reserve `failed` for processing errors.
 2. **Check PR size limits:** Fetch GitHub PR metadata and skip oversized PRs before expensive file fetching. During beta the limits are 300 changed files, 20,000 additions, 20,000 deletions, or 30,000 total changed lines. Oversized PRs are marked `graph_status = 'skipped'`, stale `pr_node_changes` are cleared, and `pr_analyses.summary` stores the reason.
 3. **Check cache:** Look up the PR's stored `head_commit_sha`. If the incoming webhook's `head_sha` matches → already processed, skip.
-4. **Fetch semantic diff:** `GET /repos/{owner}/{repo}/compare/{base_commit_sha}...{head_sha}` — returns changed files with unified diffs for semantic node processing.
-5. **Parse head commit:** For each changed file at `head_sha`, fetch content and parse it. Insert new production `code_nodes` at `commit_sha = head_sha` if not already present. Reuse existing `summary` where `body_hash` is unchanged.
-6. **Identify changed nodes:** Compare `body_hash` for each node between `base_commit_sha` and `head_sha`. Nodes with a differing hash are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`.
-7. **Build component diffs:** `modified` nodes keep a component-scoped slice of the GitHub patch. `added` and `deleted` nodes use synthetic component hunks where every source line is marked `+` or `-`, so semantic node stats count the whole new/removed component even when Git's file diff treats moved/copied body lines as unchanged context.
+4. **Fetch semantic diff metadata:** Fetch GitHub PR files via `GET /repos/{owner}/{repo}/pulls/{number}/files`, falling back to `GET /repos/{owner}/{repo}/compare/{base_commit_sha}...{head_sha}` if needed. These responses provide changed paths, rename metadata, line counts, and unified file patches.
+5. **Parse head commit only:** For each changed supported file that still exists at `head_sha`, fetch the head content and parse it. Insert all parsed head nodes, including test nodes, into `code_nodes` at `commit_sha = head_sha`. PR processing does not fetch base file contents; it loads base node metadata from the indexed `code_nodes` rows at `base_commit_sha`.
+6. **Identify changed nodes:** Compare parsed head nodes with base `code_nodes` loaded from SQL for the affected base paths. Nodes with a differing `body_hash` are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`; nodes paired by rename metadata, matching hashes, or overlapping ranges are `renamed`.
+7. **Build component diffs:** `modified`, `renamed`, and `deleted` nodes keep a component-scoped slice of the GitHub patch using the stored base/head line ranges. `added` nodes use a synthetic component hunk where every line of the fetched head component is marked `+`, so semantic node stats count the whole new component even when Git's file diff treats moved/copied body lines as unchanged context.
 8. **Generate change summaries:** For all `modified` and `added` nodes, call Claude with the diff hunk and new function body to generate `change_summary`. Batch into a single API call for normal-sized PRs. Large-but-allowed PRs can skip per-function AI enrichment and receive a coarse PR-level summary so structural graph processing can still finish.
-9. **Persist:** Insert `pr_node_changes` rows, rebuild test references for changed test files, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`). Persistence errors are logged and counted in `pull_requests.processing_stats` instead of being silently swallowed.
+9. **Persist:** Insert `pr_node_changes` rows, rebuild PR-head call edges for all parsed nodes including tests, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`). Persistence errors are logged and counted in `pull_requests.processing_stats` instead of being silently swallowed.
 10. **Update PR:** Set `graph_status = 'ready'` and stamp the latest processing metadata on `pull_requests`: `processor_commit_sha`, `processed_at`, `processing_error`, and `processing_stats`. If changed nodes were detected but zero `pr_node_changes` rows persisted, `processing_error` records that suspicion while leaving the structural counters available for debugging.
 
 When serving a graph, the API returns `full_name` as the display name and structured `inputs[]`/`outputs[]` instead of a raw signature string. Each input/output item has an optional `name`, a `type`, and, when that type exists as a visible graph node, a `node_id` so the frontend can link directly to the type node.
@@ -481,13 +451,12 @@ The current parser supports Go, TypeScript, TSX, JavaScript, and JSX through tre
 - `parser.Parse(content []byte, filePath string) []Node`
 - `parser.ExtractCallEdges(content []byte, filePath string, nodeSet map[string]bool) []CallEdge`
 - `parser.ExtractCallEdgesWithResolver(content []byte, filePath string, resolverIndex ResolverIndex) []CallEdge`
-- `parser.ExtractTestReferences(content []byte, filePath string, nodeSet map[string]bool) []TestReference`
 
 | Language | Parser | Extracted production nodes | Test code handling |
 |---|---|---|---|
-| Go | `tree-sitter-go` | functions, methods, type specs, structs, interfaces | Excludes `*_test.go`, packages ending `_test`, and functions beginning `Test`; indexes `Test*` references to production nodes |
-| TypeScript / TSX | `tree-sitter-typescript` / `tree-sitter-tsx` | function declarations, const/let arrow functions, class methods | Excludes `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`, and `__tests__/`; indexes `test(...)` / `it(...)` references |
-| JavaScript / JSX | `tree-sitter-javascript` | function declarations, const/let arrow functions, class methods | Excludes `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx`, and `__tests__/`; indexes `test(...)` / `it(...)` references |
+| Go | `tree-sitter-go` | functions, methods, type specs, structs, interfaces | Stores `*_test.go`, packages ending `_test`, and functions beginning `Test` as `code_nodes` with `is_test_code`; `Test*` functions are marked `is_test_entrypoint` |
+| TypeScript / TSX | `tree-sitter-typescript` / `tree-sitter-tsx` | function declarations, const/let arrow functions, class methods | Stores `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`, and `__tests__/` nodes as `is_test_code`; `test(...)` / `it(...)` calls are stored as `is_test_entrypoint` nodes |
+| JavaScript / JSX | `tree-sitter-javascript` | function declarations, const/let arrow functions, class methods | Stores `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx`, and `__tests__/` nodes as `is_test_code`; `test(...)` / `it(...)` calls are stored as `is_test_entrypoint` nodes |
 
 Rust and Python are not currently indexed.
 
@@ -497,7 +466,7 @@ Rust and Python are not currently indexed.
 
 **Resolver index:** Repo and PR indexing build a `ResolverIndex` from full source files before inserting call edges. The shared resolver index stores known node names plus language-specific semantic facts. The Go adapter currently records struct field types, receiver bindings, parameter types, simple local variable declarations, import aliases, and repository-relative import suffixes. This lets the call graph resolve safe receiver and field-chain calls such as `blockAPI.env.EventBus.Unsubscribe(...)` to `types.EventBus.Unsubscribe` when every hop has one known type. Ambiguous or missing field/type hops still produce no edge.
 
-**Test reference extraction:** Test files are parsed separately from the production graph. Test functions/cases never become `code_nodes`; instead, each test entrypoint that reaches a production node writes a `code_test_references` row. The graph API attaches those rows to each returned production node so the detail panel can show callers, callees, and tests without rendering tests as graph nodes.
+**Test graph extraction:** Test files are parsed into `code_nodes` alongside production code. Test callers are linked to production callees through `code_edges`; the API derives each production node's `tests[]` from those edges. Changed PR test functions can also appear as `test_changes[]`; the frontend only renders them as graph cards in the temporary test-focused graph when the reviewer selects a test entrypoint.
 
 **Build note:** Tree-sitter grammar bindings use CGO. Local and Railway API builds must run with CGO enabled and a working C compiler available.
 
@@ -582,7 +551,7 @@ GET    /api/v1/repos/{repoID}/prs/{prID}/nodes/{nodeID}/code lazy PR node source
 - The trial ends seven calendar days after `trial_starts_at`.
 - Feedback submissions are accepted during the trial and may continue after the questionnaire is due if the product remains accessible.
 - The questionnaire is due once `now() >= trial_ends_at` and should be stored once per invite.
-- Feedback submissions should create GitHub issues in the configured feedback repository using labels `bug` or `feature`, and should include the tester's `beta_id`, selected repository, PR/node context, browser path, app commit SHA, and source commit SHA.
+- Feedback submissions should create GitHub issues in the configured feedback repository using labels `bug` or `feature`, and should include the tester's user ID, selected repository, PR/node context, browser path, app commit SHA, and source commit SHA.
 
 ### Feedback Issue Configuration
 
@@ -822,14 +791,16 @@ NEXT_PUBLIC_GITHUB_APP_NAME    Used to construct GitHub install links
 
 Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply them directly. Use the Supabase CLI against the linked project or pass `--db-url "$DATABASE_URL"` when applying production migrations from a machine that is not logged into Supabase.
 
+At startup, the API queries `supabase_migrations.schema_migrations` and exits before serving traffic unless the latest recorded migration version matches `api/internal/db.RequiredMigrationVersion`. Each new migration must update that constant in the same change; the API tests compare it to the latest local migration filename.
+
 ---
 
 ## 10. Implementation Plan
 
 ### Phase 0 — Beta Access Loop *(~1.5 days)*
 
-1. Add `beta_invites`, `beta_feedback`, and `beta_questionnaires` migrations.
-2. Add invite-token validation using hashed tokens; never persist raw URL tokens.
+1. Add `pilot_users` and `pilot_questionaire` migrations.
+2. Add invite-token validation using stored prototype tokens.
 3. Add beta routes for invite status, invite acceptance, trial status, feedback submission, and questionnaire submission.
 4. Preserve invite context across Supabase GitHub OAuth and GitHub App installation callback.
 5. Enforce one selected repository per active beta invite in repo selection and `POST /repos/{repoID}/index`.
@@ -853,7 +824,7 @@ Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply 
 1. Implement tree-sitter parsing for Go, TypeScript, TSX, JavaScript, and JSX function declarations, const/let arrow functions, methods, and Go type declarations.
 2. Implement `parser.Parse(content []byte, filePath string) []CodeNode` — returns node boundaries + signatures and flags test code.
 3. Implement `parser.ExtractCallEdges(content []byte, filePath string, nodeSet map[string]uuid) []CallEdge` — walks call expressions, resolves against nodeSet
-4. Implement `parser.ExtractTestReferences(content []byte, filePath string, nodeSet map[string]uuid) []TestReference` for Go, TypeScript, and JavaScript tests.
+4. Mark test code and test entrypoint nodes during `parser.Parse` for Go, TypeScript, and JavaScript tests.
 5. Implement `parser.BodyHash(content []byte, start, end int) string` — SHA-256 of the function body bytes
 
 ---
@@ -888,9 +859,9 @@ Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply 
 
 1. Implement `events.OpenPR(ctx, pr PullRequest)`:
    - Check `pull_requests.head_commit_sha`; skip if unchanged
-   - Fetch diff via GitHub compare API
-   - Parse changed files at `head_sha`; insert new `code_nodes` (reuse summary where `body_hash` matches)
-   - Diff `body_hash` between base and head; populate `pr_node_changes`
+   - Fetch PR file metadata via GitHub PR files API, falling back to compare
+   - Fetch and parse changed head files at `head_sha`; insert new `code_nodes` including test nodes
+   - Load base node metadata from indexed `code_nodes`, diff `body_hash` between base and head, and populate `pr_node_changes`
    - Call AI enrichment for changed nodes
    - Update `pull_requests.graph_status = 'ready'`
 2. Implement `events.MergePR(ctx, pr PullRequest)`:
@@ -970,6 +941,6 @@ Plain SQL files live in `/supabase/migrations/` so `supabase db push` can apply 
 | v0.5 | 2026-03-26 | Queue refresh; `setup_action=request`; `installation_repositories` webhook |
 | v0.6 | 2026-04-21 | Pivot to graph validation prototype; graph pipeline; function nodes; AI enrichment |
 | v0.7 | 2026-04-21 | Railway; clean schema; graph parser pipeline; three-event backend model (RepoInit/OpenPR/MergePR); `code_nodes` keyed by commit SHA; `node_type` derived at query time |
-| v0.8 | 2026-04-26 | Test code excluded from production graph; `code_test_references` records tests that exercise production nodes; parser docs reflect Go/TypeScript/JavaScript implementation |
+| v0.8 | 2026-04-26 | Test code excluded from the default production graph; test nodes are stored in `code_nodes`, linked through `code_edges`, and parser docs reflect Go/TypeScript/JavaScript implementation |
 | v0.9 | 2026-04-29 | Documented invite-only beta loop: unique access tokens, one selected repo, one-week trial, in-product feedback, and end-of-week questionnaire |
 | v0.10 | 2026-05-04 | Parser migrated to tree-sitter with package/module-aware symbol names and conservative call edge resolution |

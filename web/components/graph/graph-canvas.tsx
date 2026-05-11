@@ -466,6 +466,32 @@ function collapseRenamedGraphNodes(graph: UnifiedGraph): UnifiedGraph {
   };
 }
 
+function sameTestEntry(test: APIGraphNode, ref: { full_name: string; file_path: string }): boolean {
+  return test.full_name === ref.full_name && test.file_path === ref.file_path;
+}
+
+function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | null): UnifiedGraph {
+  if (!isPRGraph(graph) || !testNode) return graph;
+
+  const targets = graph.nodes.filter((node) => (node.tests ?? []).some((test) => sameTestEntry(testNode, test)));
+  const nodes = [
+    { ...testNode, graph_depth: 0, boundary: false, degree: targets.length, weight: Math.max(testNode.weight ?? 0, targets.length) },
+    ...targets.map((node) => ({ ...node, graph_depth: 1, boundary: false })),
+  ];
+  const edges = targets.map((node) => ({
+    caller_id: testNode.id,
+    callee_id: node.id,
+    weight: 1,
+    underlying_edge_count: 1,
+  }));
+
+  return {
+    ...graph,
+    nodes,
+    edges,
+  };
+}
+
 function InnerCanvas({
   graph,
   repoID,
@@ -490,15 +516,33 @@ function InnerCanvas({
   const [componentPanelWidth, setComponentPanelWidth] = useState(COMPONENT_PANEL_DEFAULT_WIDTH);
   const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const visibleGraph = useMemo(() => collapseRenamedGraphNodes(activeGraph), [activeGraph]);
+  const baseVisibleGraph = useMemo(() => collapseRenamedGraphNodes(activeGraph), [activeGraph]);
+  const activePRTestChanges = useMemo(
+    () => isPRGraph(activeGraph) ? activeGraph.test_changes ?? [] : [],
+    [activeGraph]
+  );
+  const selectedTestNode = selectedPRChange?.type === "node"
+    ? activePRTestChanges.find((node) => node.id === selectedPRChange.nodeID) ?? null
+    : null;
+  const visibleGraph = useMemo(
+    () => buildTestFocusedGraph(baseVisibleGraph, selectedTestNode),
+    [baseVisibleGraph, selectedTestNode]
+  );
 
   const selectGraphNode = useCallback((id: string) => {
-    const apiNode = visibleGraph.nodes.find((n) => n.id === id) ?? null;
+    const apiNode = visibleGraph.nodes.find((n) => n.id === id)
+      ?? baseVisibleGraph.nodes.find((n) => n.id === id)
+      ?? activePRTestChanges.find((n) => n.id === id)
+      ?? null;
     setSelectedNode(apiNode);
-    if (isPRGraph(visibleGraph) && apiNode) {
+    if (!apiNode) {
+      setSelectedPRChange(null);
+      return;
+    }
+    if (isPRGraph(baseVisibleGraph) && apiNode) {
       setSelectedPRChange({ type: "node", nodeID: apiNode.id });
     }
-  }, [visibleGraph]);
+  }, [activePRTestChanges, baseVisibleGraph, visibleGraph]);
 
   const initialNodes: Node[] = useMemo(() => visibleGraph.nodes.map((n) => ({
     id: n.id,
@@ -544,11 +588,14 @@ function InnerCanvas({
 
   useEffect(() => {
     setNodes(hexGridLayout(initialNodes, baseEdges, visibleGraph.nodes));
+    setTimeout(() => fitView({ padding: 0.15 }), 50);
+  }, [visibleGraph, baseEdges, fitView, initialNodes, setNodes]);
+
+  useEffect(() => {
     setSelectedNode(null);
     setSelectedPRChange(null);
     setPanelMode("overview");
-    setTimeout(() => fitView({ padding: 0.15 }), 50);
-  }, [visibleGraph, baseEdges, fitView, initialNodes, setNodes]);
+  }, [activeGraph]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
@@ -611,16 +658,15 @@ function InnerCanvas({
   const activeRepo = repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo);
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
   const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
-  const activePRTestChanges = isPRGraph(activeGraph) ? activeGraph.test_changes ?? [] : [];
-  const detailNodes = isPRGraph(visibleGraph)
-    ? [...visibleGraph.nodes, ...activePRTestChanges]
+  const detailNodes = isPRGraph(baseVisibleGraph)
+    ? uniqueGraphNodes([...baseVisibleGraph.nodes, ...visibleGraph.nodes, ...activePRTestChanges])
     : visibleGraph.nodes;
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", position: "relative" }}>
       <NodeDetailPanel
         node={activePR ? null : selectedNode}
-        allNodes={visibleGraph.nodes}
+        allNodes={baseVisibleGraph.nodes}
         edges={visibleGraph.edges}
         onSelectNode={(id) => {
           selectGraphNode(id);
@@ -817,4 +863,15 @@ function fallbackRepo(repoID: string): Repository {
     is_active: true,
     created_at: "",
   };
+}
+
+function uniqueGraphNodes(nodes: APIGraphNode[]): APIGraphNode[] {
+  const seen = new Set<string>();
+  const result: APIGraphNode[] = [];
+  for (const node of nodes) {
+    if (seen.has(node.id)) continue;
+    seen.add(node.id);
+    result.push(node);
+  }
+  return result;
 }

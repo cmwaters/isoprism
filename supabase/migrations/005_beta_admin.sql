@@ -1,8 +1,7 @@
 -- Invite-only beta administration.
 
-create table if not exists beta_invites (
+create table if not exists pilot_users (
   id               uuid primary key default gen_random_uuid(),
-  beta_id          text not null unique,
   name             text not null,
   token            text not null unique,
   email            text,
@@ -18,25 +17,9 @@ create table if not exists beta_invites (
   created_at       timestamptz not null default now()
 );
 
-create table if not exists beta_feedback (
-  id                uuid primary key default gen_random_uuid(),
-  invite_id         uuid references beta_invites(id) on delete set null,
-  user_id           uuid references auth.users(id) on delete set null,
-  repo_id           uuid references repositories(id) on delete set null,
-  pull_request_id   uuid references pull_requests(id) on delete set null,
-  node_id           uuid references code_nodes(id) on delete set null,
-  type              text not null,
-  title             text not null,
-  details           text not null,
-  browser_path      text,
-  github_issue_url  text,
-  github_issue_number int,
-  created_at        timestamptz not null default now()
-);
-
-create table if not exists beta_questionnaires (
+create table if not exists pilot_questionaire (
   id                   uuid primary key default gen_random_uuid(),
-  invite_id            uuid not null references beta_invites(id) on delete cascade,
+  invite_id            uuid not null references pilot_users(id) on delete cascade,
   user_id              uuid references auth.users(id) on delete set null,
   repo_id              uuid references repositories(id) on delete set null,
   faster_rating        int,
@@ -50,12 +33,10 @@ create table if not exists beta_questionnaires (
   unique (invite_id)
 );
 
-create index if not exists beta_invites_status_idx on beta_invites (status);
-create index if not exists beta_invites_user_id_idx on beta_invites (user_id);
-create index if not exists beta_invites_selected_repo_id_idx on beta_invites (selected_repo_id);
-create index if not exists beta_feedback_invite_id_idx on beta_feedback (invite_id);
-create index if not exists beta_questionnaires_invite_id_idx on beta_questionnaires (invite_id);
+create index if not exists pilot_users_status_idx on pilot_users (status);
+create index if not exists pilot_users_user_id_idx on pilot_users (user_id);
+create index if not exists pilot_users_selected_repo_id_idx on pilot_users (selected_repo_id);
+create index if not exists pilot_questionaire_invite_id_idx on pilot_questionaire (invite_id);
 
-alter table beta_invites enable row level security;
-alter table beta_feedback enable row level security;
-alter table beta_questionnaires enable row level security;
+alter table pilot_users enable row level security;
+alter table pilot_questionaire enable row level security;

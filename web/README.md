@@ -58,9 +58,9 @@ The beta admin console is available at `/admin`. It prompts for the admin passwo
 Admin capabilities:
 
 - Create a beta tester by name, with an optional email/note.
-- Generate a unique beta ID, raw token, and invite link.
+- Generate a raw token and invite link.
 - Store the invite token directly for admin display and invite lookup.
-- Monitor each tester's ID, invite link, selected repository, and questionnaire answers.
+- Monitor each tester's invite link, selected repository, and questionnaire answers.
 
 The API routes are:
 
@@ -147,7 +147,7 @@ interface PRFileDiff {
 }
 ```
 
-`files[]` is fetched from GitHub's pull request files endpoint and is the source of truth for PR-level diff totals and rendered patches. It includes docs and non-graph files. `nodes[]` remains the semantic production graph; tests are not rendered as graph nodes. Changed test functions are returned separately in `test_changes[]` with the same component-level fields as graph nodes (`change_type`, `diff_hunk`, `lines_added`, `lines_removed`, and rename metadata).
+`files[]` is fetched from GitHub's pull request files endpoint and is the source of truth for PR-level diff totals and rendered patches. It includes docs and non-graph files. `nodes[]` remains the default semantic production graph. Changed test functions are returned separately in `test_changes[]` with the same component-level fields as graph nodes (`change_type`, `diff_hunk`, `lines_added`, `lines_removed`, and rename metadata).
 
 The PR overview groups changes into four sections after the rendered description:
 - **Graph changes**: changed production functions/types represented in the graph.
@@ -155,7 +155,7 @@ The PR overview groups changes into four sections after the rendered description
 - **Documentation changes**: Markdown files from `files[]`.
 - **Other changes**: remaining file diffs not captured by the graph, tests, or docs.
 
-Clicking a graph/test row opens a resizable middle component panel between the PR overview and the graph. The panel shows the component overview first and the diff/code view below it, and opening or resizing it refits the graph. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
+Clicking a graph/test row opens a resizable middle component panel between the PR overview and the graph. The panel shows the component overview first and the diff/code view below it, and opening or resizing it refits the graph. Selecting a test row temporarily centers the graph on that test entrypoint and the production nodes returned with matching `tests[]` references; selecting any production component returns the canvas to the normal PR diff graph. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
 
 ## API contract used by the code panel
 
@@ -191,7 +191,7 @@ interface NodeCodeResponse {
     source: string;
   };
   diff_hunk?: string;
-  change_type?: "added" | "modified" | "deleted";
+  change_type?: "added" | "modified" | "deleted" | "renamed";
 }
 ```
 
@@ -199,8 +199,9 @@ Expected behavior:
 
 - `modified`: may include both `base` and `head`, plus `diff_hunk`.
 - `added`: includes `head` when source can be fetched, plus a synthetic `diff_hunk` where every line of the new component is marked as added.
-- `deleted`: includes `base` when source can be fetched, plus a synthetic `diff_hunk` where every line of the removed component is marked as deleted.
-- `modified`: uses a component-scoped slice of the GitHub patch; added/deleted component stats are counted from the synthetic component hunks so moved/copied body lines are not undercounted as unchanged context.
+- `deleted`: points at the indexed base `code_nodes` row and uses a component-scoped slice of the GitHub patch based on the stored base line range; source is fetched only if the code panel needs it.
+- `renamed`: preserves `old_full_name` / `old_file_path` and uses a component-scoped GitHub patch slice when changed lines are available.
+- `modified`: uses a component-scoped slice of the GitHub patch; added component stats are counted from the synthetic component hunk so moved/copied body lines are not undercounted as unchanged context.
 - Caller/callee context nodes are not PR changes; they show the head version when available.
 - If GitHub source fetching fails, the UI still uses `diff_hunk` from graph processing when present.
 
@@ -213,4 +214,4 @@ POST /debug/repos/{repoID}/reindex
 POST /debug/prs/{prID}/reprocess
 ```
 
-Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes`, `code_edges`, and `code_test_references` from the repository default branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, changed-file test references, and the PR's latest processing metadata snapshot.
+Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes` and `code_edges`, including test nodes and test-to-code edges, from the repository default branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, changed test nodes, and the PR's latest processing metadata snapshot.

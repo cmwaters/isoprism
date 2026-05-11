@@ -32,6 +32,11 @@ func main() {
 	defer pool.Close()
 	log.Println("connected to database")
 
+	if err := db.VerifyMigrationVersion(ctx, pool); err != nil {
+		log.Fatalf("database migration check failed: %v", err)
+	}
+	log.Printf("database migration version %s verified", db.RequiredMigrationVersion)
+
 	appClient, err := github.NewAppClient(cfg.GitHubClientID, cfg.GitHubAppPrivateKey)
 	if err != nil {
 		log.Fatalf("failed to initialise GitHub App client: %v", err)

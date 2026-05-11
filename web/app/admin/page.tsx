@@ -15,7 +15,6 @@ type BetaQuestionnaire = {
 
 type BetaTester = {
   id: string;
-  beta_id: string;
   name: string;
   link: string;
   token?: string | null;
@@ -247,7 +246,7 @@ export default function BetaAdminPage() {
 
           {created && (
             <div style={createdBoxStyle}>
-              <CopyRow label="Tester ID" value={`${created.name} · ${created.beta_id}`} copied={copied} onCopy={copyValue} />
+              <CopyRow label="Tester" value={created.name} copied={copied} onCopy={copyValue} />
               <div style={smallLabelStyle}>Invite link</div>
               <CopyRow label="Invite link" value={created.link} copied={copied} onCopy={copyValue} code />
             </div>

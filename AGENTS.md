@@ -24,8 +24,8 @@ This is a single-person prototype. Use `main` for all development and production
 
 Debug endpoints exist on the API (no auth required) for development:
 
-- `POST /debug/repos/{repoID}/reindex` — re-runs RepoInit (rebuilds code_nodes + code_edges + code_test_references from the repository default branch HEAD)
-- `POST /debug/prs/{prID}/reprocess` — re-runs OpenPR (rebuilds pr_node_changes + call edges + changed-file test references + latest processing metadata for a PR)
+- `POST /debug/repos/{repoID}/reindex` — re-runs RepoInit (rebuilds code_nodes + code_edges, including test nodes/edges, from the repository default branch HEAD)
+- `POST /debug/prs/{prID}/reprocess` — re-runs OpenPR (rebuilds pr_node_changes, PR call edges, test node changes, and latest processing metadata for a PR)
 
 These are safe to call at any time; they are idempotent (upserts on conflict).
 

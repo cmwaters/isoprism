@@ -128,7 +128,7 @@ The repo and PR graph views include a black footer banner:
 This is a beta version of Isoprism. Report a problem - Request a feature.
 ```
 
-Both actions open a centered feedback panel and submit a GitHub issue labelled `bug` or `feature`. The issue should reference the tester's unique beta ID and include repository, PR, node, browser path, app commit, and source commit context.
+Both actions open a centered feedback panel and submit a GitHub issue labelled `bug` or `feature`. The issue should include the tester's user ID, repository, PR, node, browser path, app commit, and source commit context.
 
 ---
 
@@ -151,9 +151,9 @@ The questionnaire should capture:
 
 Operators need a simple admin page for managing the beta loop.
 
-The admin page should allow an operator to enter a beta tester by name, generate a unique beta ID, generate a token and invite link, and monitor whether the invite has been used. It should also show which repository the tester has set up and their questionnaire answers once submitted.
+The admin page should allow an operator to enter a beta tester by name, generate a token and invite link, and monitor whether the invite has been used. It should also show which repository the tester has set up and their questionnaire answers once submitted.
 
-Raw invite tokens should only be shown when generated. After that, the admin page should show the beta ID, invite status, and link state, not the raw token.
+Invite tokens are stored directly for prototype simplicity so the admin page can keep showing invite links.
 
 ---
 

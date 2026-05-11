@@ -132,11 +132,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	var allNodes []parser.Node
 	fileContents := map[string][]byte{} // filePath → full source
 	for fr := range results {
-		for _, n := range fr.nodes {
-			if !n.IsTestCode {
-				allNodes = append(allNodes, n)
-			}
-		}
+		allNodes = append(allNodes, fr.nodes...)
 		fileContents[fr.path] = fr.content
 	}
 	log.Printf("RepoInit: parsed %d nodes", len(allNodes))
@@ -150,15 +146,21 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 		outputs, _ := json.Marshal(n.Outputs)
 		err := db.QueryRow(ctx, `
 			insert into code_nodes (repo_id, commit_sha, full_name, file_path,
-				line_start, line_end, inputs, outputs, language, kind, body_hash)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+				line_start, line_end, inputs, outputs, language, kind, body_hash,
+				is_test_code, is_test_entrypoint)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 			on conflict (repo_id, commit_sha, full_name, file_path) do update
 				set body_hash = excluded.body_hash,
 				    inputs = excluded.inputs,
-				    outputs = excluded.outputs
+				    outputs = excluded.outputs,
+				    line_start = excluded.line_start,
+				    line_end = excluded.line_end,
+				    is_test_code = excluded.is_test_code,
+				    is_test_entrypoint = excluded.is_test_entrypoint
 			returning id
 		`, repoID, headSHA, n.FullName, n.FilePath,
 			n.LineStart, n.LineEnd, string(inputs), string(outputs), n.Language, n.Kind, n.BodyHash,
+			n.IsTestCode, n.IsTestEntrypoint,
 		).Scan(&id)
 		if err != nil {
 			log.Printf("RepoInit: insert node %s: %v", n.FullName, err)
@@ -205,9 +207,6 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	}
 	log.Printf("RepoInit: extracted call edges for %d files", len(fileContents))
 
-	updateIndexJobProgress(ctx, db, repoID, headSHA, "extracting_tests", "Linking tests to graph nodes", len(sourceFiles), len(sourceFiles), len(allNodes), len(allNodes), edgeFilesTotal, edgeFilesTotal)
-	insertTestReferences(ctx, db, repoID, headSHA, fileContents, nodeByName, nodeIDs)
-
 	// Mark the structural graph ready before optional AI enrichment. Large repos can
 	// spend a long time in enrichment, but the graph is already usable here.
 	_, err = db.Exec(ctx, `
@@ -233,6 +232,9 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 
 			inputs := make([]ai.NodeInput, 0, len(batch))
 			for _, n := range batch {
+				if n.IsTestCode {
+					continue
+				}
 				// Only enrich nodes without an existing summary
 				var hasSummary bool
 				db.QueryRow(ctx, `select summary is not null from code_nodes where id=$1`, nodeIDs[n.FullName]).Scan(&hasSummary)

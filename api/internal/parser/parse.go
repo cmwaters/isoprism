@@ -301,10 +301,28 @@ func parseScriptTree(src []byte, filePath, lang string, root *sitter.Node) []Nod
 	isTestFile := IsTestFile(filePath)
 	var nodes []Node
 	seen := map[string]bool{}
+	testLabelCounts := map[string]int{}
 
 	walk(root, func(n *sitter.Node) bool {
 		name := ""
 		kind := "function"
+		if isTestFile && n.Kind() == "call_expression" && isScriptTestCall(src, n) {
+			label := scriptTestLabel(src, n)
+			if label == "" {
+				return true
+			}
+			testLabelCounts[label]++
+			name = label
+			if testLabelCounts[label] > 1 {
+				name = fmt.Sprintf("%s#%d", label, testLabelCounts[label])
+			}
+			fullName := prefix + "." + name
+			if !seen[fullName] {
+				seen[fullName] = true
+				nodes = append(nodes, makeBaseNode(src, filePath, n, name, fullName, lang, "function", true, true))
+			}
+			return true
+		}
 		switch n.Kind() {
 		case "function_declaration":
 			name = childText(src, n, "name")
@@ -319,8 +337,9 @@ func parseScriptTree(src []byte, filePath, lang string, root *sitter.Node) []Nod
 					continue
 				}
 				name = childText(src, decl, "name")
-				if name != "" && !seen[name] {
-					seen[name] = true
+				fullName := prefix + "." + name
+				if name != "" && !seen[fullName] {
+					seen[fullName] = true
 					nodes = append(nodes, makeScriptNode(src, filePath, value, name, prefix+"."+name, lang, kind, isTestFile))
 				}
 			}
@@ -332,11 +351,12 @@ func parseScriptTree(src []byte, filePath, lang string, root *sitter.Node) []Nod
 				name = className + "." + name
 			}
 		}
-		if name == "" || seen[name] {
+		fullName := prefix + "." + name
+		if name == "" || seen[fullName] {
 			return true
 		}
-		seen[name] = true
-		nodes = append(nodes, makeScriptNode(src, filePath, n, leafName(name), prefix+"."+name, lang, kind, isTestFile))
+		seen[fullName] = true
+		nodes = append(nodes, makeScriptNode(src, filePath, n, leafName(name), fullName, lang, kind, isTestFile))
 		return true
 	})
 	return nodes

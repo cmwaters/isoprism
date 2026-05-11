@@ -209,7 +209,7 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
 This is a beta version of Isoprism. Report a problem - Request a feature.
 ```
 
-"Report a problem" and "Request a feature" are links. Each opens a centered popup panel. Submissions create GitHub issues in the configured feedback repository, reference the tester's unique beta ID, and apply either the `bug` or `feature` label.
+"Report a problem" and "Request a feature" are links. Each opens a centered popup panel. Submissions create GitHub issues in the configured feedback repository, reference the tester's user ID, and apply either the `bug` or `feature` label.
 
 **Graph layout:** Concentric rings. Changed nodes sit at the centre; BFS assigns each connected node a ring level. Outer rings are evenly distributed around a circle whose radius adapts to node count (`max(level × 380px, count × 300px / 2π)`). Pan and zoom freely.
 
@@ -295,7 +295,7 @@ Feedback should be available during the full trial week from authenticated produ
 - Primary: "Send feedback"
 - Secondary: "Cancel"
 
-Submission should create a GitHub issue with the tester beta ID, repo, PR, selected node, browser path, app commit SHA, and source commit SHA, then return the tester to the same PR review state.
+Submission should create a GitHub issue with the tester user ID, repo, PR, selected node, browser path, app commit SHA, and source commit SHA, then return the tester to the same PR review state.
 
 ---
 
@@ -322,11 +322,10 @@ The admin console is for managing beta testers. It is protected by an admin pass
 **Create tester:**
 - Name input
 - Generate tester button
-- Output: unique beta ID, raw token shown once, full invite link
+- Output: tester name, raw token, full invite link
 
 **Monitor testers:**
 - Tester name
-- Beta ID
 - Invite state: new / active / completed / revoked / expired
 - Whether the invite link has been used
 - Selected repository

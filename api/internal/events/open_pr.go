@@ -190,23 +190,22 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			stats.HeadNodesParsed += len(headNodes)
 		}
 
-		// Fetch base version for comparison (if file was modified, not added)
+		// Load base version metadata from the indexed graph. The base graph was
+		// already parsed by RepoInit, so PR processing only fetches head content.
 		baseNodesByName := map[string]parser.Node{}
 		baseNodesByHash := map[string][]parser.Node{}
 		matchedBase := map[string]bool{}
 		if file.Status == "modified" || file.Status == "renamed" || file.Status == "removed" {
-			baseContent, err := ghClient.GetFileContent(ctx, owner, repo, basePath, baseCommit)
+			baseNodes, err := loadBaseNodesForPath(ctx, db, repoID, baseCommit, basePath)
 			if err == nil {
-				stats.BaseFilesFetched++
-				baseNodes := parser.Parse(baseContent, basePath)
-				stats.BaseNodesParsed += len(baseNodes)
+				stats.BaseNodesLoaded += len(baseNodes)
 				for _, n := range baseNodes {
 					baseNodesByName[n.FullName] = n
 					baseNodesByHash[n.BodyHash] = append(baseNodesByHash[n.BodyHash], n)
 				}
 			} else {
-				log.Printf("OpenPR: fetch base file %s: %v", basePath, err)
-				stats.BaseFileFetchErrors++
+				log.Printf("OpenPR: load base nodes %s@%s: %v", basePath, baseCommit, err)
+				stats.BaseNodeLoadErrors++
 			}
 		}
 
@@ -217,17 +216,21 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			outputs, _ := json.Marshal(n.Outputs)
 			err := db.QueryRow(ctx, `
 				insert into code_nodes (repo_id, commit_sha, full_name, file_path,
-					line_start, line_end, inputs, outputs, language, kind, body_hash)
-				values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+					line_start, line_end, inputs, outputs, language, kind, body_hash,
+					is_test_code, is_test_entrypoint)
+				values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 				on conflict (repo_id, commit_sha, full_name, file_path) do update
 					set body_hash = excluded.body_hash,
 					    inputs = excluded.inputs,
 					    outputs = excluded.outputs,
 					    line_start = excluded.line_start,
-					    line_end = excluded.line_end
+					    line_end = excluded.line_end,
+					    is_test_code = excluded.is_test_code,
+					    is_test_entrypoint = excluded.is_test_entrypoint
 				returning id
 			`, repoID, headSHA, n.FullName, n.FilePath,
 				n.LineStart, n.LineEnd, string(inputs), string(outputs), n.Language, n.Kind, n.BodyHash,
+				n.IsTestCode, n.IsTestEntrypoint,
 			).Scan(&nodeID)
 			if err != nil {
 				log.Printf("OpenPR: failed to upsert head node %s for pr %s: %v", n.FullName, prID, err)
@@ -307,24 +310,28 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 						outputs, _ := json.Marshal(baseNode.Outputs)
 						db.QueryRow(ctx, `
 							insert into code_nodes (repo_id, commit_sha, full_name, file_path,
-								line_start, line_end, inputs, outputs, language, kind, body_hash)
-							values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+								line_start, line_end, inputs, outputs, language, kind, body_hash,
+								is_test_code, is_test_entrypoint)
+							values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 							on conflict (repo_id, commit_sha, full_name, file_path) do update
 								set body_hash = excluded.body_hash,
 								    inputs = excluded.inputs,
 								    outputs = excluded.outputs,
 								    line_start = excluded.line_start,
-								    line_end = excluded.line_end
+								    line_end = excluded.line_end,
+								    is_test_code = excluded.is_test_code,
+								    is_test_entrypoint = excluded.is_test_entrypoint
 							returning id
 						`, repoID, baseCommit, baseNode.FullName, baseNode.FilePath,
 							baseNode.LineStart, baseNode.LineEnd, string(inputs), string(outputs), baseNode.Language, baseNode.Kind, baseNode.BodyHash,
+							baseNode.IsTestCode, baseNode.IsTestEntrypoint,
 						).Scan(&nodeID)
 					}
 					if nodeID != "" {
 						changed = append(changed, changedNode{
 							node:       baseNode,
 							changeType: "deleted",
-							diffHunk:   componentDiffHunk("deleted", patch, baseNode.Body, baseNode.LineStart, baseNode.LineEnd, 0, 0, nil, nil),
+							diffHunk:   componentDiffHunk("deleted", patch, "", baseNode.LineStart, baseNode.LineEnd, 0, 0, nil, nil),
 							isTest:     baseNode.IsTestCode,
 						})
 					}
@@ -556,6 +563,9 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 				repoID, headSHA, edge.CallerFullName).Scan(&callerID)
 			db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
 				repoID, headSHA, edge.CalleeFullName).Scan(&calleeID)
+			if calleeID == "" {
+				calleeID = refNodeIDs[edge.CalleeFullName]
+			}
 			if callerID != "" && calleeID != "" && callerID != calleeID {
 				tag, err := db.Exec(ctx, `
 					insert into code_edges (repo_id, commit_sha, caller_id, callee_id)
@@ -570,8 +580,6 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			}
 		}
 	}
-
-	insertTestReferences(ctx, db, repoID, headSHA, changedFileContents, nodeByName, refNodeIDs)
 
 	// Mark ready
 	var finalErr string
@@ -598,6 +606,59 @@ func nullIfZero(n int) interface{} {
 		return nil
 	}
 	return n
+}
+
+func loadBaseNodesForPath(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA, filePath string) ([]parser.Node, error) {
+	rows, err := db.Query(ctx, `
+		select full_name, file_path, line_start, line_end, inputs, outputs, language, kind, body_hash,
+		       is_test_code, is_test_entrypoint
+		from code_nodes
+		where repo_id=$1 and commit_sha=$2 and file_path=$3
+		order by line_start, full_name
+	`, repoID, commitSHA, filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	nodes := []parser.Node{}
+	for rows.Next() {
+		var n parser.Node
+		var inputsRaw, outputsRaw []byte
+		if err := rows.Scan(
+			&n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.BodyHash,
+			&n.IsTestCode, &n.IsTestEntrypoint,
+		); err != nil {
+			return nil, err
+		}
+		n.Name = leafName(n.FullName)
+		n.Inputs = decodeParserParams(inputsRaw)
+		n.Outputs = decodeParserParams(outputsRaw)
+		nodes = append(nodes, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
+func decodeParserParams(raw []byte) []parser.Param {
+	if len(raw) == 0 {
+		return nil
+	}
+	var params []parser.Param
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil
+	}
+	return params
+}
+
+func leafName(fullName string) string {
+	if idx := strings.LastIndex(fullName, "."); idx >= 0 && idx < len(fullName)-1 {
+		return fullName[idx+1:]
+	}
+	return fullName
 }
 
 func matchesImportDirSuffix(filePath string, suffixes map[string]bool) bool {
@@ -667,10 +728,9 @@ type prProcessingStats struct {
 	UnsupportedChangedFiles       int    `json:"unsupported_changed_files,omitempty"`
 	HeadFilesFetched              int    `json:"head_files_fetched,omitempty"`
 	HeadFileFetchErrors           int    `json:"head_file_fetch_errors,omitempty"`
-	BaseFilesFetched              int    `json:"base_files_fetched,omitempty"`
-	BaseFileFetchErrors           int    `json:"base_file_fetch_errors,omitempty"`
+	BaseNodesLoaded               int    `json:"base_nodes_loaded,omitempty"`
+	BaseNodeLoadErrors            int    `json:"base_node_load_errors,omitempty"`
 	HeadNodesParsed               int    `json:"head_nodes_parsed,omitempty"`
-	BaseNodesParsed               int    `json:"base_nodes_parsed,omitempty"`
 	HeadNodesUpserted             int    `json:"head_nodes_upserted,omitempty"`
 	HeadNodeUpsertErrors          int    `json:"head_node_upsert_errors,omitempty"`
 	ChangedNodesDetected          int    `json:"changed_nodes_detected,omitempty"`
@@ -718,17 +778,17 @@ func currentProcessorCommitSHA() string {
 	return "unknown"
 }
 
-// componentDiffHunk returns the diff shown for a parsed component. Modified
-// components use the GitHub patch filtered to the component range. Added and
-// deleted components synthesize a full component hunk so semantic node stats
-// count the whole new/removed component, even when Git's file diff treats moved
-// body lines as unchanged context.
+// componentDiffHunk returns the diff shown for a parsed component. Modified,
+// renamed, and deleted components use the GitHub patch filtered to the component
+// range. Added components synthesize a full component hunk from the fetched head
+// body so semantic node stats count the whole new component even when Git's file
+// diff treats moved/copied body lines as unchanged context.
 func componentDiffHunk(changeType, patch, body string, oldStart, oldEnd, newStart, newEnd int, oldFullName, oldFilePath *string) string {
 	switch changeType {
 	case "added":
 		return prefixSourceLines(body, '+')
 	case "deleted":
-		return prefixSourceLines(body, '-')
+		return extractComponentHunk(patch, oldStart, oldEnd, 0, 0)
 	case "renamed":
 		if hunk := extractComponentHunk(patch, oldStart, oldEnd, newStart, newEnd); hunk != "" {
 			return hunk

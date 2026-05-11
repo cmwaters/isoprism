@@ -58,6 +58,9 @@ type rawPRNodeChange struct {
 }
 
 func isTestGraphNode(node models.GraphNode) bool {
+	if node.IsTestCode {
+		return true
+	}
 	normalized := strings.ReplaceAll(strings.ToLower(node.FilePath), "\\", "/")
 	base := normalized
 	if slash := strings.LastIndex(base, "/"); slash >= 0 {
@@ -160,6 +163,74 @@ func packagePathForNode(node models.GraphNode) string {
 		return path[:slash]
 	}
 	return "."
+}
+
+func (h *GraphHandler) attachTestsFromEdges(ctx context.Context, repoID string, targetIDs []string, commitSHAs []string, canonicalizeID func(string) string, nodes []models.GraphNode) {
+	if len(targetIDs) == 0 || len(commitSHAs) == 0 {
+		return
+	}
+	nodeIndex := map[string]int{}
+	for i := range nodes {
+		nodeIndex[nodes[i].ID] = i
+	}
+	rows, err := h.DB.Query(ctx, `
+		with recursive reachable(target_id, current_id, depth) as (
+			select e.callee_id, e.caller_id, 1
+			from code_edges e
+			where e.repo_id = $1
+			  and e.commit_sha = any($2)
+			  and e.callee_id = any($3::uuid[])
+			union
+			select r.target_id, e.caller_id, r.depth + 1
+			from reachable r
+			join code_edges e on e.callee_id = r.current_id
+			where e.repo_id = $1
+			  and e.commit_sha = any($2)
+			  and r.depth < 8
+		)
+		select r.target_id, t.full_name, t.file_path, t.line_start, t.line_end
+		from reachable r
+		join code_nodes t on t.id = r.current_id
+		where t.is_test_code = true
+		  and t.is_test_entrypoint = true
+		order by t.file_path, t.line_start, t.full_name
+	`, repoID, commitSHAs, targetIDs)
+	if err != nil {
+		log.Printf("test edges query: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	seen := map[string]bool{}
+	for rows.Next() {
+		var targetID string
+		var t models.GraphNodeTest
+		if err := rows.Scan(&targetID, &t.FullName, &t.FilePath, &t.LineStart, &t.LineEnd); err != nil {
+			continue
+		}
+		t.Name = lastFullNameSegment(t.FullName)
+		responseNodeID := canonicalizeID(targetID)
+		i, ok := nodeIndex[responseNodeID]
+		if !ok {
+			continue
+		}
+		key := responseNodeID + "|" + t.FullName + "|" + t.FilePath
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		nodes[i].Tests = append(nodes[i].Tests, t)
+	}
+}
+
+func nonEmptyStrings(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func mergeGraphCandidate(current graphCandidate, next graphCandidate, id string) graphCandidate {
@@ -408,7 +479,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 
 	nodeRows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(summary,'')
 		from code_nodes
 		where repo_id=$1 and commit_sha=$2
 		order by file_path, line_start
@@ -429,7 +500,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		var summary string
 		if err := nodeRows.Scan(
 			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &summary,
 		); err != nil {
 			continue
 		}
@@ -528,42 +599,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	sortGraphNodes(nodes)
 
 	if len(nodeIDs) > 0 {
-		testRows, err := h.DB.Query(ctx, `
-			select target_node_id, test_name, test_full_name, test_file_path, test_line_start, test_line_end
-			from code_test_references
-			where repo_id=$1
-			  and commit_sha=$2
-			  and target_node_id = any($3::uuid[])
-			order by test_file_path, test_line_start, test_name
-		`, repoID, *repo.MainCommitSHA, nodeIDs)
-		if err == nil {
-			defer testRows.Close()
-			nodeIndex := map[string]int{}
-			for i := range nodes {
-				nodeIndex[nodes[i].ID] = i
-			}
-			seenTests := map[string]bool{}
-			for testRows.Next() {
-				var targetID string
-				var t models.GraphNodeTest
-				if err := testRows.Scan(&targetID, &t.Name, &t.FullName, &t.FilePath, &t.LineStart, &t.LineEnd); err != nil {
-					continue
-				}
-				i, ok := nodeIndex[targetID]
-				if !ok {
-					continue
-				}
-				key := targetID + "|" + t.FullName + "|" + t.FilePath
-				if seenTests[key] {
-					continue
-				}
-				seenTests[key] = true
-				nodes[i].Tests = append(nodes[i].Tests, t)
-			}
-			testRows.Close()
-		} else {
-			log.Printf("GetRepoGraph: test references query: %v", err)
-		}
+		h.attachTestsFromEdges(ctx, repoID, nodeIDs, []string{*repo.MainCommitSHA}, func(id string) string { return id }, nodes)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -816,7 +852,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	nodeRows, err := h.DB.Query(ctx, `
 		select id, commit_sha, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(summary,'')
 		from code_nodes where id = any($1::uuid[])
 	`, idList)
 	if err != nil {
@@ -834,7 +870,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		var summary string
 		if err := nodeRows.Scan(
 			&n.ID, &commitSHA, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &summary,
 		); err != nil {
 			continue
 		}
@@ -975,40 +1011,18 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		finalNodeMap[id] = n
 	}
 
-	if len(idList) > 0 {
-		testRows, err := h.DB.Query(ctx, `
-			select target_node_id, test_name, test_full_name, test_file_path, test_line_start, test_line_end
-			from code_test_references
-			where repo_id=$1
-			  and target_node_id = any($2::uuid[])
-			  and (($3 <> '' and commit_sha = $3) or ($4 <> '' and commit_sha = $4))
-			order by test_file_path, test_line_start, test_name
-		`, repoID, idList, mainCommitSHA, headCommit)
-		if err == nil {
-			defer testRows.Close()
-			seenTests := map[string]bool{}
-			for testRows.Next() {
-				var targetID string
-				var t models.GraphNodeTest
-				if err := testRows.Scan(&targetID, &t.Name, &t.FullName, &t.FilePath, &t.LineStart, &t.LineEnd); err != nil {
-					continue
-				}
-				responseNodeID := canonicalizeID(targetID)
-				n, ok := finalNodeMap[responseNodeID]
-				if !ok {
-					continue
-				}
-				key := responseNodeID + "|" + t.FullName + "|" + t.FilePath
-				if seenTests[key] {
-					continue
-				}
-				seenTests[key] = true
-				n.Tests = append(n.Tests, t)
-				finalNodeMap[responseNodeID] = n
-			}
-			testRows.Close()
-		} else {
-			log.Printf("GetGraph: test references query: %v", err)
+	finalNodeIDs := make([]string, 0, len(finalNodeMap))
+	for id := range finalNodeMap {
+		finalNodeIDs = append(finalNodeIDs, id)
+	}
+	if len(finalNodeIDs) > 0 {
+		nodesForTests := make([]models.GraphNode, 0, len(finalNodeMap))
+		for _, n := range finalNodeMap {
+			nodesForTests = append(nodesForTests, n)
+		}
+		h.attachTestsFromEdges(ctx, repoID, finalNodeIDs, nonEmptyStrings(mainCommitSHA, headCommit), canonicalizeID, nodesForTests)
+		for _, n := range nodesForTests {
+			finalNodeMap[n.ID] = n
 		}
 	}
 
@@ -1098,7 +1112,7 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 
 	rows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
-		       inputs, outputs, language, kind, coalesce(summary,'')
+		       inputs, outputs, language, kind, is_test_code, is_test_entrypoint, coalesce(summary,'')
 		from code_nodes
 		where id = any($1::uuid[])
 	`, changedIDs)
@@ -1115,7 +1129,7 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 		var summary string
 		if err := rows.Scan(
 			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
-			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &summary,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTestCode, &n.IsTestEntrypoint, &summary,
 		); err != nil {
 			continue
 		}

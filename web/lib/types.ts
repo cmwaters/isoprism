@@ -65,6 +65,8 @@ export interface GraphNode {
   outputs: GraphNodeTypeRef[];
   language: string;
   kind: string;
+  is_test_code: boolean;
+  is_test_entrypoint: boolean;
   node_type: "changed" | "caller" | "callee" | "entrypoint" | "context";
   summary?: string;
   change_summary?: string;
@@ -179,7 +181,6 @@ export interface BetaFeedbackPayload {
   type: "bug" | "feature";
   title: string;
   details: string;
-  beta_id?: string;
   user_id?: string;
   repo_full_name: string;
   repo_id: string;

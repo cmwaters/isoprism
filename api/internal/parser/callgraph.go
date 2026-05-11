@@ -13,16 +13,6 @@ type CallEdge struct {
 	CalleeFullName string
 }
 
-// TestReference represents one test entrypoint that reaches a production node.
-type TestReference struct {
-	TestName       string
-	TestFullName   string
-	TestFilePath   string
-	LineStart      int
-	LineEnd        int
-	TargetFullName string
-}
-
 // ExtractCallEdges finds call relationships within source for the given parsed
 // node set. nodeByName maps full_name -> true so we can filter to known symbols.
 func ExtractCallEdges(src []byte, filePath string, nodeByName map[string]bool) []CallEdge {
@@ -44,24 +34,6 @@ func ExtractCallEdgesWithResolver(src []byte, filePath string, index ResolverInd
 		return extractGoCallEdges(src, filePath, pf.root, index)
 	case "typescript", "javascript":
 		return extractScriptCallEdges(src, filePath, pf.root, index.NodeByName)
-	default:
-		return nil
-	}
-}
-
-// ExtractTestReferences finds test entrypoints that call known production nodes.
-func ExtractTestReferences(src []byte, filePath string, nodeByName map[string]bool) []TestReference {
-	pf, ok := parseTree(src, filePath)
-	if !ok {
-		return nil
-	}
-	defer pf.tree.Close()
-
-	switch languageFor(filePath) {
-	case "go":
-		return extractGoTestReferences(src, filePath, pf.root, nodeByName)
-	case "typescript", "javascript":
-		return extractScriptTestReferences(src, filePath, pf.root, nodeByName)
 	default:
 		return nil
 	}
@@ -99,81 +71,6 @@ func extractGoCallEdges(src []byte, filePath string, root *sitter.Node, index Re
 	return edges
 }
 
-func extractGoTestReferences(src []byte, filePath string, root *sitter.Node, nodeByName map[string]bool) []TestReference {
-	pkg := goPackageName(src, root)
-	if !IsTestFile(filePath) && !strings.HasSuffix(pkg, "_test") {
-		return nil
-	}
-	prefix := goPackagePrefix(filePath, pkg)
-	imports := goImports(src, root)
-	testFuncs := map[string]*sitter.Node{}
-	helperCalls := map[string]map[string]bool{}
-	productionCalls := map[string]map[string]bool{}
-
-	for _, fn := range goFunctionNodes(root) {
-		name := childText(src, fn, "name")
-		if name == "" {
-			continue
-		}
-		if strings.HasPrefix(name, "Test") {
-			testFuncs[name] = fn
-		}
-		helperCalls[name] = map[string]bool{}
-		productionCalls[name] = map[string]bool{}
-		body := fn.ChildByFieldName("body")
-		if body == nil {
-			continue
-		}
-		walk(body, func(n *sitter.Node) bool {
-			if n.Kind() != "call_expression" {
-				return true
-			}
-			fun := n.ChildByFieldName("function")
-			if callee := resolveGoCall(src, fun, prefix, imports, nodeByName, ResolverIndex{NodeByName: nodeByName}, nil); callee != "" {
-				productionCalls[name][callee] = true
-				return true
-			}
-			if bare := goDirectCallName(src, fun); bare != "" {
-				helperCalls[name][bare] = true
-			}
-			return true
-		})
-	}
-
-	var refs []TestReference
-	for testName, fn := range testFuncs {
-		targets := map[string]bool{}
-		visited := map[string]bool{}
-		var trace func(string)
-		trace = func(name string) {
-			if visited[name] {
-				return
-			}
-			visited[name] = true
-			for target := range productionCalls[name] {
-				targets[target] = true
-			}
-			for helper := range helperCalls[name] {
-				if _, ok := helperCalls[helper]; ok {
-					trace(helper)
-				}
-			}
-		}
-		trace(testName)
-		for target := range targets {
-			refs = append(refs, TestReference{
-				TestName:       testName,
-				TestFullName:   prefix + "." + testName,
-				TestFilePath:   filePath,
-				LineStart:      int(fn.StartPosition().Row) + 1,
-				LineEnd:        int(fn.EndPosition().Row) + 1,
-				TargetFullName: target,
-			})
-		}
-	}
-	return refs
-}
-
 func goFunctionNodes(root *sitter.Node) []*sitter.Node {
 	var out []*sitter.Node
 	walk(root, func(n *sitter.Node) bool {
@@ -199,13 +96,6 @@ func goCallableFullName(src []byte, fn *sitter.Node, prefix string) string {
 		}
 	}
 	return prefix + "." + name
-}
-
-func goDirectCallName(src []byte, fun *sitter.Node) string {
-	if fun != nil && fun.Kind() == "identifier" {
-		return text(src, fun)
-	}
-	return ""
 }
 
 func resolveGoCall(src []byte, fun *sitter.Node, prefix string, imports map[string]string, nodeByName map[string]bool, index ResolverIndex, scope goScope) string {
@@ -332,9 +222,6 @@ func extractScriptCallEdges(src []byte, filePath string, root *sitter.Node, node
 	prefix := scriptModulePrefix(filePath)
 	var edges []CallEdge
 	for _, node := range nodes {
-		if node.IsTestCode {
-			continue
-		}
 		seen := map[string]bool{}
 		for _, call := range scriptCallNames(src, enclosingBody(root, node.LineStart, node.LineEnd)) {
 			callee := resolveScriptCall(prefix, call, nodeByName)
@@ -345,41 +232,6 @@ func extractScriptCallEdges(src []byte, filePath string, root *sitter.Node, node
 		}
 	}
 	return edges
-}
-
-func extractScriptTestReferences(src []byte, filePath string, root *sitter.Node, nodeByName map[string]bool) []TestReference {
-	if !IsTestFile(filePath) {
-		return nil
-	}
-	prefix := scriptModulePrefix(filePath)
-	var refs []TestReference
-	walk(root, func(n *sitter.Node) bool {
-		if n.Kind() != "call_expression" || !isScriptTestCall(src, n) {
-			return true
-		}
-		label := scriptTestLabel(src, n)
-		if label == "" {
-			return true
-		}
-		targets := map[string]bool{}
-		for _, call := range scriptCallNames(src, n) {
-			if callee := resolveScriptCall(prefix, call, nodeByName); callee != "" {
-				targets[callee] = true
-			}
-		}
-		for target := range targets {
-			refs = append(refs, TestReference{
-				TestName:       label,
-				TestFullName:   prefix + "." + label,
-				TestFilePath:   filePath,
-				LineStart:      int(n.StartPosition().Row) + 1,
-				LineEnd:        int(n.EndPosition().Row) + 1,
-				TargetFullName: target,
-			})
-		}
-		return true
-	})
-	return refs
 }
 
 func scriptCallNames(src []byte, root *sitter.Node) []string {
