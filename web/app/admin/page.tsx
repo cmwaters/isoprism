@@ -43,6 +43,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<PilotUser[]>([]);
   const [forms, setForms] = useState<PilotForm[]>([]);
   const [expanded, setExpanded] = useState("");
+  const [selectedFormID, setSelectedFormID] = useState("");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
@@ -209,8 +210,26 @@ export default function AdminPage() {
               </form>
             </section>
 
-            <UserSection title="Registered" users={registered} forms={userForms} expanded={expanded} setExpanded={setExpanded} busy={busy} onAction={runUserAction} />
-            <UserSection title="Invited" users={invited} forms={userForms} expanded={expanded} setExpanded={setExpanded} busy={busy} onAction={runUserAction} />
+            <UserSection
+              title="Registered"
+              users={registered}
+              forms={userForms}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              busy={busy}
+              onAction={runUserAction}
+              onSelectForm={(formID) => { setSelectedFormID(formID); setTab("forms"); }}
+            />
+            <UserSection
+              title="Invited"
+              users={invited}
+              forms={userForms}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              busy={busy}
+              onAction={runUserAction}
+              onSelectForm={(formID) => { setSelectedFormID(formID); setTab("forms"); }}
+            />
           </div>
         ) : (
           <section style={panelStyle}>
@@ -220,7 +239,7 @@ export default function AdminPage() {
               <span>Submitted</span>
             </div>
             {forms.length === 0 ? <Empty>No forms yet.</Empty> : forms.map((form) => (
-              <details key={form.id} style={detailCardStyle}>
+              <details key={form.id} style={detailCardStyle} open={selectedFormID === form.id}>
                 <summary style={summaryStyle}>
                   <span>{titleCase(form.form_type)}</span>
                   <span>{form.name ?? form.email ?? "Anonymous"}</span>
@@ -236,7 +255,7 @@ export default function AdminPage() {
   );
 }
 
-function UserSection({ title, users, forms, expanded, setExpanded, busy, onAction }: {
+function UserSection({ title, users, forms, expanded, setExpanded, busy, onAction, onSelectForm }: {
   title: string;
   users: PilotUser[];
   forms: Map<string, PilotForm[]>;
@@ -244,6 +263,7 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
   setExpanded: (id: string) => void;
   busy: string;
   onAction: (user: PilotUser, action: "invite" | "review-email" | "delete") => void;
+  onSelectForm: (formID: string) => void;
 }) {
   return (
     <section style={panelStyle}>
@@ -251,6 +271,7 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
       {users.length === 0 ? <Empty>No users in this section.</Empty> : users.map((user) => {
         const open = expanded === user.id;
         const linkedForms = forms.get(user.id) ?? [];
+        const registrationFormID = linkedForms.find((form) => form.form_type === "registration")?.id;
         const canSendReviewEmail = Boolean(user.email && user.token && user.user_id);
         const reviewDisabledReason = !user.email
           ? "A review email needs an email address."
@@ -275,8 +296,15 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
                 <Info label="Started" value={user.trial_starts_at ? formatDate(user.trial_starts_at) : "Not started"} />
                 <Info label="Invite link" value={user.link || "Not generated"} />
                 <Info label="Languages" value={user.pilot_languages ?? "None"} />
-                <Info label="Registration form" value={linkedForms.find((form) => form.form_type === "registration")?.id ?? "None"} />
-                <div style={buttonRowStyle}>
+                <Info
+                  label="Registration form"
+                  value={registrationFormID ? (
+                    <button style={linkButtonStyle} onClick={() => onSelectForm(registrationFormID)}>
+                      {registrationFormID}
+                    </button>
+                  ) : "None"}
+                />
+                <div style={actionsRowStyle}>
                   <button style={secondaryButtonStyle} disabled={!user.email || busy === `invite:${user.id}`} onClick={() => onAction(user, "invite")}>{busy === `invite:${user.id}` ? "Sending..." : "Send invite"}</button>
                   <button
                     style={canSendReviewEmail ? secondaryButtonStyle : disabledButtonStyle}
@@ -297,7 +325,7 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function Info({ label, value }: { label: string; value: React.ReactNode }) {
   return <div><div style={smallLabelStyle}>{label}</div><div style={valueStyle}>{value}</div></div>;
 }
 
@@ -340,6 +368,8 @@ const secondaryButtonStyle: React.CSSProperties = { height: 34, borderWidth: 1, 
 const disabledButtonStyle: React.CSSProperties = { ...secondaryButtonStyle, background: "#F1F1F1", color: "#888", cursor: "not-allowed" };
 const dangerButtonStyle: React.CSSProperties = { ...secondaryButtonStyle, borderColor: "#E7B5B5", background: "#FFF1F1", color: "#8A1F1F" };
 const buttonRowStyle: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
+const actionsRowStyle: React.CSSProperties = { gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "nowrap" };
+const linkButtonStyle: React.CSSProperties = { border: 0, padding: 0, background: "transparent", color: "#111", cursor: "pointer", textDecoration: "underline", font: "inherit", textAlign: "left", overflowWrap: "anywhere" };
 const tableHeaderStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", padding: "0 8px 8px" };
 const detailCardStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: "10px 8px" };
 const summaryStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, cursor: "pointer", fontSize: 13 };
