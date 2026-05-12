@@ -11,8 +11,9 @@ import (
 // edge extraction. The first adapter implemented here is Go; other languages
 // should add their own symbol/type facts without changing callgraph callers.
 type ResolverIndex struct {
-	NodeByName map[string]bool
-	GoTypes    map[string]GoTypeInfo
+	NodeByName    map[string]bool
+	GoTypes       map[string]GoTypeInfo
+	GoFuncReturns map[string]string
 }
 
 type GoTypeInfo struct {
@@ -24,8 +25,9 @@ type GoTypeInfo struct {
 // fileContents should contain full source files, not function snippets.
 func BuildResolverIndex(fileContents map[string][]byte, nodeByName map[string]bool) ResolverIndex {
 	index := ResolverIndex{
-		NodeByName: nodeByName,
-		GoTypes:    map[string]GoTypeInfo{},
+		NodeByName:    nodeByName,
+		GoTypes:       map[string]GoTypeInfo{},
+		GoFuncReturns: map[string]string{},
 	}
 	if index.NodeByName == nil {
 		index.NodeByName = map[string]bool{}
@@ -40,6 +42,7 @@ func BuildResolverIndex(fileContents map[string][]byte, nodeByName map[string]bo
 			continue
 		}
 		extractGoTypeInfo(src, filePath, pf.root, index.GoTypes, index.NodeByName)
+		extractGoFuncReturns(src, filePath, pf.root, index.GoFuncReturns, index.NodeByName)
 		pf.tree.Close()
 	}
 	return index
@@ -108,6 +111,29 @@ func extractGoTypeInfo(src []byte, filePath string, root *sitter.Node, out map[s
 	})
 }
 
+func extractGoFuncReturns(src []byte, filePath string, root *sitter.Node, out map[string]string, nodeByName map[string]bool) {
+	pkg := goPackageName(src, root)
+	prefix := goPackagePrefix(filePath, pkg)
+	imports := goImports(src, root)
+
+	for _, fn := range goFunctionNodes(root) {
+		fullName := goCallableFullName(src, fn, prefix)
+		if fullName == "" {
+			continue
+		}
+		result := fn.ChildByFieldName("result")
+		if result == nil {
+			continue
+		}
+		for _, output := range goOutputs(src, result) {
+			if resolved := resolveGoTypeExpr(output.Type, prefix, imports, nodeByName); resolved != "" {
+				out[fullName] = resolved
+				break
+			}
+		}
+	}
+}
+
 func goFieldNames(src []byte, field *sitter.Node, typeNode *sitter.Node) []string {
 	var names []string
 	for i := uint(0); i < field.NamedChildCount(); i++ {
@@ -159,7 +185,7 @@ func buildGoScope(src []byte, fn *sitter.Node, prefix string, imports map[string
 	}
 	addGoParamBindings(src, fn.ChildByFieldName("parameters"), prefix, imports, index.NodeByName, scope)
 	if body := fn.ChildByFieldName("body"); body != nil {
-		addGoLocalBindings(src, body, prefix, imports, index.NodeByName, scope)
+		addGoLocalBindings(src, body, prefix, imports, index, scope)
 	}
 	return scope
 }
@@ -207,7 +233,7 @@ func addGoParamBindings(src []byte, params *sitter.Node, prefix string, imports 
 	})
 }
 
-func addGoLocalBindings(src []byte, body *sitter.Node, prefix string, imports map[string]string, nodeByName map[string]bool, scope goScope) {
+func addGoLocalBindings(src []byte, body *sitter.Node, prefix string, imports map[string]string, index ResolverIndex, scope goScope) {
 	walk(body, func(n *sitter.Node) bool {
 		switch n.Kind() {
 		case "var_spec":
@@ -215,7 +241,7 @@ func addGoLocalBindings(src []byte, body *sitter.Node, prefix string, imports ma
 			if typeNode == nil {
 				return true
 			}
-			resolved := resolveGoTypeExpr(text(src, typeNode), prefix, imports, nodeByName)
+			resolved := resolveGoTypeExpr(text(src, typeNode), prefix, imports, index.NodeByName)
 			if resolved == "" {
 				return true
 			}
@@ -234,7 +260,7 @@ func addGoLocalBindings(src []byte, body *sitter.Node, prefix string, imports ma
 				if i >= len(values) {
 					continue
 				}
-				if resolved := inferGoExprType(src, values[i], prefix, imports, nodeByName); resolved != "" {
+				if resolved := inferGoExprType(src, values[i], prefix, imports, index, scope); resolved != "" {
 					scope[name] = resolved
 				}
 			}
@@ -256,17 +282,24 @@ func goExpressionListChildren(n *sitter.Node) []*sitter.Node {
 	return out
 }
 
-func inferGoExprType(src []byte, expr *sitter.Node, prefix string, imports map[string]string, nodeByName map[string]bool) string {
+func inferGoExprType(src []byte, expr *sitter.Node, prefix string, imports map[string]string, index ResolverIndex, scope goScope) string {
 	if expr == nil {
 		return ""
 	}
 	if expr.Kind() == "unary_expression" && expr.NamedChildCount() > 0 {
-		return inferGoExprType(src, expr.NamedChild(0), prefix, imports, nodeByName)
+		return inferGoExprType(src, expr.NamedChild(0), prefix, imports, index, scope)
 	}
 	if expr.Kind() == "composite_literal" {
 		if typ := expr.ChildByFieldName("type"); typ != nil {
-			return resolveGoTypeExpr(text(src, typ), prefix, imports, nodeByName)
+			return resolveGoTypeExpr(text(src, typ), prefix, imports, index.NodeByName)
 		}
+	}
+	if expr.Kind() == "call_expression" {
+		callee := resolveGoCall(src, expr.ChildByFieldName("function"), prefix, imports, index.NodeByName, index, scope)
+		if callee == "" {
+			return ""
+		}
+		return index.GoFuncReturns[callee]
 	}
 	return ""
 }

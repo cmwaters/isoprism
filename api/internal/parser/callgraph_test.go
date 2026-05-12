@@ -148,6 +148,51 @@ func Run(client *Client) {
 	}
 }
 
+func TestGoReceiverCallResolvesFromConstructorReturnType(t *testing.T) {
+	files := map[string][]byte{
+		"rpc/grpc/api.go": []byte(`package coregrpc
+
+import "context"
+
+type BlockAPI struct{}
+
+func NewBlockAPI() *BlockAPI {
+	return &BlockAPI{}
+}
+
+func (api *BlockAPI) addHeightListener(ch chan int) {}
+
+func (api *BlockAPI) Stop(ctx context.Context) error {
+	return nil
+}
+`),
+		"rpc/grpc/api_test.go": []byte(`package coregrpc
+
+import "context"
+
+func TestStop_DoesNotDeadlock() {
+	api := NewBlockAPI()
+	ch := make(chan int)
+	api.addHeightListener(ch)
+	_ = api.Stop(context.Background())
+}
+`),
+	}
+	nodeByName := nodesByName(files)
+	index := BuildResolverIndex(files, nodeByName)
+	edges := ExtractCallEdgesWithResolver(files["rpc/grpc/api_test.go"], "rpc/grpc/api_test.go", index)
+
+	if !hasEdge(edges, "rpc/grpc:coregrpc.TestStop_DoesNotDeadlock", "rpc/grpc:coregrpc.NewBlockAPI") {
+		t.Fatalf("expected constructor edge, got %#v", edges)
+	}
+	if !hasEdge(edges, "rpc/grpc:coregrpc.TestStop_DoesNotDeadlock", "rpc/grpc:coregrpc.BlockAPI.addHeightListener") {
+		t.Fatalf("expected addHeightListener edge, got %#v", edges)
+	}
+	if !hasEdge(edges, "rpc/grpc:coregrpc.TestStop_DoesNotDeadlock", "rpc/grpc:coregrpc.BlockAPI.Stop") {
+		t.Fatalf("expected Stop edge, got %#v", edges)
+	}
+}
+
 func TestGoFieldChainDoesNotResolveAmbiguousImportedType(t *testing.T) {
 	files := map[string][]byte{
 		"app/app.go": []byte(`package app
