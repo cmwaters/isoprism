@@ -613,7 +613,8 @@ function InnerCanvas({
       const isDimmed = selID && !isConnected;
       const apiEdge = visibleGraph.edges.find((edge) => edge.caller_id === e.source && edge.callee_id === e.target);
       const baseColor = apiEdge?.change_type === "added" ? "#16A34A" : apiEdge?.change_type === "deleted" ? "#EF4444" : "#888888";
-      const color = isConnected ? (apiEdge?.change_type === "added" || apiEdge?.change_type === "deleted" ? baseColor : "#333333") : isDimmed ? "#CCCCCC" : baseColor;
+      const dimmedColor = apiEdge?.change_type === "added" ? "#BBF7D0" : apiEdge?.change_type === "deleted" ? "#FECACA" : "#CCCCCC";
+      const color = isConnected ? (apiEdge?.change_type === "added" || apiEdge?.change_type === "deleted" ? baseColor : "#333333") : isDimmed ? dimmedColor : baseColor;
       const weightedWidth = Math.min(5, 1 + Math.log2(1 + (apiEdge?.weight ?? 1)) * 0.6);
       const width = isConnected ? Math.max(2, weightedWidth) : weightedWidth;
       return {
