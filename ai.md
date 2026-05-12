@@ -30,6 +30,7 @@ Gemini 2.5 Flash is the default target because the PR analysis job is high-volum
 - `OpenPR`, after changed functions have been detected and component-scoped diffs have been built
 - GitHub `pull_request` webhook actions: `opened`, `synchronize`, `reopened`, `ready_for_review`
 - Development `POST /debug/prs/{prID}/reprocess`
+- Development `POST /debug/prs/{prID}/reprocess/ai`
 
 **Purpose:** Explain what changed inside each added or modified production node, capture relevant non-code changes, summarize what tests assert, then produce one PR-level summary and a numeric risk score for the queue.
 
@@ -119,6 +120,8 @@ The changed function block is repeated for each added or modified production nod
 - `pr_analyses.summary`
 - `pr_analyses.risk_score`
 - `pr_analyses.ai_model`
+- `pr_analyses.analysis_payload`
+- `pr_analyses.prompt_version`
 - `pr_analyses.generated_at`
 
 **Displayed in:**
@@ -153,7 +156,9 @@ The product should keep model selection simple. The only default AI task is PR a
 | GitHub PR updated with new commits | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.synchronize`; old `pr_node_changes` are cleared before reprocessing. |
 | GitHub PR reopened | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.reopened`. |
 | GitHub PR marked ready for review | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.ready_for_review`. |
-| Developer reprocesses a PR | `OpenPR` | `EnrichPRChanges` | Called by `POST /debug/prs/{prID}/reprocess`; same AI path as normal PR processing. |
+| Developer fully reprocesses a PR | `OpenPR` | `EnrichPRChanges` | Called by `POST /debug/prs/{prID}/reprocess`; rebuilds graph data first, then reruns AI. |
+| Developer reprocesses only PR graph data | `ReprocessPRGraph` | none | Called by `POST /debug/prs/{prID}/reprocess/graph`; rebuilds `pr_node_changes`, PR call edges, changed test nodes, and processing metadata, then clears stale AI fields. |
+| Developer reprocesses only PR AI output | `ReprocessPRAI` | `EnrichPRChanges` | Called by `POST /debug/prs/{prID}/reprocess/ai`; requires existing `pr_node_changes` and updates only AI summaries, PR summary, risk score, model, payload, and prompt version. |
 | GitHub PR merged | `MergePR` | none | Advances repository state; no AI call. |
 
 ## Data Boundaries
@@ -191,16 +196,16 @@ Keep tests in the same PR analysis call, but separate them in the prompt and out
 
 ## Implementation Alignment
 
-The current code may still contain Anthropic-era behavior. Bring the implementation into line with this document by:
+The implementation follows this PR-only contract:
 
-1. Replacing the hard-coded Anthropic model/provider path with Gemini 2.5 Flash.
-2. Removing or disabling `Enricher.EnrichNodes` from `RepoInit`.
-3. Removing `risk_label` from the model prompt and expected output.
-4. Deriving any UI risk label from `risk_score` in application code if a label is still needed.
-5. Recording `gemini-2.5-flash` in `pr_analyses.ai_model`.
-6. Adding PR title and PR description/body to `Enricher.EnrichPRChanges` input.
-7. Adding separate prompt sections for test assertions and other changed files, while only parsing test assertions as dedicated structured output.
-8. Removing unused provider config once no call site needs it.
+1. Gemini 2.5 Flash is the only active model/provider path.
+2. `RepoInit` builds structural graph data only; it does not call AI.
+3. `risk_label` is not part of the model prompt or expected output.
+4. Any UI risk label is derived from `risk_score` in application code.
+5. `pr_analyses.ai_model` records `gemini-2.5-flash`.
+6. `Enricher.EnrichPRChanges` receives PR title and PR description/body.
+7. Test assertions and other changed files are separate prompt sections, while only test assertions are parsed as dedicated structured output.
+8. Anthropic and OpenAI provider config are not active AI call paths.
 
 ## Implementation Notes
 

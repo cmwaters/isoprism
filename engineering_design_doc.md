@@ -49,7 +49,7 @@ The prototype delivers exactly one flow:
 | Backend API | Go (chi router) | Railway |
 | Database | Supabase (Postgres 15) | Supabase |
 | Auth | Supabase Auth (GitHub OAuth) | Supabase |
-| AI | Anthropic Claude (`claude-sonnet-4-6`) | Anthropic API |
+| AI | Google Gemini (`gemini-2.5-flash`) for PR analysis only | Google Gemini API |
 | GitHub Integration | GitHub App (webhooks + REST API v3) | — |
 | Code Parsing | Tree-sitter-backed Go, TypeScript, TSX, JavaScript, and JSX parser | In-process Go API with CGO |
 | Graph Rendering | React Flow (`@xyflow/react`) | Frontend |
@@ -75,7 +75,7 @@ The prototype delivers exactly one flow:
                         │  │  RepoInit | OpenPR | MergePR        │ │
                         │  │                                     │ │
                         │  │  parser → call graph →              │ │
-                        │  │  Claude enrichment                  │ │
+                        │  │  Gemini PR enrichment               │ │
                         │  └──────────────────┬─────────────────┘ │
                         └──────────────────────┼──────────────────┘
                                                │ pgx
@@ -256,8 +256,10 @@ pr_analyses
   summary          text              -- one-line summary for queue display
   nodes_changed    int               -- count of directly changed nodes
   risk_score       int               -- 1–10
-  risk_label       text              -- 'low' | 'medium' | 'high'
+  risk_label       text              -- legacy nullable field; UI derives labels from risk_score
   ai_model         text
+  analysis_payload jsonb             -- validated PR AI output
+  prompt_version   text
   generated_at     timestamptz
   created_at       timestamptz
 ```
@@ -344,7 +346,7 @@ The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send th
 
 ### Design Notes
 
-**`code_nodes` is a content-addressed snapshot store.** The same function at two different commits is two rows. The `body_hash` field enables change detection between commits without re-parsing: if `body_hash` is identical across commits, the node is unchanged and its existing `summary` can be reused without calling Claude again.
+**`code_nodes` is a content-addressed snapshot store.** The same function at two different commits is two rows. The `body_hash` field enables change detection between commits without re-parsing. Base repository AI summaries are not generated in the current PR-focused AI flow.
 
 **`node_type` is not stored.** Whether a node is `changed`, `caller`, or `callee` is a property of its relationship to a specific PR, not of the node itself. The API computes this at query time by:
 1. Looking up the set of `pr_node_changes` for the PR → these are `changed` nodes
@@ -419,7 +421,7 @@ The backend is defined around three events. All other logic flows from them.
 5. Persist production and test nodes in `code_nodes`, setting `is_test` and `is_entrypoint` from parser metadata.
 6. Build call/reference edges by resolving identifiers in function and test bodies against the full node set → insert `code_edges`.
 7. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes.
-8. Generate optional AI summaries for production nodes in Claude batches of up to 30 nodes (see `ai.md`) and update `code_nodes.summary` as they arrive.
+8. Do not run AI during repository indexing. Base code-node summaries are intentionally out of scope; AI spend is reserved for PR analysis.
 
 Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` every 2 seconds until `ready` or `failed`. The status response includes the current indexing job phase, progress percentage, counters, and a rough ETA. `ready` means the structural graph is available; summaries may continue to fill in afterward.
 
@@ -440,8 +442,8 @@ Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The
 5. **Parse head commit only:** For each changed supported file that still exists at `head_sha`, fetch the head content and parse it. Insert all parsed head nodes, including test nodes, into `code_nodes` at `commit_sha = head_sha`. PR processing does not fetch base file contents; it loads base node metadata from the indexed `code_nodes` rows at `base_commit_sha`.
 6. **Identify changed nodes:** Compare parsed head nodes with base `code_nodes` loaded from SQL for the affected base paths. Nodes with a differing `body_hash` and matching identity are `modified`; nodes present only at head are `added`; nodes present only at base are `deleted`; nodes paired by rename metadata or matching hashes are `renamed`. Line overlap alone is not a rename signal; when a new component overlaps an old component but does not share its identity or body hash, classify conservatively as added and let any unmatched base component appear as deleted.
 7. **Build component diffs:** `modified`, `renamed`, and `deleted` nodes keep a component-scoped slice of the GitHub patch using the stored base/head line ranges. `added` nodes use a synthetic component hunk where every line of the fetched head component is marked `+`, so semantic node stats count the whole new component even when Git's file diff treats moved/copied body lines as unchanged context.
-8. **Generate change summaries:** For all `modified` and `added` nodes, call Claude with the diff hunk and new function body to generate `change_summary`. Batch into a single API call for normal-sized PRs. Large-but-allowed PRs can skip per-function AI enrichment and receive a coarse PR-level summary so structural graph processing can still finish.
-9. **Persist:** Insert `pr_node_changes` rows, rebuild PR-head call edges for all parsed nodes including tests, and insert/update `pr_analyses` (summary, `nodes_changed`, `risk_score`). Persistence errors are logged and counted in `pull_requests.processing_stats` instead of being silently swallowed.
+8. **Persist graph overlay:** Insert `pr_node_changes` rows without AI summaries, rebuild PR-head call edges for all parsed nodes including tests, and insert/update `pr_analyses.nodes_changed`. Graph-only reprocessing clears stale AI fields because node IDs and diffs may have changed.
+9. **Generate PR AI:** After the graph overlay exists, call Gemini once for normal-sized PRs with PR title/body, production component diffs, test diffs, and other changed file diffs as context. Persist production change summaries, test assertion summaries, PR summary, numeric `risk_score`, `ai_model`, `analysis_payload`, `prompt_version`, and `generated_at`. Other changed files are prompt context only, not structured output.
 10. **Update PR:** Set `graph_status = 'ready'` and stamp the latest processing metadata on `pull_requests`: `processor_commit_sha`, `processed_at`, `processing_error`, and `processing_stats`. If changed nodes were detected but zero `pr_node_changes` rows persisted, `processing_error` records that suspicion while leaving the structural counters available for debugging.
 
 When serving a graph, the API returns `full_name` as the display name and structured `inputs[]`/`outputs[]` instead of a raw signature string. Each input/output item has an optional `name`, a `type`, and, when that type exists as a visible graph node, a `node_id` so the frontend can link directly to the type node.
@@ -520,7 +522,7 @@ api/
       parse.go             parser dispatch + node extraction
       callgraph.go         call edge and test-reference resolution
     ai/
-      enricher.go          Claude batched enrichment
+      enricher.go          Gemini PR analysis enrichment
     github/
       app.go               JWT generation, installation token cache
       client.go            GitHub REST API wrapper
@@ -802,7 +804,7 @@ SUPABASE_SERVICE_ROLE_KEY
 GITHUB_APP_ID
 GITHUB_APP_PRIVATE_KEY       PEM; literal \n sequences normalised on load
 GITHUB_WEBHOOK_SECRET
-ANTHROPIC_API_KEY
+GEMINI_API_KEY
 FRONTEND_URL
 FRONTEND_URLS                    Comma-separated allowed frontend origins
 ```
@@ -872,12 +874,11 @@ At startup, the API queries `supabase_migrations.schema_migrations` and exits be
 
 ### Phase 4 — AI Enrichment *(~1 day)*
 
-1. Implement `ai.EnrichNodes(ctx, nodes []CodeNode, client *anthropic.Client) error`:
-   - Batch repo node summaries in groups of up to 30; process PR change summaries in one Claude call
-   - Structured JSON output: array of `{full_name, summary}` (and `{change_summary}` for PR enrichment)
-   - Map responses back to nodes by `full_name`; update `code_nodes.summary`
-2. Implement `ai.EnrichPRChanges(ctx, changes []PRNodeChange, client) error`:
-   - Same batched call pattern; generates `change_summary` for each changed node
+1. Implement `ai.EnrichPRChanges(ctx, input PRAnalysisInput) error`:
+   - One Gemini call per normal-sized PR with PR title/body, production diffs, test diffs, and other changed files as context
+   - Structured JSON output: `changes[]`, `test_assertions[]`, `pr_summary`, and numeric `risk_score`
+   - Map production summaries and test assertion summaries back to `pr_node_changes.change_summary`
+   - Store the full validated response in `pr_analyses.analysis_payload`
    - Also generates `pr_analyses.summary` and `risk_score` in the same call
 3. Integrate enrichment into `RepoInit` after structural graph readiness, and into `OpenPR` after change detection
 
@@ -909,7 +910,7 @@ At startup, the API queries `supabase_migrations.schema_migrations` and exits be
    - Fetch GitHub PR files and return them as `files[]` for GitHub-equivalent PR overview diffs
    - Cap at 20 nodes: keep all changed nodes, fill remaining slots by proximity
    - Serialise to graph JSON response (see §6)
-2. Update queue handler to include `nodes_changed` and `risk_label` from `pr_analyses`
+2. Update queue handler to include `nodes_changed` and derive any risk label from `pr_analyses.risk_score`
 
 ---
 
@@ -944,7 +945,7 @@ At startup, the API queries `supabase_migrations.schema_migrations` and exits be
 | `node_type` computed at query time | Not stored | It is a PR-relative property, not a property of a node. Storing it would couple the base graph to PR state. |
 | `code_nodes` keyed by `(repo, commit_sha, full_name, file_path)` | Snapshot per commit | Allows change detection by `body_hash` comparison without storing diffs. Summaries are reused across commits when body is unchanged. |
 | One-hop graph depth | Depth 1 from changed nodes | Deeper traversal produces unreadable graphs. One hop gives immediate structural context. |
-| Batched AI calls per PR | Single Claude call | One round-trip covers the entire changed node set. Keeps latency low and cost minimal (~$0.002/PR). |
+| Batched AI calls per PR | Single Gemini call | One round-trip covers the changed production/test set and other-file context while keeping output consistent. |
 | No message queue | Goroutines | Sufficient at prototype scale. A queue adds operational complexity with no benefit yet. |
 
 ---

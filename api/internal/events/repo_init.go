@@ -233,52 +233,6 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	finishIndexJobReady(ctx, db, repoID, headSHA)
 	log.Printf("RepoInit: structural graph ready for repo %s (%d nodes)", repoID, len(allNodes))
 
-	// AI enrichment: generate summaries for all nodes
-	if enricher != nil && len(allNodes) > 0 {
-		// Batch in groups of 30 to avoid token limits
-		const batchSize = 30
-		for i := 0; i < len(allNodes); i += batchSize {
-			end := i + batchSize
-			if end > len(allNodes) {
-				end = len(allNodes)
-			}
-			batch := allNodes[i:end]
-
-			inputs := make([]ai.NodeInput, 0, len(batch))
-			for _, n := range batch {
-				if n.IsTest {
-					continue
-				}
-				// Only enrich nodes without an existing summary
-				var hasSummary bool
-				db.QueryRow(ctx, `select summary is not null from code_nodes where id=$1`, nodeIDs[n.FullName]).Scan(&hasSummary)
-				if !hasSummary {
-					inputs = append(inputs, ai.NodeInput{
-						FullName: n.FullName,
-						Body:     n.Body,
-					})
-				}
-			}
-			if len(inputs) == 0 {
-				continue
-			}
-
-			summaries, err := enricher.EnrichNodes(ctx, inputs)
-			if err != nil {
-				log.Printf("RepoInit: AI enrichment error: %v", err)
-				continue
-			}
-			for fullName, summary := range summaries {
-				id, ok := nodeIDs[fullName]
-				if !ok {
-					continue
-				}
-				s := summary
-				db.Exec(ctx, `update code_nodes set summary=$1 where id=$2`, s, id)
-			}
-		}
-	}
-
 	log.Printf("RepoInit: completed for repo %s (%d nodes)", repoID, len(allNodes))
 }
 

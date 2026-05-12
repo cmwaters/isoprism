@@ -41,8 +41,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			coalesce(pa.nodes_changed, 0) as nodes_changed,
 			coalesce((pr.processing_stats->>'github_additions')::int, 0) as additions,
 			coalesce((pr.processing_stats->>'github_deletions')::int, 0) as deletions,
-			pa.risk_score,
-			pa.risk_label
+			pa.risk_score
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
 		left join pr_analyses pa on pa.pull_request_id = pr.id
@@ -68,7 +67,6 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 		additions    int
 		deletions    int
 		riskScore    *int
-		riskLabel    *string
 	}
 
 	var queueItems []queueRow
@@ -81,7 +79,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			&pr.BaseBranch, &pr.HeadBranch, &pr.BaseCommitSHA, &pr.HeadCommitSHA,
 			&pr.State, &pr.Draft, &pr.HTMLURL, &pr.OpenedAt, &pr.MergedAt,
 			&pr.LastActivityAt, &pr.GraphStatus, &pr.CreatedAt,
-			&row.summary, &row.nodesChanged, &row.additions, &row.deletions, &row.riskScore, &row.riskLabel,
+			&row.summary, &row.nodesChanged, &row.additions, &row.deletions, &row.riskScore,
 		); err != nil {
 			log.Printf("GetQueue: scan error: %v", err)
 			continue
@@ -122,7 +120,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			Additions:    row.additions,
 			Deletions:    row.deletions,
 			RiskScore:    row.riskScore,
-			RiskLabel:    row.riskLabel,
+			RiskLabel:    derivedRiskLabel(row.riskScore),
 			UrgencyScore: urgency,
 		}
 		prs = append(prs, q)
@@ -151,4 +149,17 @@ func nilStrPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func derivedRiskLabel(score *int) *string {
+	if score == nil {
+		return nil
+	}
+	label := "medium"
+	if *score <= 3 {
+		label = "low"
+	} else if *score >= 7 {
+		label = "high"
+	}
+	return &label
 }

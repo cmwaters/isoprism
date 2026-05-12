@@ -27,6 +27,17 @@ const (
 // It computes which functions changed between base and head, generates change
 // summaries, and updates pr_node_changes + pr_analyses.
 func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, enricher *ai.Enricher, prID string) {
+	if err := ReprocessPRGraph(ctx, db, appClient, prID); err != nil {
+		log.Printf("OpenPR: graph reprocess stopped for pr %s: %v", prID, err)
+		return
+	}
+	if err := ReprocessPRAI(ctx, db, appClient, enricher, prID); err != nil {
+		log.Printf("OpenPR: AI reprocess stopped for pr %s: %v", prID, err)
+	}
+}
+
+// ReprocessPRGraph rebuilds the structural PR overlay without running AI.
+func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, prID string) error {
 	log.Printf("OpenPR: starting for pr %s", prID)
 	stats := newPRProcessingStats()
 	markPRProcessing(ctx, db, prID, "running", stats, "")
@@ -48,7 +59,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	if err != nil {
 		log.Printf("OpenPR: failed to load PR: %v", err)
 		markPRProcessing(ctx, db, prID, "failed", stats, "failed to load PR: "+err.Error())
-		return
+		return err
 	}
 
 	if baseBranch != defaultBranch {
@@ -56,14 +67,14 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		log.Printf("OpenPR: skipping pr %s: %s", prID, reason)
 		stats.SkipReason = reason
 		markPRProcessing(ctx, db, prID, "skipped", stats, reason)
-		return
+		return fmt.Errorf("%s", reason)
 	}
 
 	if headSHA == "" || baseSHA == "" || mainCommitSHA == "" {
 		reason := "missing commit SHAs"
 		log.Printf("OpenPR: %s for pr %s", reason, prID)
 		markPRProcessing(ctx, db, prID, "failed", stats, reason)
-		return
+		return fmt.Errorf("%s", reason)
 	}
 
 	if baseSHA != mainCommitSHA {
@@ -71,7 +82,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		log.Printf("OpenPR: skipping pr %s: %s", prID, reason)
 		stats.SkipReason = reason
 		markPRProcessing(ctx, db, prID, "skipped", stats, reason)
-		return
+		return fmt.Errorf("%s", reason)
 	}
 	baseCommit = baseSHA
 
@@ -79,13 +90,13 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	if err != nil {
 		log.Printf("OpenPR: GitHub client error: %v", err)
 		markPRProcessing(ctx, db, prID, "failed", stats, "github client error: "+err.Error())
-		return
+		return err
 	}
 
 	parts := splitRepo(fullName)
 	if parts == nil {
 		markPRProcessing(ctx, db, prID, "failed", stats, "invalid repository full name")
-		return
+		return fmt.Errorf("invalid repository full name")
 	}
 	owner, repo := parts[0], parts[1]
 
@@ -93,7 +104,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	if err != nil {
 		log.Printf("OpenPR: fetch PR metadata error: %v", err)
 		markPRProcessing(ctx, db, prID, "failed", stats, "fetch PR metadata error: "+err.Error())
-		return
+		return err
 	}
 	stats.GitHubChangedFiles = ghPR.ChangedFiles
 	stats.GitHubAdditions = ghPR.Additions
@@ -103,15 +114,16 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		log.Printf("OpenPR: skipping pr %s because %s", prID, reason)
 		stats.SkipReason = reason
 		markPRSkipped(ctx, db, prID, reason, stats)
-		return
+		return fmt.Errorf("%s", reason)
 	}
 
 	// Mark running
 	if _, err := db.Exec(ctx, `delete from pr_node_changes where pull_request_id=$1`, prID); err != nil {
 		log.Printf("OpenPR: failed to clear stale node changes for pr %s: %v", prID, err)
 		markPRProcessing(ctx, db, prID, "failed", stats, "failed to clear stale node changes: "+err.Error())
-		return
+		return err
 	}
+	clearPRAIFields(ctx, db, prID)
 
 	// Fetch changed files
 	changedFiles, err := ghClient.ListPullRequestFiles(ctx, owner, repo, prNumber)
@@ -121,7 +133,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		if err != nil {
 			log.Printf("OpenPR: compare error: %v", err)
 			markPRProcessing(ctx, db, prID, "failed", stats, "compare error: "+err.Error())
-			return
+			return err
 		}
 		changedFiles = make([]github.GHPullRequestFile, 0, len(compareFiles))
 		for _, file := range compareFiles {
@@ -340,38 +352,6 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		}
 	}
 
-	// Generate AI change summaries
-	var aiInputs []ai.NodeInput
-	for _, c := range changed {
-		if !c.isTest && c.changeType != "deleted" {
-			aiInputs = append(aiInputs, ai.NodeInput{
-				FullName: c.node.FullName,
-				Body:     c.node.Body,
-				DiffHunk: c.diffHunk,
-			})
-		}
-	}
-
-	var changeSummaries map[string]string
-	var prOut ai.PROutput
-
-	const maxAIChangedNodes = 80
-	if len(aiInputs) > maxAIChangedNodes {
-		prOut = ai.PROutput{
-			Summary:   "Large PR changing " + strconv.Itoa(len(aiInputs)) + " functions; detailed AI analysis skipped.",
-			RiskScore: 5,
-			RiskLabel: "medium",
-		}
-	} else if enricher != nil && len(aiInputs) > 0 {
-		cs, po, err := enricher.EnrichPRChanges(ctx, aiInputs)
-		if err != nil {
-			log.Printf("OpenPR: AI enrichment error: %v", err)
-		} else {
-			changeSummaries = cs
-			prOut = po
-		}
-	}
-
 	// Persist pr_node_changes
 	for _, c := range changed {
 		var nodeID string
@@ -392,10 +372,6 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 			continue
 		}
 
-		var summary *string
-		if s, ok := changeSummaries[c.node.FullName]; ok {
-			summary = &s
-		}
 		diffHunk := c.diffHunk
 
 		tag, err := db.Exec(ctx, `
@@ -407,7 +383,7 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 				diff_hunk      = excluded.diff_hunk,
 				old_full_name  = excluded.old_full_name,
 				old_file_path  = excluded.old_file_path
-		`, prID, nodeID, c.changeType, summary, nullIfEmpty(diffHunk), c.oldFullName, c.oldFilePath)
+		`, prID, nodeID, c.changeType, nil, nullIfEmpty(diffHunk), c.oldFullName, c.oldFilePath)
 		if err != nil {
 			log.Printf("OpenPR: failed to persist node change %s for pr %s: %v", c.node.FullName, prID, err)
 			stats.NodeChangePersistErrors++
@@ -426,23 +402,22 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 		}
 	}
 
-	riskScore := prOut.RiskScore
-	riskLabel := prOut.RiskLabel
-	summary := prOut.Summary
-	now := time.Now()
-	modelName := "claude-sonnet-4-6"
-
 	if _, err := db.Exec(ctx, `
-		insert into pr_analyses (pull_request_id, summary, nodes_changed, risk_score, risk_label, ai_model, generated_at)
-		values ($1,$2,$3,$4,$5,$6,$7)
+		insert into pr_analyses (
+			pull_request_id, summary, nodes_changed, risk_score, risk_label,
+			ai_model, generated_at, analysis_payload, prompt_version
+		)
+		values ($1,null,$2,null,null,null,null,null,null)
 		on conflict (pull_request_id) do update set
-			summary       = excluded.summary,
 			nodes_changed = excluded.nodes_changed,
-			risk_score    = excluded.risk_score,
-			risk_label    = excluded.risk_label,
-			ai_model      = excluded.ai_model,
-			generated_at  = excluded.generated_at
-	`, prID, nullIfEmpty(summary), nodesChanged, nullIfZero(riskScore), nullIfEmpty(riskLabel), modelName, now); err != nil {
+			summary = null,
+			risk_score = null,
+			risk_label = null,
+			ai_model = null,
+			generated_at = null,
+			analysis_payload = null,
+			prompt_version = null
+	`, prID, nodesChanged); err != nil {
 		log.Printf("OpenPR: failed to persist PR analysis for pr %s: %v", prID, err)
 		stats.AnalysisPersistErrors++
 	}
@@ -584,6 +559,231 @@ func OpenPR(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, 
 	}
 	markPRProcessing(ctx, db, prID, "ready", stats, finalErr)
 	log.Printf("OpenPR: completed for pr %s (%d changed nodes)", prID, nodesChanged)
+	return nil
+}
+
+// ReprocessPRAI regenerates only AI summaries for an already-built PR graph.
+func ReprocessPRAI(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, enricher *ai.Enricher, prID string) error {
+	log.Printf("ReprocessPRAI: starting for pr %s", prID)
+	if enricher == nil || !enricher.HasAPIKey() {
+		log.Printf("ReprocessPRAI: skipping pr %s because GEMINI_API_KEY is not configured", prID)
+		return nil
+	}
+
+	input, nodeIDsByFullName, testNodeIDsByName, err := buildPRAnalysisInput(ctx, db, appClient, prID)
+	if err != nil {
+		return err
+	}
+	totalInputs := len(input.Changes) + len(input.TestChanges)
+	const maxAIChangedItems = 80
+	if totalInputs > maxAIChangedItems {
+		summary := "Large PR changing " + strconv.Itoa(totalInputs) + " components; detailed AI analysis skipped."
+		payload, _ := json.Marshal(ai.PRAnalysisOutput{PRSummary: summary, RiskScore: 5})
+		if _, err := db.Exec(ctx, `update pr_node_changes set change_summary = null where pull_request_id = $1`, prID); err != nil {
+			return err
+		}
+		if _, err := db.Exec(ctx, `
+			insert into pr_analyses (
+				pull_request_id, summary, nodes_changed, risk_score, risk_label,
+				ai_model, generated_at, analysis_payload, prompt_version
+			)
+			values ($1,$2,coalesce((select nodes_changed from pr_analyses where pull_request_id=$1),0),$3,null,$4,now(),$5,$6)
+			on conflict (pull_request_id) do update set
+				summary = excluded.summary,
+				risk_score = excluded.risk_score,
+				risk_label = null,
+				ai_model = excluded.ai_model,
+				generated_at = excluded.generated_at,
+				analysis_payload = excluded.analysis_payload,
+				prompt_version = excluded.prompt_version
+		`, prID, summary, 5, "ai-size-limit", string(payload), ai.PromptVersion); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	out, err := enricher.EnrichPRChanges(ctx, input)
+	if err != nil {
+		log.Printf("ReprocessPRAI: AI enrichment error for pr %s: %v", prID, err)
+		return persistUnavailablePRAnalysis(ctx, db, prID)
+	}
+	if strings.TrimSpace(out.PRSummary) == "" && out.RiskScore == 0 {
+		return nil
+	}
+
+	if _, err := db.Exec(ctx, `update pr_node_changes set change_summary = null where pull_request_id=$1`, prID); err != nil {
+		return err
+	}
+	for fullName, summary := range out.ChangeSummariesByFullName() {
+		for _, nodeID := range nodeIDsByFullName[fullName] {
+			if _, err := db.Exec(ctx, `
+				update pr_node_changes set change_summary=$1
+				where pull_request_id=$2 and node_id=$3
+			`, summary, prID, nodeID); err != nil {
+				return err
+			}
+		}
+	}
+	for name, summary := range out.TestAssertionsByName() {
+		for _, nodeID := range testNodeIDsByName[name] {
+			if _, err := db.Exec(ctx, `
+				update pr_node_changes set change_summary=$1
+				where pull_request_id=$2 and node_id=$3
+			`, summary, prID, nodeID); err != nil {
+				return err
+			}
+		}
+	}
+
+	payload, _ := json.Marshal(out)
+	if _, err := db.Exec(ctx, `
+		insert into pr_analyses (
+			pull_request_id, summary, nodes_changed, risk_score, risk_label,
+			ai_model, generated_at, analysis_payload, prompt_version
+		)
+		values ($1,$2,coalesce((select nodes_changed from pr_analyses where pull_request_id=$1),0),$3,null,$4,now(),$5,$6)
+		on conflict (pull_request_id) do update set
+			summary = excluded.summary,
+			risk_score = excluded.risk_score,
+			risk_label = null,
+			ai_model = excluded.ai_model,
+			generated_at = excluded.generated_at,
+			analysis_payload = excluded.analysis_payload,
+			prompt_version = excluded.prompt_version
+	`, prID, out.PRSummary, out.RiskScore, enricher.Model, string(payload), ai.PromptVersion); err != nil {
+		return err
+	}
+
+	log.Printf("ReprocessPRAI: completed for pr %s", prID)
+	return nil
+}
+
+func buildPRAnalysisInput(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, prID string) (ai.PRAnalysisInput, map[string][]string, map[string][]string, error) {
+	var repoID, fullName string
+	var installationID int64
+	var prNumber int
+	var title, body string
+	err := db.QueryRow(ctx, `
+		select pr.repo_id, r.full_name, gi.installation_id, pr.number, pr.title, coalesce(pr.body, '')
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		join github_installations gi on gi.id = r.installation_id
+		where pr.id = $1
+	`, prID).Scan(&repoID, &fullName, &installationID, &prNumber, &title, &body)
+	if err != nil {
+		return ai.PRAnalysisInput{}, nil, nil, fmt.Errorf("load PR for AI: %w", err)
+	}
+
+	rows, err := db.Query(ctx, `
+		select cn.id, cn.full_name, cn.file_path, cn.is_test, pnc.change_type, coalesce(pnc.diff_hunk, '')
+		from pr_node_changes pnc
+		join code_nodes cn on cn.id = pnc.node_id
+		where pnc.pull_request_id = $1
+		order by cn.file_path, cn.line_start, cn.full_name
+	`, prID)
+	if err != nil {
+		return ai.PRAnalysisInput{}, nil, nil, err
+	}
+	defer rows.Close()
+
+	input := ai.PRAnalysisInput{Title: title, Description: body}
+	nodeIDsByFullName := map[string][]string{}
+	testNodeIDsByName := map[string][]string{}
+	nodeFilePaths := map[string]bool{}
+	rowCount := 0
+	for rows.Next() {
+		var nodeID, fullName, filePath, changeType, diffHunk string
+		var isTest bool
+		if err := rows.Scan(&nodeID, &fullName, &filePath, &isTest, &changeType, &diffHunk); err != nil {
+			return ai.PRAnalysisInput{}, nil, nil, err
+		}
+		rowCount++
+		nodeFilePaths[filePath] = true
+		if changeType == "deleted" {
+			continue
+		}
+		if isTest || parser.IsTestFile(filePath) {
+			input.TestChanges = append(input.TestChanges, ai.PRTestInput{
+				Name:     fullName,
+				FilePath: filePath,
+				DiffHunk: diffHunk,
+			})
+			testNodeIDsByName[fullName] = append(testNodeIDsByName[fullName], nodeID)
+			continue
+		}
+		input.Changes = append(input.Changes, ai.PRChangeInput{
+			FullName:   fullName,
+			FilePath:   filePath,
+			ChangeType: changeType,
+			DiffHunk:   diffHunk,
+		})
+		nodeIDsByFullName[fullName] = append(nodeIDsByFullName[fullName], nodeID)
+	}
+	if err := rows.Err(); err != nil {
+		return ai.PRAnalysisInput{}, nil, nil, err
+	}
+	if rowCount == 0 {
+		return ai.PRAnalysisInput{}, nil, nil, fmt.Errorf("PR graph has no persisted node changes; run /debug/prs/%s/reprocess/graph first", prID)
+	}
+
+	parts := splitRepo(fullName)
+	if parts == nil {
+		return ai.PRAnalysisInput{}, nil, nil, fmt.Errorf("invalid repository full name")
+	}
+	ghClient, err := appClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		return ai.PRAnalysisInput{}, nil, nil, err
+	}
+	files, err := ghClient.ListPullRequestFiles(ctx, parts[0], parts[1], prNumber)
+	if err != nil {
+		return ai.PRAnalysisInput{}, nil, nil, err
+	}
+	for _, file := range files {
+		if nodeFilePaths[file.Filename] {
+			continue
+		}
+		if file.Patch == nil || *file.Patch == "" {
+			continue
+		}
+		input.OtherFiles = append(input.OtherFiles, ai.PROtherFileInput{
+			Path:     file.Filename,
+			Status:   file.Status,
+			DiffHunk: *file.Patch,
+		})
+	}
+
+	return input, nodeIDsByFullName, testNodeIDsByName, nil
+}
+
+func persistUnavailablePRAnalysis(ctx context.Context, db *pgxpool.Pool, prID string) error {
+	_, err := db.Exec(ctx, `
+		insert into pr_analyses (pull_request_id, summary, nodes_changed, risk_score, risk_label, ai_model, generated_at, analysis_payload, prompt_version)
+		values ($1,'PR analysis unavailable.',coalesce((select nodes_changed from pr_analyses where pull_request_id=$1),0),null,null,null,null,null,null)
+		on conflict (pull_request_id) do update set
+			summary = excluded.summary,
+			risk_score = null,
+			risk_label = null,
+			ai_model = null,
+			generated_at = null,
+			analysis_payload = null,
+			prompt_version = null
+	`, prID)
+	return err
+}
+
+func clearPRAIFields(ctx context.Context, db *pgxpool.Pool, prID string) {
+	_, _ = db.Exec(ctx, `update pr_node_changes set change_summary=null where pull_request_id=$1`, prID)
+	_, _ = db.Exec(ctx, `
+		update pr_analyses
+		set summary=null,
+		    risk_score=null,
+		    risk_label=null,
+		    ai_model=null,
+		    generated_at=null,
+		    analysis_payload=null,
+		    prompt_version=null
+		where pull_request_id=$1
+	`, prID)
 }
 
 func nullIfEmpty(s string) interface{} {
@@ -700,15 +900,20 @@ func markPRSkipped(ctx context.Context, db *pgxpool.Pool, prID, reason string, s
 	now := time.Now()
 	_, _ = db.Exec(ctx, `delete from pr_node_changes where pull_request_id=$1`, prID)
 	_, _ = db.Exec(ctx, `
-		insert into pr_analyses (pull_request_id, summary, nodes_changed, risk_score, risk_label, ai_model, generated_at)
-		values ($1,$2,$3,$4,$5,$6,$7)
+		insert into pr_analyses (
+			pull_request_id, summary, nodes_changed, risk_score, risk_label,
+			ai_model, generated_at, analysis_payload, prompt_version
+		)
+		values ($1,$2,$3,$4,$5,$6,$7,null,null)
 		on conflict (pull_request_id) do update set
 			summary       = excluded.summary,
 			nodes_changed = excluded.nodes_changed,
 			risk_score    = excluded.risk_score,
 			risk_label    = excluded.risk_label,
 			ai_model      = excluded.ai_model,
-			generated_at  = excluded.generated_at
+			generated_at  = excluded.generated_at,
+			analysis_payload = null,
+			prompt_version = null
 	`, prID, reason, 0, nil, nil, "pr-size-limit", now)
 	markPRProcessing(ctx, db, prID, "skipped", stats, reason)
 }

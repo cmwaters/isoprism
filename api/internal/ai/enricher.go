@@ -1,4 +1,4 @@
-// Package ai provides Claude-based enrichment for code nodes.
+// Package ai provides Gemini-based enrichment for pull request changes.
 package ai
 
 import (
@@ -6,159 +6,291 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
-const anthropicAPI = "https://api.anthropic.com/v1/messages"
-const model = "claude-sonnet-4-6"
+const (
+	DefaultModel  = "gemini-2.5-flash"
+	PromptVersion = "pr-analysis-v1"
 
-// NodeInput is a code node to be summarised.
-type NodeInput struct {
-	FullName string
-	Body     string
-	DiffHunk string // empty for base nodes; set for PR delta nodes
+	geminiEndpointFormat = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
+	maxOutputTokens      = 4096
+	maxPromptDiffChars   = 12000
+)
+
+// PRChangeInput is one changed production component sent to the model.
+type PRChangeInput struct {
+	FullName   string
+	FilePath   string
+	ChangeType string
+	DiffHunk   string
 }
 
-// NodeOutput holds the AI-generated summaries.
-type NodeOutput struct {
-	FullName      string
-	Summary       string // what the function does (2 sentences)
-	ChangeSummary string // what changed (2 sentences); empty for unchanged nodes
+// PRTestInput is one changed test component sent to the model.
+type PRTestInput struct {
+	Name     string
+	FilePath string
+	DiffHunk string
 }
 
-// PROutput holds the PR-level summary and risk assessment.
-type PROutput struct {
-	Summary   string
-	RiskScore int    // 1–10
-	RiskLabel string // low | medium | high
+// PROtherFileInput is a non-code file diff sent as PR-level context.
+type PROtherFileInput struct {
+	Path     string
+	Status   string
+	DiffHunk string
+}
+
+// PRAnalysisInput contains all context for one PR-level analysis call.
+type PRAnalysisInput struct {
+	Title       string
+	Description string
+	Changes     []PRChangeInput
+	TestChanges []PRTestInput
+	OtherFiles  []PROtherFileInput
+}
+
+type PRChangeOutput struct {
+	FullName      string `json:"full_name"`
+	ChangeSummary string `json:"change_summary"`
+}
+
+type PRTestAssertionOutput struct {
+	Name             string `json:"name"`
+	AssertionSummary string `json:"assertion_summary"`
+}
+
+// PRAnalysisOutput is the strict JSON object expected from Gemini.
+type PRAnalysisOutput struct {
+	Changes        []PRChangeOutput        `json:"changes"`
+	TestAssertions []PRTestAssertionOutput `json:"test_assertions"`
+	PRSummary      string                  `json:"pr_summary"`
+	RiskScore      int                     `json:"risk_score"`
 }
 
 type Enricher struct {
 	APIKey string
+	Model  string
 	client *http.Client
 }
 
 func NewEnricher(apiKey string) *Enricher {
+	return NewEnricherWithModel(apiKey, DefaultModel)
+}
+
+func NewEnricherWithModel(apiKey, model string) *Enricher {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = DefaultModel
+	}
 	return &Enricher{
 		APIKey: apiKey,
+		Model:  model,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
-// EnrichNodes generates summaries for a set of base code nodes.
-// Returns a map from full_name → summary.
-func (e *Enricher) EnrichNodes(ctx context.Context, nodes []NodeInput) (map[string]string, error) {
-	if len(nodes) == 0 || e.APIKey == "" {
-		return map[string]string{}, nil
+func (e *Enricher) HasAPIKey() bool {
+	return e != nil && strings.TrimSpace(e.APIKey) != ""
+}
+
+func (e *Enricher) EnrichPRChanges(ctx context.Context, input PRAnalysisInput) (PRAnalysisOutput, error) {
+	if !e.HasAPIKey() {
+		return PRAnalysisOutput{}, nil
 	}
 
-	var sb strings.Builder
-	sb.WriteString("For each function below, write exactly 2 plain-English sentences describing what the function does. Be specific and concise. Return a JSON array: [{\"full_name\": \"...\", \"summary\": \"...\"}]\n\nFunctions:\n\n")
-	for _, n := range nodes {
-		sb.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", n.FullName, n.Body))
+	prompt := BuildPRAnalysisPrompt(input)
+	if strings.TrimSpace(prompt) == "" {
+		return PRAnalysisOutput{}, nil
 	}
 
-	resp, err := e.call(ctx, sb.String(), 4096)
+	start := time.Now()
+	var respText string
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		respText, err = e.call(ctx, prompt)
+		if err == nil {
+			break
+		}
+		if attempt == 2 || !isTransientProviderError(err) {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return PRAnalysisOutput{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
 	if err != nil {
-		return nil, err
+		return PRAnalysisOutput{}, err
 	}
 
-	var results []struct {
-		FullName string `json:"full_name"`
-		Summary  string `json:"summary"`
-	}
-	if err := json.Unmarshal([]byte(extractJSON(resp)), &results); err != nil {
-		return map[string]string{}, nil
-	}
-
-	out := make(map[string]string, len(results))
-	for _, r := range results {
-		out[r.FullName] = r.Summary
+	out, err := ParsePRAnalysisOutput(respText)
+	log.Printf(
+		"AI PR analysis: task=pr_analysis model=%s changes=%d tests=%d other_files=%d latency_ms=%d parse_ok=%t",
+		e.Model,
+		len(input.Changes),
+		len(input.TestChanges),
+		len(input.OtherFiles),
+		time.Since(start).Milliseconds(),
+		err == nil,
+	)
+	if err != nil {
+		return PRAnalysisOutput{}, err
 	}
 	return out, nil
 }
 
-// EnrichPRChanges generates change summaries and a PR-level analysis.
-func (e *Enricher) EnrichPRChanges(ctx context.Context, nodes []NodeInput) (map[string]string, PROutput, error) {
-	if len(nodes) == 0 || e.APIKey == "" {
-		return map[string]string{}, PROutput{}, nil
+func BuildPRAnalysisPrompt(input PRAnalysisInput) string {
+	if len(input.Changes) == 0 && len(input.TestChanges) == 0 && len(input.OtherFiles) == 0 {
+		return ""
 	}
 
 	var sb strings.Builder
-	sb.WriteString(`You are analysing a pull request. For each changed function, write exactly 2 sentences describing what specifically changed (not what the function does, but what changed in this PR). Return a JSON object:
+	sb.WriteString(`You are analysing a pull request. For each changed production function, write up to 2 sentences describing what specifically changed in this PR. Do not describe what the function generally does unless that is necessary to explain the change.
+
+For tests, describe what behavior is being asserted. Do not summarize test implementation mechanics unless they are important to the assertion.
+
+Use documentation, config, migrations, generated contracts, dependency manifests, build files, or deployment files as context for the PR summary and risk score. Do not produce per-file summaries for these other changes.
+
+Use the PR title and description as intent/context, but ground your output in the diffs. If the PR description conflicts with the diff, trust the diff.
+
+Return only a JSON object with this shape:
 {
   "changes": [{"full_name": "...", "change_summary": "..."}],
-  "pr_summary": "one sentence describing the overall PR",
-  "risk_score": 5,
-  "risk_label": "medium"
+  "test_assertions": [{"name": "...", "assertion_summary": "..."}],
+  "pr_summary": "two to three sentence describing the overall PR with an emphasis on what this changes and why this change is necessary",
+  "risk_score": 5
 }
-risk_score is 1-10; risk_label is "low" (1-3), "medium" (4-6), or "high" (7-10).
 
-Changed functions and their diffs:
+risk_score is an integer from 1 to 10.
 
+PR title:
 `)
-	for _, n := range nodes {
-		sb.WriteString(fmt.Sprintf("--- %s ---\nDiff:\n%s\n\n", n.FullName, n.DiffHunk))
+	sb.WriteString(strings.TrimSpace(input.Title))
+	sb.WriteString("\n\nPR description:\n")
+	if strings.TrimSpace(input.Description) == "" {
+		sb.WriteString("(none)")
+	} else {
+		sb.WriteString(strings.TrimSpace(input.Description))
+	}
+	sb.WriteString("\n\nChanged functions and their diffs:\n\n")
+	for _, change := range input.Changes {
+		sb.WriteString(fmt.Sprintf("--- %s ---\nFile: %s\nChange type: %s\nDiff:\n%s\n\n",
+			change.FullName,
+			change.FilePath,
+			change.ChangeType,
+			truncateDiff(change.DiffHunk),
+		))
 	}
 
-	resp, err := e.call(ctx, sb.String(), 4096)
-	if err != nil {
-		return nil, PROutput{}, err
+	sb.WriteString("Test changes:\n\n")
+	for _, test := range input.TestChanges {
+		name := test.Name
+		if name == "" {
+			name = test.FilePath
+		}
+		sb.WriteString(fmt.Sprintf("--- %s ---\nFile: %s\nDiff:\n%s\n\n",
+			name,
+			test.FilePath,
+			truncateDiff(test.DiffHunk),
+		))
 	}
 
-	var result struct {
-		Changes []struct {
-			FullName      string `json:"full_name"`
-			ChangeSummary string `json:"change_summary"`
-		} `json:"changes"`
-		PRSummary string `json:"pr_summary"`
-		RiskScore int    `json:"risk_score"`
-		RiskLabel string `json:"risk_label"`
-	}
-	if err := json.Unmarshal([]byte(extractJSON(resp)), &result); err != nil {
-		return map[string]string{}, PROutput{Summary: "PR analysis unavailable."}, nil
+	sb.WriteString("Other changed files:\n\n")
+	for _, file := range input.OtherFiles {
+		sb.WriteString(fmt.Sprintf("--- %s ---\nStatus: %s\nDiff:\n%s\n\n",
+			file.Path,
+			file.Status,
+			truncateDiff(file.DiffHunk),
+		))
 	}
 
-	changes := make(map[string]string, len(result.Changes))
-	for _, c := range result.Changes {
-		changes[c.FullName] = c.ChangeSummary
-	}
-
-	pr := PROutput{
-		Summary:   result.PRSummary,
-		RiskScore: result.RiskScore,
-		RiskLabel: result.RiskLabel,
-	}
-	if pr.RiskLabel == "" {
-		pr.RiskLabel = "medium"
-	}
-	if pr.RiskScore == 0 {
-		pr.RiskScore = 5
-	}
-
-	return changes, pr, nil
+	return sb.String()
 }
 
-// call sends a single-turn message to Claude and returns the text response.
-func (e *Enricher) call(ctx context.Context, prompt string, maxTokens int) (string, error) {
+func ParsePRAnalysisOutput(raw string) (PRAnalysisOutput, error) {
+	var out PRAnalysisOutput
+	if err := json.Unmarshal([]byte(extractJSON(raw)), &out); err != nil {
+		return PRAnalysisOutput{}, fmt.Errorf("parse PR analysis JSON: %w", err)
+	}
+	if err := ValidatePRAnalysisOutput(out); err != nil {
+		return PRAnalysisOutput{}, err
+	}
+	return out, nil
+}
+
+func ValidatePRAnalysisOutput(out PRAnalysisOutput) error {
+	if strings.TrimSpace(out.PRSummary) == "" {
+		return fmt.Errorf("pr_summary is required")
+	}
+	if out.RiskScore < 1 || out.RiskScore > 10 {
+		return fmt.Errorf("risk_score must be between 1 and 10")
+	}
+	for i, change := range out.Changes {
+		if strings.TrimSpace(change.FullName) == "" {
+			return fmt.Errorf("changes[%d].full_name is required", i)
+		}
+		if strings.TrimSpace(change.ChangeSummary) == "" {
+			return fmt.Errorf("changes[%d].change_summary is required", i)
+		}
+	}
+	for i, assertion := range out.TestAssertions {
+		if strings.TrimSpace(assertion.Name) == "" {
+			return fmt.Errorf("test_assertions[%d].name is required", i)
+		}
+		if strings.TrimSpace(assertion.AssertionSummary) == "" {
+			return fmt.Errorf("test_assertions[%d].assertion_summary is required", i)
+		}
+	}
+	return nil
+}
+
+func (out PRAnalysisOutput) ChangeSummariesByFullName() map[string]string {
+	summaries := make(map[string]string, len(out.Changes))
+	for _, change := range out.Changes {
+		summaries[change.FullName] = change.ChangeSummary
+	}
+	return summaries
+}
+
+func (out PRAnalysisOutput) TestAssertionsByName() map[string]string {
+	summaries := make(map[string]string, len(out.TestAssertions))
+	for _, assertion := range out.TestAssertions {
+		summaries[assertion.Name] = assertion.AssertionSummary
+	}
+	return summaries
+}
+
+func (e *Enricher) call(ctx context.Context, prompt string) (string, error) {
 	body := map[string]interface{}{
-		"model":      model,
-		"max_tokens": maxTokens,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
+		"contents": []map[string]interface{}{
+			{
+				"role": "user",
+				"parts": []map[string]string{
+					{"text": prompt},
+				},
+			},
+		},
+		"generationConfig": map[string]interface{}{
+			"responseMimeType": "application/json",
+			"maxOutputTokens":  maxOutputTokens,
 		},
 	}
 	data, _ := json.Marshal(body)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", anthropicAPI, bytes.NewReader(data))
+	endpoint := fmt.Sprintf(geminiEndpointFormat, url.PathEscape(e.Model), url.QueryEscape(e.APIKey))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(data))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", e.APIKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
 
 	resp, err := e.client.Do(req)
 	if err != nil {
@@ -166,48 +298,71 @@ func (e *Enricher) call(ctx context.Context, prompt string, maxTokens int) (stri
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("anthropic API error: status %d", resp.StatusCode)
+	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+		return "", transientProviderError{status: resp.StatusCode}
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return "", fmt.Errorf("gemini API error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var result struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
 	}
-	for _, c := range result.Content {
-		if c.Type == "text" {
-			return c.Text, nil
+	for _, candidate := range result.Candidates {
+		for _, part := range candidate.Content.Parts {
+			if strings.TrimSpace(part.Text) != "" {
+				return part.Text, nil
+			}
 		}
 	}
-	return "", fmt.Errorf("no text content in response")
+	return "", fmt.Errorf("no text content in Gemini response")
 }
 
-// extractJSON finds the first JSON array or object in the text.
+type transientProviderError struct {
+	status int
+}
+
+func (e transientProviderError) Error() string {
+	return fmt.Sprintf("gemini API transient error: status %d", e.status)
+}
+
+func isTransientProviderError(err error) bool {
+	_, ok := err.(transientProviderError)
+	return ok
+}
+
+func truncateDiff(diff string) string {
+	if len(diff) <= maxPromptDiffChars {
+		return diff
+	}
+	return diff[:maxPromptDiffChars] + "\n...[truncated]"
+}
+
+// extractJSON finds the first JSON object in the text.
 func extractJSON(s string) string {
-	for _, open := range []string{"[", "{"} {
-		idx := strings.Index(s, open)
-		if idx == -1 {
-			continue
-		}
-		close := "]"
-		if open == "{" {
-			close = "}"
-		}
-		depth := 0
-		for i := idx; i < len(s); i++ {
-			switch string(s[i]) {
-			case open:
-				depth++
-			case close:
-				depth--
-				if depth == 0 {
-					return s[idx : i+1]
-				}
+	idx := strings.Index(s, "{")
+	if idx == -1 {
+		return s
+	}
+	depth := 0
+	for i := idx; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[idx : i+1]
 			}
 		}
 	}

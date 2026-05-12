@@ -92,7 +92,7 @@ The primary review route mirrors the GitHub repository path:
 The repo route renders one persistent `GraphCanvas` and side panel:
 
 - A repo graph for the whole indexed system at function-level detail.
-- A ranked PR list in the repo overview panel. Each PR card shows the PR number in the graph accent pink, title, AI summary, PR diff totals, risk label where used, and a client-updated compact open-time badge (`5h`, `3d`, `1w`).
+- A ranked PR list in the repo overview panel. Each PR card shows the PR number in the graph accent pink, title, AI summary, PR diff totals, a risk label derived from numeric `risk_score` where used, and a client-updated compact open-time badge (`5h`, `3d`, `1w`).
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
@@ -103,7 +103,7 @@ During beta, the PR queue only includes open, non-draft PRs targeting the reposi
 
 The API also skips oversized PRs before expensive graph processing. The beta limits are 300 changed files, 20,000 additions, 20,000 deletions, or 30,000 total changed lines. Skipped PRs get `graph_status = "skipped"` and a `pr_analyses.summary` explaining which size limit was exceeded.
 
-Large PRs can skip per-function AI summaries so the graph and changed-node overlay still become available without waiting on an oversized enrichment request.
+Large PRs can skip per-function AI summaries so the graph and changed-node overlay still become available without waiting on an oversized enrichment request. AI enrichment is PR-only and uses Gemini; repo indexing does not generate base code-node summaries.
 
 Each PR stores the latest processing snapshot on `pull_requests`: `processor_commit_sha`, `processed_at`, `processing_error`, and `processing_stats`. The stats JSON records file counts, supported-file counts, parsed node counts, detected semantic changes, persisted `pr_node_changes`, and call-edge persistence counters so empty PR views can be debugged without guessing which deployed API revision processed them.
 
@@ -230,7 +230,9 @@ The API includes unauthenticated debug endpoints for rebuilding graph data:
 ```http
 POST /debug/repos/{repoID}/reindex
 POST /debug/prs/{prID}/reprocess
+POST /debug/prs/{prID}/reprocess/graph
+POST /debug/prs/{prID}/reprocess/ai
 POST /debug/prs/{prID}/sync
 ```
 
-These endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes` and `code_edges`, including test nodes and test-to-code edges, from the repository default branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, changed test nodes, and the PR's latest processing metadata snapshot. `sync` refetches GitHub PR metadata such as title, body/description, author, branch SHAs, and draft/state when a webhook was missed or an upstream copied PR description changed.
+These endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes` and `code_edges`, including test nodes and test-to-code edges, from the repository default branch HEAD. `reprocess` runs the full PR path: graph rebuild first, then AI summaries/risk. `reprocess/graph` rebuilds `pr_node_changes`, PR call edges, changed test nodes, and processing metadata, then clears stale AI fields. `reprocess/ai` requires existing `pr_node_changes` and regenerates only AI summaries, test assertion summaries, PR summary, numeric risk, model, payload, and prompt version. `sync` refetches GitHub PR metadata such as title, body/description, author, branch SHAs, and draft/state when a webhook was missed or an upstream copied PR description changed.

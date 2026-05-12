@@ -31,7 +31,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		AllowCredentials: true,
 	}))
 
-	enricher := ai.NewEnricher(cfg.AnthropicAPIKey)
+	enricher := ai.NewEnricher(cfg.GeminiAPIKey)
 
 	ghHandler := &handlers.GitHubHandler{
 		DB:            db,
@@ -84,6 +84,33 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(w).Encode(map[string]string{"status": "reprocess_started", "pr_id": prID})
+	})
+
+	r.Post("/debug/prs/{prID}/reprocess/graph", func(w http.ResponseWriter, r *http.Request) {
+		prID := chi.URLParam(r, "prID")
+		go func() {
+			bgCtx := context.Background()
+			if err := events.ReprocessPRGraph(bgCtx, db, appClient, prID); err != nil {
+				// ReprocessPRGraph records graph status details; keep the async endpoint simple.
+				return
+			}
+		}()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"status": "graph_reprocess_started", "pr_id": prID})
+	})
+
+	r.Post("/debug/prs/{prID}/reprocess/ai", func(w http.ResponseWriter, r *http.Request) {
+		prID := chi.URLParam(r, "prID")
+		go func() {
+			bgCtx := context.Background()
+			if err := events.ReprocessPRAI(bgCtx, db, appClient, enricher, prID); err != nil {
+				return
+			}
+		}()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ai_reprocess_started", "pr_id": prID})
 	})
 
 	// Sync PR metadata (title, body, author) from GitHub — useful when webhook was missed.

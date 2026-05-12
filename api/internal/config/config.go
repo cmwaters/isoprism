@@ -17,8 +17,7 @@ type Config struct {
 	GitHubClientID      string // App Client ID (starts with "Iv") — used as JWT iss
 	GitHubClientSecret  string
 
-	AnthropicAPIKey string
-	OpenAIAPIKey    string
+	GeminiAPIKey string
 
 	GitHubFeedbackToken string
 	GitHubFeedbackRepo  string
@@ -40,8 +39,7 @@ func Load() (*Config, error) {
 		GitHubWebhookSecret:    mustGetEnv("GITHUB_WEBHOOK_SECRET"),
 		GitHubClientID:         mustGetEnv("GITHUB_CLIENT_ID"),
 		GitHubClientSecret:     mustGetEnv("GITHUB_CLIENT_SECRET"),
-		AnthropicAPIKey:        getEnv("ANTHROPIC_API_KEY", ""),
-		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", ""),
+		GeminiAPIKey:           getEnv("GEMINI_API_KEY", ""),
 		GitHubFeedbackToken:    getEnv("GITHUB_FEEDBACK_TOKEN", ""),
 		GitHubFeedbackRepo:     getEnv("GITHUB_FEEDBACK_REPO", ""),
 		AdminPassword:          getEnv("ADMIN_PASSWORD", ""),

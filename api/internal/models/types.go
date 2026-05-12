@@ -116,15 +116,17 @@ type PRNodeChange struct {
 }
 
 type PRAnalysis struct {
-	ID            string     `json:"id"`
-	PullRequestID string     `json:"pull_request_id"`
-	Summary       *string    `json:"summary"`
-	NodesChanged  int        `json:"nodes_changed"`
-	RiskScore     *int       `json:"risk_score"`
-	RiskLabel     *string    `json:"risk_label"`
-	AIModel       *string    `json:"ai_model"`
-	GeneratedAt   *time.Time `json:"generated_at"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID              string          `json:"id"`
+	PullRequestID   string          `json:"pull_request_id"`
+	Summary         *string         `json:"summary"`
+	NodesChanged    int             `json:"nodes_changed"`
+	RiskScore       *int            `json:"risk_score"`
+	RiskLabel       *string         `json:"risk_label"`
+	AIModel         *string         `json:"ai_model"`
+	AnalysisPayload json.RawMessage `json:"analysis_payload"`
+	PromptVersion   *string         `json:"prompt_version"`
+	GeneratedAt     *time.Time      `json:"generated_at"`
+	CreatedAt       time.Time       `json:"created_at"`
 }
 
 // ── Queue ─────────────────────────────────────────────────────────────────────

@@ -164,8 +164,7 @@ supabase db dump --linked | grep -E "pr_check_runs|pr_review_threads|pr_review_r
 | `GITHUB_WEBHOOK_SECRET` | Railway service env | Go API → webhook validation |
 | `FRONTEND_URL` | Railway service env | Go API → default OAuth/install redirect |
 | `FRONTEND_URLS` | Railway service env | Go API → allowed CORS origins and allowed install redirect origins |
-| `ANTHROPIC_API_KEY` | Railway service env | Go API → AI enrichment for code summaries, PR change summaries, and PR analyses |
-| `OPENAI_API_KEY` | Railway service env | Go API config only; currently unused by AI call sites |
+| `GEMINI_API_KEY` | Railway service env | Go API → Gemini PR change summaries, test assertion summaries, PR summary, and numeric risk score |
 | `GITHUB_FEEDBACK_TOKEN` | Railway service env | Go API → creates GitHub issues for beta bug reports and feature requests |
 | `GITHUB_FEEDBACK_REPO` | Railway service env | Go API → `owner/repo` target for beta feedback issues |
 | `ADMIN_PASSWORD` | Railway service env | Go API → password gate for pilot admin endpoints |
