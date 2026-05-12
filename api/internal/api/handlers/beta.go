@@ -102,13 +102,12 @@ type BetaQuestionnaireAdmin struct {
 }
 
 type PilotRegistrationRequest struct {
+	SoftwareExperience   string `json:"software_experience"`
 	AIWritesMostSoftware string `json:"ai_writes_most_software"`
 	CurrentReviewTools   string `json:"current_review_tools"`
 	ReviewWorkPercent    int    `json:"review_work_percent"`
-	RoleChange           string `json:"role_change"`
 	ReviewPainPoints     string `json:"review_pain_points"`
 	AIReviewDifference   string `json:"ai_review_difference"`
-	OtherComments        string `json:"other_comments"`
 	InterestedInPilot    bool   `json:"interested_in_pilot"`
 	Name                 string `json:"name"`
 	Email                string `json:"email"`

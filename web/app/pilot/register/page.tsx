@@ -6,13 +6,12 @@ import { API_URL } from "@/lib/api";
 
 export default function PilotRegisterPage() {
   const [form, setForm] = useState({
+    software_experience: "",
     ai_writes_most_software: "",
     current_review_tools: "",
     review_work_percent: 20,
-    role_change: "",
     review_pain_points: "",
     ai_review_difference: "",
-    other_comments: "",
     interested_in_pilot: "",
     name: "",
     email: "",
@@ -57,8 +56,12 @@ export default function PilotRegisterPage() {
         </div>
 
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Review context</h2>
+          <h2 style={sectionTitleStyle}>Review Experience</h2>
           <div style={stackStyle}>
+            <Field label="How many years experience do you have with software?">
+              <Segmented value={form.software_experience} options={["None", "<2 years", "2-5 years", "6-10 years", "10+ years"]} onChange={(value) => setForm({ ...form, software_experience: value })} />
+            </Field>
+
             <Field label="Does AI write most of your software?">
               <Segmented value={form.ai_writes_most_software} options={["Yes", "No"]} onChange={(value) => setForm({ ...form, ai_writes_most_software: value })} />
             </Field>
@@ -92,11 +95,8 @@ export default function PilotRegisterPage() {
             </Field>
           </div>
 
-          <h2 style={sectionTitleStyle}>Change review workflow</h2>
-          <Textarea label="What has changed in your role as an engineer in the last 12 months: with the advent of AI?" value={form.role_change} onChange={(value) => setForm({ ...form, role_change: value })} />
           <Textarea label="What pain points, if any, do you currently face in reviewing software?" value={form.review_pain_points} onChange={(value) => setForm({ ...form, review_pain_points: value })} />
           <Textarea label="Do you review software written by AI any differently to humans, if so how?" value={form.ai_review_difference} onChange={(value) => setForm({ ...form, ai_review_difference: value })} />
-          <Textarea label="Any other comments that would be valuable on understanding code changes?" value={form.other_comments} onChange={(value) => setForm({ ...form, other_comments: value })} />
         </section>
 
         <section style={sectionStyle}>

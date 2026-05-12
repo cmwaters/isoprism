@@ -14,7 +14,7 @@ This prototype exists to test that hypothesis with pilot users, real repos, and 
 
 The prototype loop is registration-first and admin-approved.
 
-Prospective pilot users register at `/pilot/register` and answer a short form about how they review software as AI writes more code. If they are interested in the pilot, they provide name, email, working language/s, and an optional public repo link. An admin reviews registrations, sends selected users an access-code invite by email, and the user then connects GitHub, installs or authorizes the Isoprism GitHub App, selects exactly one repository, and uses Isoprism for one week while reviewing PRs in that repository.
+Prospective pilot users register at `/pilot/register` and answer a short form about their software experience, how they review code, how much of their work is spent reviewing code, and whether AI changes how they review software. If they are interested in the pilot, they provide name, email, working language/s, and an optional public repo link. An admin reviews registrations, sends selected users an access-code invite by email, and the user then connects GitHub, installs or authorizes the Isoprism GitHub App, selects exactly one repository, and uses Isoprism for one week while reviewing PRs in that repository.
 
 During the trial week, the tester should be prompted to request features and report bugs whenever they hit friction. At the end of the week, Isoprism should ask them to complete a short questionnaire about whether the graph view helped them review PRs faster and with more confidence.
 
