@@ -117,12 +117,17 @@ type PilotRegistrationRequest struct {
 }
 
 type PilotReviewRequest struct {
-	FasterRating       *int   `json:"faster_rating"`
-	RiskClarityRating  *int   `json:"risk_clarity_rating"`
-	ConfusingOrMissing string `json:"confusing_or_missing"`
-	BugsHit            string `json:"bugs_hit"`
-	BuildNext          string `json:"build_next"`
-	WouldKeepUsing     string `json:"would_keep_using"`
+	FasterRating          *int   `json:"faster_rating"`
+	RiskClarityRating     *int   `json:"risk_clarity_rating"`
+	ConfusingOrMissing    string `json:"confusing_or_missing"`
+	BugsHit               string `json:"bugs_hit"`
+	BuildNext             string `json:"build_next"`
+	WouldKeepUsing        string `json:"would_keep_using"`
+	KeepUsingReason       string `json:"keep_using_reason"`
+	MostImportantFeatures string `json:"most_important_features"`
+	FairCost              string `json:"fair_cost"`
+	NotKeepUsingReason    string `json:"not_keep_using_reason"`
+	SwitchRequirements    string `json:"switch_requirements"`
 }
 
 type AcceptPilotInviteRequest struct {

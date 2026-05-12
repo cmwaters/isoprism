@@ -15,6 +15,11 @@ export default function PilotReviewPage() {
     bugs_hit: "",
     build_next: "",
     would_keep_using: "",
+    keep_using_reason: "",
+    most_important_features: "",
+    fair_cost: "",
+    not_keep_using_reason: "",
+    switch_requirements: "",
   });
   const [status, setStatus] = useState<"idle" | "submitting" | "submitted" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -51,6 +56,46 @@ export default function PilotReviewPage() {
         </div>
 
         <section style={sectionStyle}>
+          <Field label="Would you keep using Isoprism for PR reviews over your existing flow?">
+            <div style={buttonRowStyle}>
+              {(["yes", "no"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  style={form.would_keep_using === value ? selectedOptionStyle : optionStyle}
+                  onClick={() => setForm({ ...form, would_keep_using: value })}
+                >
+                  {value === "yes" ? "Yes" : "No"}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          {form.would_keep_using === "no" && (
+            <>
+              <Field label="Why not?">
+                <textarea style={textareaStyle} value={form.not_keep_using_reason} onChange={(event) => setForm({ ...form, not_keep_using_reason: event.target.value })} />
+              </Field>
+              <Field label="What would it take for you to switch from your current flow?">
+                <textarea style={textareaStyle} value={form.switch_requirements} onChange={(event) => setForm({ ...form, switch_requirements: event.target.value })} />
+              </Field>
+            </>
+          )}
+
+          {form.would_keep_using === "yes" && (
+            <>
+              <Field label="Why?">
+                <textarea style={textareaStyle} value={form.keep_using_reason} onChange={(event) => setForm({ ...form, keep_using_reason: event.target.value })} />
+              </Field>
+              <Field label="What do you think are the most important features that should be added?">
+                <textarea style={textareaStyle} value={form.most_important_features} onChange={(event) => setForm({ ...form, most_important_features: event.target.value })} />
+              </Field>
+              <Field label="If this were a paid product, what would you consider a fair cost?">
+                <input style={inputStyle} value={form.fair_cost} onChange={(event) => setForm({ ...form, fair_cost: event.target.value })} />
+              </Field>
+            </>
+          )}
+
           <h2 style={sectionTitleStyle}>Review impact</h2>
           <div style={twoColumnStyle}>
             <Field label="Understood PRs faster (1-5)">
@@ -70,9 +115,6 @@ export default function PilotReviewPage() {
           </Field>
           <Field label="What should we build next?">
             <textarea style={textareaStyle} value={form.build_next} onChange={(event) => setForm({ ...form, build_next: event.target.value })} />
-          </Field>
-          <Field label="Would you keep using Isoprism for PR review?">
-            <input style={inputStyle} value={form.would_keep_using} onChange={(event) => setForm({ ...form, would_keep_using: event.target.value })} />
           </Field>
         </section>
 
@@ -104,6 +146,9 @@ const sectionTitleStyle: React.CSSProperties = { margin: 0, color: "#111111", fo
 const twoColumnStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 };
 const fieldStyle: React.CSSProperties = { display: "grid", gap: 7 };
 const labelStyle: React.CSSProperties = { color: "#111111", fontSize: 13, fontWeight: 700, lineHeight: 1.35 };
+const buttonRowStyle: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
+const optionStyle: React.CSSProperties = { height: 36, borderWidth: 1, borderStyle: "solid", borderColor: "#D4D4D4", borderRadius: 6, background: "#FFF", color: "#111", padding: "0 14px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
+const selectedOptionStyle: React.CSSProperties = { ...optionStyle, borderColor: "#111", background: "#111", color: "#FFF" };
 const inputStyle: React.CSSProperties = { height: 42, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 11px", fontSize: 14 };
 const textareaStyle: React.CSSProperties = { ...inputStyle, height: 92, padding: 11, resize: "vertical", lineHeight: 1.45 };
 const footerStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" };
