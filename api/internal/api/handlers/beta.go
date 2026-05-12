@@ -117,14 +117,19 @@ type PilotRegistrationRequest struct {
 }
 
 type PilotReviewRequest struct {
-	FasterRating       *int   `json:"faster_rating,omitempty"`
-	RiskClarityRating  *int   `json:"risk_clarity_rating,omitempty"`
-	ConfusingOrMissing string `json:"confusing_or_missing,omitempty"`
-	BugsHit            string `json:"bugs_hit,omitempty"`
-	BuildNext          string `json:"build_next,omitempty"`
-	WouldKeepUsing     string `json:"would_keep_using,omitempty"`
-	GeneralComments    string `json:"general_comments"`
-	OpenToFollowUp     string `json:"open_to_follow_up"`
+	FasterRating          *int   `json:"faster_rating,omitempty"`
+	RiskClarityRating     *int   `json:"risk_clarity_rating,omitempty"`
+	ConfusingOrMissing    string `json:"confusing_or_missing,omitempty"`
+	BugsHit               string `json:"bugs_hit,omitempty"`
+	BuildNext             string `json:"build_next,omitempty"`
+	WouldKeepUsing        string `json:"would_keep_using,omitempty"`
+	KeepUsingReason       string `json:"keep_using_reason"`
+	MostImportantFeatures string `json:"most_important_features"`
+	FairCost              string `json:"fair_cost"`
+	NotKeepUsingReason    string `json:"not_keep_using_reason"`
+	SwitchRequirements    string `json:"switch_requirements"`
+	GeneralComments       string `json:"general_comments"`
+	OpenToFollowUp        string `json:"open_to_follow_up"`
 }
 
 type PilotReviewInfo struct {

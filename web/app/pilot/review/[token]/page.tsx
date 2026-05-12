@@ -14,6 +14,12 @@ export default function PilotReviewPage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
   const [form, setForm] = useState({
+    would_keep_using: "",
+    keep_using_reason: "",
+    most_important_features: "",
+    fair_cost: "",
+    not_keep_using_reason: "",
+    switch_requirements: "",
     general_comments: "",
     open_to_follow_up: "",
   });
@@ -69,6 +75,46 @@ export default function PilotReviewPage() {
         </div>
 
         <section style={sectionStyle}>
+          <Field label="Would you keep using Isoprism for PR reviews over your existing flow?">
+            <div style={buttonRowStyle}>
+              {(["yes", "no"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  style={form.would_keep_using === value ? selectedOptionStyle : optionStyle}
+                  onClick={() => setForm({ ...form, would_keep_using: value })}
+                >
+                  {value === "yes" ? "Yes" : "No"}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          {form.would_keep_using === "no" && (
+            <>
+              <Field label="Why not?">
+                <textarea style={textareaStyle} value={form.not_keep_using_reason} onChange={(event) => setForm({ ...form, not_keep_using_reason: event.target.value })} />
+              </Field>
+              <Field label="What would it take for you to switch from your current flow?">
+                <textarea style={textareaStyle} value={form.switch_requirements} onChange={(event) => setForm({ ...form, switch_requirements: event.target.value })} />
+              </Field>
+            </>
+          )}
+
+          {form.would_keep_using === "yes" && (
+            <>
+              <Field label="Why?">
+                <textarea style={textareaStyle} value={form.keep_using_reason} onChange={(event) => setForm({ ...form, keep_using_reason: event.target.value })} />
+              </Field>
+              <Field label="What do you think are the most important features that should be added?">
+                <textarea style={textareaStyle} value={form.most_important_features} onChange={(event) => setForm({ ...form, most_important_features: event.target.value })} />
+              </Field>
+              <Field label="If this were a paid product, what would you consider a fair cost?">
+                <input style={inputStyle} value={form.fair_cost} onChange={(event) => setForm({ ...form, fair_cost: event.target.value })} />
+              </Field>
+            </>
+          )}
+
           <Field label="Do you have any other general comments about the pilot you would like to share?">
             <textarea style={textareaStyle} value={form.general_comments} onChange={(event) => setForm({ ...form, general_comments: event.target.value })} />
           </Field>
