@@ -547,8 +547,8 @@ function NodeChangeRow({ node, onClick }: { node: GraphNode; onClick: () => void
 
 function FileChangeRow({ file, onClick }: { file: PRFileDiff; onClick: () => void }) {
   const fileName = file.previous_filename
-    ? `${basename(file.previous_filename)} -> ${basename(file.filename)}`
-    : basename(file.filename);
+    ? `${fileTitle(file.previous_filename)} -> ${fileTitle(file.filename)}`
+    : fileTitle(file.filename);
   const filePath = file.previous_filename
     ? `${file.previous_filename} -> ${file.filename}`
     : file.filename;
@@ -570,6 +570,15 @@ function FileChangeRow({ file, onClick }: { file: PRFileDiff; onClick: () => voi
 
 function basename(path: string): string {
   return path.split("/").pop() || path;
+}
+
+function fileTitle(path: string): string {
+  const name = basename(path).replace(/\.[^.]+$/, "");
+  return name
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 }
 
 export function ComponentChangePanel({
@@ -812,7 +821,7 @@ function NodeChangeDetailPanel({
 
       <div style={{ marginTop: 6 }}>
         <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>
-          Diff
+          Code
         </p>
         <ComponentCodeBlock node={node} codeForNode={codeForNode} error={errorForNode} loading={loading} />
       </div>
@@ -1331,7 +1340,7 @@ function FullComponentDiffViewer({
 
   return (
     <div style={{
-      background: "#DCDCDC",
+      background: "transparent",
       color: "#222222",
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: 11,
@@ -1460,7 +1469,7 @@ function UnifiedDiffViewer({ patch }: { patch: string }) {
 
   return (
     <pre style={{
-      background: "#DCDCDC",
+      background: "transparent",
       border: "none",
       borderRadius: 0,
       color: "#222222",

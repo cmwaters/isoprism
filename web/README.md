@@ -167,7 +167,9 @@ The PR overview groups changes into four sections after the rendered description
 - **Documentation changes**: Markdown files from `files[]`.
 - **Other changes**: remaining file diffs not captured by the graph, tests, or docs.
 
-Clicking a graph/test row opens a resizable middle component panel between the PR overview and the graph. The panel shows the component overview first and the diff/code view below it, and opening or resizing it refits the graph. Selecting a test row temporarily centers the graph on that test entrypoint and the production nodes returned with matching `tests[]` references; selecting any production component returns the canvas to the normal PR diff graph. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
+Documentation and other file rows render the file basename as a human title without the extension, for example `3003-blockapi-stop-deadlock.md` becomes `3003 Blockapi Stop Deadlock`.
+
+Clicking a graph/test row opens a resizable middle component panel between the PR overview and the graph. The panel shows the component overview first and the `Code` section below it. The code/diff block itself is transparent so it inherits the panel background while added and removed lines remain highlighted. Opening or resizing the panel refits the graph. Selecting a test row temporarily centers the graph on that test entrypoint and the production nodes returned with matching `tests[]` references; selecting any production component returns the canvas to the normal PR diff graph. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
 
 ## API contract used by the code panel
 
@@ -228,6 +230,7 @@ The API includes unauthenticated debug endpoints for rebuilding graph data:
 ```http
 POST /debug/repos/{repoID}/reindex
 POST /debug/prs/{prID}/reprocess
+POST /debug/prs/{prID}/sync
 ```
 
-Both endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes` and `code_edges`, including test nodes and test-to-code edges, from the repository default branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, changed test nodes, and the PR's latest processing metadata snapshot.
+These endpoints are idempotent and safe to call during development. `reindex` rebuilds `code_nodes` and `code_edges`, including test nodes and test-to-code edges, from the repository default branch HEAD. `reprocess` rebuilds `pr_node_changes`, PR call edges, changed test nodes, and the PR's latest processing metadata snapshot. `sync` refetches GitHub PR metadata such as title, body/description, author, branch SHAs, and draft/state when a webhook was missed or an upstream copied PR description changed.
