@@ -1562,7 +1562,6 @@ function RelationSection({
                   )}
                 </span>
               </div>
-              <DiffPills node={n} compact />
             </button>
           );
         })}
