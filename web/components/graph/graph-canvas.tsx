@@ -466,6 +466,10 @@ function collapseRenamedGraphNodes(graph: UnifiedGraph): UnifiedGraph {
   };
 }
 
+function sameTestEntry(test: APIGraphNode, ref: { full_name: string; file_path: string }): boolean {
+  return test.full_name === ref.full_name && test.file_path === ref.file_path;
+}
+
 function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | null): UnifiedGraph {
   if (!isPRGraph(graph) || !testNode) return graph;
 
@@ -495,13 +499,14 @@ function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | nul
     }));
   const reachableTestNodeIDs = new Set(testNodes.map((node) => node.id));
   const testContext = graph.test_context ?? [];
+  const directTargets = graph.nodes.filter((node) => (node.tests ?? []).some((test) => sameTestEntry(testNode, test)));
   const edgeTargetPool = [...graph.nodes, ...testContext];
   const edgeTargets = edgeTargetPool.filter((node) => graph.edges.some((edge) => reachableTestNodeIDs.has(edge.caller_id) && edge.callee_id === node.id));
-  const targetByID = new Map(edgeTargets.map((node) => [node.id, node]));
+  const targetByID = new Map([...directTargets, ...edgeTargets].map((node) => [node.id, node]));
   const targets = Array.from(targetByID.values());
   const nodeIDs = new Set([...reachableTestNodeIDs, ...targets.map((node) => node.id)]);
   const edges = graph.edges
-    .filter((edge) => reachableTestNodeIDs.has(edge.caller_id) && nodeIDs.has(edge.callee_id))
+    .filter((edge) => nodeIDs.has(edge.caller_id) && nodeIDs.has(edge.callee_id))
     .map((edge) => {
       const caller = testChangeByID.get(edge.caller_id);
       return caller?.change_type === "added" ? { ...edge, change_type: "added" as const } : edge;
