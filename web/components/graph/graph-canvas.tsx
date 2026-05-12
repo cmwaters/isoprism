@@ -282,10 +282,10 @@ const HEX_X = 360;
 const HEX_Y = 300;
 const PANEL_MIN_WIDTH = 260;
 const PANEL_MAX_WIDTH = 620;
-const PANEL_DEFAULT_WIDTH = 320;
+const PANEL_DEFAULT_WIDTH = 370;
 const COMPONENT_PANEL_MIN_WIDTH = 320;
 const COMPONENT_PANEL_MAX_WIDTH = 720;
-const COMPONENT_PANEL_DEFAULT_WIDTH = 380;
+const COMPONENT_PANEL_DEFAULT_WIDTH = 430;
 
 export function hexGridLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
   type Hex = { q: number; r: number; ring: number; x: number; y: number };
