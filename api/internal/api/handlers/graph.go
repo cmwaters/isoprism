@@ -70,6 +70,30 @@ func edgeChangeTypePtr(changeType string) *string {
 	return &changeType
 }
 
+func markEdgeChangeType(edge graphEdgeRow, state map[string]bool, changedNames map[string]bool) string {
+	if !changedNames[edge.callerName] && !changedNames[edge.calleeName] {
+		return "unchanged"
+	}
+	switch {
+	case state["base"] && !state["head"]:
+		return "deleted"
+	case !state["base"] && state["head"]:
+		return "added"
+	default:
+		return "unchanged"
+	}
+}
+
+func relevantProductionEdge(edge graphEdgeRow, changedNames map[string]bool) bool {
+	if edge.callerIsTest || edge.calleeIsTest {
+		return false
+	}
+	if edge.changeType == "added" || edge.changeType == "deleted" {
+		return true
+	}
+	return changedNames[edge.callerName] || changedNames[edge.calleeName]
+}
+
 func isTestGraphNode(node models.GraphNode) bool {
 	if node.IsTest {
 		return true
@@ -829,6 +853,10 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defaultBranchLookupNames := append([]string{}, productionChangedFullNames...)
+	productionChangedNameSet := map[string]bool{}
+	for _, fn := range productionChangedFullNames {
+		productionChangedNameSet[fn] = true
+	}
 	changedIDToOldFullName := map[string]string{}
 	for _, id := range changedIDs {
 		c := changedSet[id]
@@ -836,6 +864,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		changedIDToOldFullName[id] = *c.oldFullName
+		productionChangedNameSet[*c.oldFullName] = true
 		defaultBranchLookupNames = append(defaultBranchLookupNames, *c.oldFullName)
 	}
 
@@ -919,14 +948,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 			eRows.Close()
 			for i := range allEdges {
 				state := edgeCommitState[allEdges[i].callerName+"|"+allEdges[i].calleeName]
-				switch {
-				case state["base"] && !state["head"]:
-					allEdges[i].changeType = "deleted"
-				case !state["base"] && state["head"]:
-					allEdges[i].changeType = "added"
-				default:
-					allEdges[i].changeType = "unchanged"
-				}
+				allEdges[i].changeType = markEdgeChangeType(allEdges[i], state, productionChangedNameSet)
 			}
 		}
 	}
@@ -941,7 +963,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	productionEdges := make([]graphEdgeRow, 0, len(allEdges))
 	for _, edge := range allEdges {
-		if edge.callerIsTest || edge.calleeIsTest {
+		if !relevantProductionEdge(edge, productionChangedNameSet) {
 			continue
 		}
 		productionEdges = append(productionEdges, edge)

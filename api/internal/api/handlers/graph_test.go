@@ -99,6 +99,37 @@ func TestAppendTestFocusEdgesKeepsChangedTestHelpersReachable(t *testing.T) {
 	}
 }
 
+func TestEdgeChangesOnlyApplyToChangedProductionEndpoints(t *testing.T) {
+	changedNames := map[string]bool{
+		"rpc/grpc:coregrpc.BlockAPI.Stop": true,
+	}
+	baseOnly := map[string]bool{"base": true}
+
+	gotChanged := markEdgeChangeType(graphEdgeRow{
+		callerName: "rpc/grpc:coregrpc.BlockAPI.Stop",
+		calleeName: "types:types.EventBus.Unsubscribe",
+	}, baseOnly, changedNames)
+	if gotChanged != "deleted" {
+		t.Fatalf("edge touching changed node = %q, want deleted", gotChanged)
+	}
+
+	gotContext := markEdgeChangeType(graphEdgeRow{
+		callerName: "rpc/client/local:local.Local.Unsubscribe",
+		calleeName: "types:types.EventBus.Unsubscribe",
+	}, baseOnly, changedNames)
+	if gotContext != "unchanged" {
+		t.Fatalf("context edge = %q, want unchanged", gotContext)
+	}
+
+	if relevantProductionEdge(graphEdgeRow{
+		callerName: "rpc/client/local:local.Local.Unsubscribe",
+		calleeName: "types:types.EventBus.Unsubscribe",
+		changeType: "unchanged",
+	}, changedNames) {
+		t.Fatalf("unchanged context-to-context edge should not expand the PR graph")
+	}
+}
+
 func hasGraphEdge(edges []models.GraphEdge, callerID, calleeID string) bool {
 	for _, edge := range edges {
 		if edge.CallerID == callerID && edge.CalleeID == calleeID {
