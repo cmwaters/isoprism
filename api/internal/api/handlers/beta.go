@@ -125,10 +125,8 @@ type PilotReviewRequest struct {
 	WouldKeepUsing        string `json:"would_keep_using,omitempty"`
 	KeepUsingReason       string `json:"keep_using_reason"`
 	MostImportantFeatures string `json:"most_important_features"`
-	FairCost              string `json:"fair_cost"`
 	NotKeepUsingReason    string `json:"not_keep_using_reason"`
 	SwitchRequirements    string `json:"switch_requirements"`
-	GeneralComments       string `json:"general_comments"`
 	OpenToFollowUp        string `json:"open_to_follow_up"`
 }
 

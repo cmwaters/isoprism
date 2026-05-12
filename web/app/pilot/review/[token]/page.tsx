@@ -17,10 +17,8 @@ export default function PilotReviewPage() {
     would_keep_using: "",
     keep_using_reason: "",
     most_important_features: "",
-    fair_cost: "",
     not_keep_using_reason: "",
     switch_requirements: "",
-    general_comments: "",
     open_to_follow_up: "",
   });
   const [reviewInfo, setReviewInfo] = useState<ReviewInfo | null>(null);
@@ -109,15 +107,8 @@ export default function PilotReviewPage() {
               <Field label="What do you think are the most important features that should be added?">
                 <textarea style={textareaStyle} value={form.most_important_features} onChange={(event) => setForm({ ...form, most_important_features: event.target.value })} />
               </Field>
-              <Field label="If this were a paid product, what would you consider a fair cost?">
-                <input style={inputStyle} value={form.fair_cost} onChange={(event) => setForm({ ...form, fair_cost: event.target.value })} />
-              </Field>
             </>
           )}
-
-          <Field label="Do you have any other general comments about the pilot you would like to share?">
-            <textarea style={textareaStyle} value={form.general_comments} onChange={(event) => setForm({ ...form, general_comments: event.target.value })} />
-          </Field>
 
           <Field label="Would you be open to us reaching out to get a better understanding of your experience or for trialling future versions?">
             <div style={buttonRowStyle}>
