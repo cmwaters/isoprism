@@ -393,18 +393,16 @@ func resolveGoFieldChainCall(src []byte, fun *sitter.Node, index ResolverIndex, 
 	return known(methodFullName, index.NodeByName)
 }
 
-func repoRelativeImportSuffix(importPath, selector string) []string {
+func repoRelativeImportDirs(importPath string) []string {
 	cleanPath := filepath.ToSlash(strings.Trim(importPath, `"`))
-	pkg := filepath.Base(cleanPath)
 	suffixes := []string{
-		cleanPath + ":" + pkg + "." + selector,
-		"/" + cleanPath + ":" + pkg + "." + selector,
+		cleanPath,
 	}
 	parts := strings.Split(cleanPath, "/")
 	for i := range parts {
 		dir := strings.Join(parts[i:], "/")
 		if dir != "" {
-			suffixes = append(suffixes, dir+":"+pkg+"."+selector)
+			suffixes = append(suffixes, dir)
 		}
 	}
 	return suffixes

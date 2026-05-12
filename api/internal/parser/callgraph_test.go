@@ -126,6 +126,30 @@ func (b *EventBus) Unsubscribe(ctx context.Context, subscriber string, query str
 	}
 }
 
+func TestGoImportedSelectorResolvesWhenDeclaredPackageDiffersFromImportBase(t *testing.T) {
+	files := map[string][]byte{
+		"node/node.go": []byte(`package node
+
+import grpccore "github.com/cometbft/cometbft/rpc/grpc"
+
+func startRPC() {
+	grpccore.StartGRPCServer()
+}
+`),
+		"rpc/grpc/client_server.go": []byte(`package coregrpc
+
+func StartGRPCServer() {}
+`),
+	}
+	nodeByName := nodesByName(files)
+	index := BuildResolverIndex(files, nodeByName)
+	edges := ExtractCallEdgesWithResolver(files["node/node.go"], "node/node.go", index)
+
+	if !hasEdge(edges, "node:node.startRPC", "rpc/grpc:coregrpc.StartGRPCServer") {
+		t.Fatalf("expected imported selector edge despite package/import basename mismatch, got %#v", edges)
+	}
+}
+
 func TestGoReceiverCallResolvesFromParameterType(t *testing.T) {
 	files := map[string][]byte{
 		"service/service.go": []byte(`package service

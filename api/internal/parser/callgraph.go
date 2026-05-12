@@ -134,22 +134,41 @@ func resolveGoCall(src []byte, fun *sitter.Node, prefix string, imports map[stri
 
 func resolveImportedGoSelector(importPath, selector string, nodeByName map[string]bool) string {
 	cleanPath := strings.Trim(importPath, `"`)
-	dir := filepath.ToSlash(cleanPath)
-	pkg := filepath.Base(dir)
-	suffixes := repoRelativeImportSuffix(dir, selector)
-	suffixes = append(suffixes, dir+":"+pkg+"."+selector)
+	dirs := repoRelativeImportDirs(cleanPath)
 	var match string
 	for name := range nodeByName {
-		for _, suffix := range suffixes {
-			if strings.HasSuffix(name, suffix) {
-				if match != "" && match != name {
-					return ""
-				}
-				match = name
-			}
+		if !importedSelectorMatches(name, dirs, selector) {
+			continue
 		}
+		if match != "" && match != name {
+			return ""
+		}
+		match = name
 	}
 	return match
+}
+
+func importedSelectorMatches(fullName string, importDirs []string, selector string) bool {
+	dir, qualifiedName, ok := strings.Cut(fullName, ":")
+	if !ok {
+		return false
+	}
+	if !goImportDirMatches(dir, importDirs) {
+		return false
+	}
+	if !strings.HasSuffix(qualifiedName, "."+selector) {
+		return false
+	}
+	return strings.Count(qualifiedName, ".") == 1
+}
+
+func goImportDirMatches(nodeDir string, importDirs []string) bool {
+	for _, dir := range importDirs {
+		if nodeDir == dir || strings.HasSuffix(nodeDir, "/"+dir) {
+			return true
+		}
+	}
+	return false
 }
 
 func goImports(src []byte, root *sitter.Node) map[string]string {
