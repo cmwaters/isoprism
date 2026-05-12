@@ -117,17 +117,19 @@ type PilotRegistrationRequest struct {
 }
 
 type PilotReviewRequest struct {
-	FasterRating          *int   `json:"faster_rating"`
-	RiskClarityRating     *int   `json:"risk_clarity_rating"`
-	ConfusingOrMissing    string `json:"confusing_or_missing"`
-	BugsHit               string `json:"bugs_hit"`
-	BuildNext             string `json:"build_next"`
-	WouldKeepUsing        string `json:"would_keep_using"`
-	KeepUsingReason       string `json:"keep_using_reason"`
-	MostImportantFeatures string `json:"most_important_features"`
-	FairCost              string `json:"fair_cost"`
-	NotKeepUsingReason    string `json:"not_keep_using_reason"`
-	SwitchRequirements    string `json:"switch_requirements"`
+	FasterRating       *int   `json:"faster_rating,omitempty"`
+	RiskClarityRating  *int   `json:"risk_clarity_rating,omitempty"`
+	ConfusingOrMissing string `json:"confusing_or_missing,omitempty"`
+	BugsHit            string `json:"bugs_hit,omitempty"`
+	BuildNext          string `json:"build_next,omitempty"`
+	WouldKeepUsing     string `json:"would_keep_using,omitempty"`
+	GeneralComments    string `json:"general_comments"`
+	OpenToFollowUp     string `json:"open_to_follow_up"`
+}
+
+type PilotReviewInfo struct {
+	Name       string `json:"name"`
+	IssueCount int    `json:"issue_count"`
 }
 
 type AcceptPilotInviteRequest struct {
@@ -507,6 +509,29 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 		"status": "sent",
 		"link":   link,
 	})
+}
+
+// GET /api/v1/pilot/review/{token}
+func (h *BetaHandler) GetPilotReview(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(chi.URLParam(r, "token"))
+	if token == "" {
+		http.Error(w, "review token is required", http.StatusBadRequest)
+		return
+	}
+
+	var info PilotReviewInfo
+	err := h.DB.QueryRow(r.Context(), `
+		select name, issue_count
+		from pilot_users
+		where review_token = $1
+	`, token).Scan(&info.Name, &info.IssueCount)
+	if err != nil {
+		http.Error(w, "review link not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
 }
 
 // POST /api/v1/pilot/review/{token}

@@ -68,6 +68,7 @@ The API routes are:
 
 ```http
 POST /api/v1/pilot/register
+GET  /api/v1/pilot/review/{token}
 POST /api/v1/pilot/review/{token}
 POST /api/v1/pilot/invites/{token}/accept
 GET  /api/v1/admin/pilot/users

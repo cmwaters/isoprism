@@ -160,6 +160,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 	r.Post("/api/v1/admin/pilot/users/{testerID}/review-email", betaHandler.SendReviewEmail)
 	r.Post("/api/v1/pilot/register", betaHandler.RegisterPilotInterest)
 	r.Post("/api/v1/pilot/invites/{token}/accept", betaHandler.AcceptPilotInvite)
+	r.Get("/api/v1/pilot/review/{token}", betaHandler.GetPilotReview)
 	r.Post("/api/v1/pilot/review/{token}", betaHandler.SubmitPilotReview)
 
 	// Authenticated routes

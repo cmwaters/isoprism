@@ -1,28 +1,44 @@
 "use client";
 
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/api";
 import { useParams } from "next/navigation";
+
+type ReviewInfo = {
+  name: string;
+  issue_count: number;
+};
 
 export default function PilotReviewPage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
   const [form, setForm] = useState({
-    faster_rating: "",
-    risk_clarity_rating: "",
-    confusing_or_missing: "",
-    bugs_hit: "",
-    build_next: "",
-    would_keep_using: "",
-    keep_using_reason: "",
-    most_important_features: "",
-    fair_cost: "",
-    not_keep_using_reason: "",
-    switch_requirements: "",
+    general_comments: "",
+    open_to_follow_up: "",
   });
+  const [reviewInfo, setReviewInfo] = useState<ReviewInfo | null>(null);
   const [status, setStatus] = useState<"idle" | "submitting" | "submitted" | "error">("idle");
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadReviewInfo() {
+      if (!token) return;
+      try {
+        const response = await fetch(`${API_URL}/api/v1/pilot/review/${encodeURIComponent(token)}`);
+        if (!response.ok) return;
+        const result = await response.json() as ReviewInfo;
+        if (!cancelled) setReviewInfo(result);
+      } catch {
+        // Keep the form usable even if the review metadata cannot be loaded.
+      }
+    }
+    void loadReviewInfo();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -32,11 +48,7 @@ export default function PilotReviewPage() {
       const response = await fetch(`${API_URL}/api/v1/pilot/review/${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          faster_rating: form.faster_rating ? Number(form.faster_rating) : null,
-          risk_clarity_rating: form.risk_clarity_rating ? Number(form.risk_clarity_rating) : null,
-        }),
+        body: JSON.stringify(form),
       });
       if (!response.ok) throw new Error(await response.text());
       setStatus("submitted");
@@ -52,69 +64,28 @@ export default function PilotReviewPage() {
       <form style={formStyle} onSubmit={submit}>
         <div style={headerBlockStyle}>
           <div style={eyebrowStyle}>Pilot review</div>
-          <h1 style={titleStyle}>Share your review experience</h1>
+          <h1 style={titleStyle}>Review your experience</h1>
+          <p style={copyStyle}>{introCopy(reviewInfo)}</p>
         </div>
 
         <section style={sectionStyle}>
-          <Field label="Would you keep using Isoprism for PR reviews over your existing flow?">
+          <Field label="Do you have any other general comments about the pilot you would like to share?">
+            <textarea style={textareaStyle} value={form.general_comments} onChange={(event) => setForm({ ...form, general_comments: event.target.value })} />
+          </Field>
+
+          <Field label="Would you be open to us reaching out to get a better understanding of your experience or for trialling future versions?">
             <div style={buttonRowStyle}>
               {(["yes", "no"] as const).map((value) => (
                 <button
                   key={value}
                   type="button"
-                  style={form.would_keep_using === value ? selectedOptionStyle : optionStyle}
-                  onClick={() => setForm({ ...form, would_keep_using: value })}
+                  style={form.open_to_follow_up === value ? selectedOptionStyle : optionStyle}
+                  onClick={() => setForm({ ...form, open_to_follow_up: value })}
                 >
                   {value === "yes" ? "Yes" : "No"}
                 </button>
               ))}
             </div>
-          </Field>
-
-          {form.would_keep_using === "no" && (
-            <>
-              <Field label="Why not?">
-                <textarea style={textareaStyle} value={form.not_keep_using_reason} onChange={(event) => setForm({ ...form, not_keep_using_reason: event.target.value })} />
-              </Field>
-              <Field label="What would it take for you to switch from your current flow?">
-                <textarea style={textareaStyle} value={form.switch_requirements} onChange={(event) => setForm({ ...form, switch_requirements: event.target.value })} />
-              </Field>
-            </>
-          )}
-
-          {form.would_keep_using === "yes" && (
-            <>
-              <Field label="Why?">
-                <textarea style={textareaStyle} value={form.keep_using_reason} onChange={(event) => setForm({ ...form, keep_using_reason: event.target.value })} />
-              </Field>
-              <Field label="What do you think are the most important features that should be added?">
-                <textarea style={textareaStyle} value={form.most_important_features} onChange={(event) => setForm({ ...form, most_important_features: event.target.value })} />
-              </Field>
-              <Field label="If this were a paid product, what would you consider a fair cost?">
-                <input style={inputStyle} value={form.fair_cost} onChange={(event) => setForm({ ...form, fair_cost: event.target.value })} />
-              </Field>
-            </>
-          )}
-
-          <h2 style={sectionTitleStyle}>Review impact</h2>
-          <div style={twoColumnStyle}>
-            <Field label="Understood PRs faster (1-5)">
-              <input style={inputStyle} type="number" min={1} max={5} value={form.faster_rating} onChange={(event) => setForm({ ...form, faster_rating: event.target.value })} />
-            </Field>
-            <Field label="Review risk clearer (1-5)">
-              <input style={inputStyle} type="number" min={1} max={5} value={form.risk_clarity_rating} onChange={(event) => setForm({ ...form, risk_clarity_rating: event.target.value })} />
-            </Field>
-          </div>
-
-          <h2 style={sectionTitleStyle}>Pilot notes</h2>
-          <Field label="What was confusing or missing?">
-            <textarea style={textareaStyle} value={form.confusing_or_missing} onChange={(event) => setForm({ ...form, confusing_or_missing: event.target.value })} />
-          </Field>
-          <Field label="What bugs did you hit?">
-            <textarea style={textareaStyle} value={form.bugs_hit} onChange={(event) => setForm({ ...form, bugs_hit: event.target.value })} />
-          </Field>
-          <Field label="What should we build next?">
-            <textarea style={textareaStyle} value={form.build_next} onChange={(event) => setForm({ ...form, build_next: event.target.value })} />
           </Field>
         </section>
 
@@ -125,6 +96,14 @@ export default function PilotReviewPage() {
       </form>
     </main>
   );
+}
+
+function introCopy(reviewInfo: ReviewInfo | null) {
+  if (!reviewInfo) {
+    return "Thanks for being an early tester. We'd like to ask a few questions about your experience so far.";
+  }
+  const issueLabel = reviewInfo.issue_count === 1 ? "issue" : "issues";
+  return `Thanks for being an early tester ${reviewInfo.name}. You reported ${reviewInfo.issue_count} ${issueLabel}. We'd like to ask a few questions about your experience so far.`;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -141,9 +120,8 @@ const formStyle: React.CSSProperties = { width: "min(820px, 100%)", margin: "0 a
 const headerBlockStyle: React.CSSProperties = { padding: "6px 0 4px" };
 const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 7 };
 const titleStyle: React.CSSProperties = { margin: 0, fontSize: 24, lineHeight: 1.18, fontWeight: 750 };
+const copyStyle: React.CSSProperties = { margin: "8px 0 0", color: "#666", fontSize: 14, lineHeight: 1.5 };
 const sectionStyle: React.CSSProperties = { border: "1px solid #D4D4D4", borderRadius: 8, background: "#FFFFFF", padding: 18, display: "grid", gap: 12 };
-const sectionTitleStyle: React.CSSProperties = { margin: 0, color: "#111111", fontSize: 15, fontWeight: 750 };
-const twoColumnStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 };
 const fieldStyle: React.CSSProperties = { display: "grid", gap: 7 };
 const labelStyle: React.CSSProperties = { color: "#111111", fontSize: 13, fontWeight: 700, lineHeight: 1.35 };
 const buttonRowStyle: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
