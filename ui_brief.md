@@ -305,12 +305,12 @@ Submission should create a GitHub issue with the tester user ID, repo, PR, selec
 At the end of the seven-day trial, show a short questionnaire prompt. It may be a blocking page or a dismissible prompt during prototype operation, but the copy should make clear that the trial feedback is now due.
 
 **Fields:**
-- Rating: "Isoprism helped me understand PRs faster"
-- Rating: "The graph made review risk clearer"
-- Short answer: "What was confusing or missing?"
-- Short answer: "What bugs did you hit?"
-- Short answer: "What should we build next?"
-- Choice: "Would you keep using Isoprism for PR review?"
+- Choice: "Would you keep using Isoprism for PR reviews over your existing flow?"
+- If yes, short answer: "Why? Tell us what you liked about it"
+- If yes, short answer: "What do you think is missing? What would you like to be able to do but can't?"
+- If no, short answer: "Why not?"
+- If no, short answer: "What would it take for you to switch from your current flow?"
+- Choice: "Would you be open to us reaching out to get a better understanding of your experience or for trialling future versions?"
 
 ---
 

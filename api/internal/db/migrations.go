@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const RequiredMigrationVersion = "017"
+const RequiredMigrationVersion = "018"
 
 const latestMigrationVersionQuery = `
 	select coalesce(max(version), '')

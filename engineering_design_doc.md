@@ -301,20 +301,28 @@ pilot_forms
   submitted_at          timestamptz
   created_at            timestamptz
 
+-- Registration answers currently contain:
+-- software_experience, ai_writes_most_software, current_review_tools,
+-- review_work_percent, review_pain_points, ai_review_difference,
+-- interested_in_pilot, name, email, pilot_languages, public_repo_url
+-- Review answers currently contain:
+-- would_keep_using, keep_using_reason, most_important_features,
+-- not_keep_using_reason, switch_requirements, open_to_follow_up
+
 -- One review questionnaire response per pilot user, kept for the existing review UI contract.
 pilot_questionaire
   id                    uuid PK
   invite_id             uuid FK -> pilot_users UNIQUE
   user_id               uuid FK -> users
   repo_id               uuid FK -> repositories
-  faster_rating         int
-  risk_clarity_rating   int
-  confusing_or_missing  text
-  bugs_hit              text
-  build_next            text
-  would_keep_using      text
-  submitted_at          timestamptz
-  created_at            timestamptz
+  would_keep_using        text
+  keep_using_reason       text
+  most_important_features text
+  not_keep_using_reason   text
+  switch_requirements     text
+  open_to_follow_up       text
+  submitted_at            timestamptz
+  created_at              timestamptz
 ```
 
 The selected repository should be enforced at the product layer and, ideally, by API checks: once `selected_repo_id` is set for an active invite, the tester should not be able to index a second repository through normal UI/API paths.
@@ -328,7 +336,7 @@ It should let an operator:
 - Review Registration and Review forms
 - See registered pilot users and link to their registration form
 - Add or delete pilot users manually
-- Generate an access-code link and send the invite email with Resend
+- Generate an access-code link and send the invite email with Mailtrap
 - Track invited/active pilots by setup date, selected repo, and issue/feature submissions
 - Send a review email after the pilot period
 

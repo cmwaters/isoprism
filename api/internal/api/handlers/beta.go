@@ -93,12 +93,12 @@ type BetaTester struct {
 }
 
 type BetaQuestionnaireAdmin struct {
-	FasterRating       *int    `json:"faster_rating"`
-	RiskClarityRating  *int    `json:"risk_clarity_rating"`
-	ConfusingOrMissing *string `json:"confusing_or_missing"`
-	BugsHit            *string `json:"bugs_hit"`
-	BuildNext          *string `json:"build_next"`
-	WouldKeepUsing     *string `json:"would_keep_using"`
+	WouldKeepUsing        *string `json:"would_keep_using"`
+	KeepUsingReason       *string `json:"keep_using_reason"`
+	MostImportantFeatures *string `json:"most_important_features"`
+	NotKeepUsingReason    *string `json:"not_keep_using_reason"`
+	SwitchRequirements    *string `json:"switch_requirements"`
+	OpenToFollowUp        *string `json:"open_to_follow_up"`
 }
 
 type PilotRegistrationRequest struct {
@@ -116,11 +116,6 @@ type PilotRegistrationRequest struct {
 }
 
 type PilotReviewRequest struct {
-	FasterRating          *int   `json:"faster_rating,omitempty"`
-	RiskClarityRating     *int   `json:"risk_clarity_rating,omitempty"`
-	ConfusingOrMissing    string `json:"confusing_or_missing,omitempty"`
-	BugsHit               string `json:"bugs_hit,omitempty"`
-	BuildNext             string `json:"build_next,omitempty"`
 	WouldKeepUsing        string `json:"would_keep_using,omitempty"`
 	KeepUsingReason       string `json:"keep_using_reason"`
 	MostImportantFeatures string `json:"most_important_features"`
@@ -163,8 +158,9 @@ func (h *BetaHandler) ListBetaTesters(w http.ResponseWriter, r *http.Request) {
 			b.pilot_languages, b.public_repo_url,
 			b.issue_count,
 			b.feature_count,
-			q.submitted_at, q.faster_rating, q.risk_clarity_rating,
-			q.confusing_or_missing, q.bugs_hit, q.build_next, q.would_keep_using
+			q.submitted_at, q.would_keep_using, q.keep_using_reason,
+			q.most_important_features, q.not_keep_using_reason,
+			q.switch_requirements, q.open_to_follow_up
 		from pilot_users b
 		left join repositories r on r.id = b.selected_repo_id
 		left join pilot_questionaire q on q.invite_id = b.id
@@ -577,18 +573,18 @@ func (h *BetaHandler) SubmitPilotReview(w http.ResponseWriter, r *http.Request) 
 
 	_, _ = h.DB.Exec(r.Context(), `
 		insert into pilot_questionaire (
-			invite_id, faster_rating, risk_clarity_rating, confusing_or_missing,
-			bugs_hit, build_next, would_keep_using
+			invite_id, would_keep_using, keep_using_reason, most_important_features,
+			not_keep_using_reason, switch_requirements, open_to_follow_up
 		) values ($1, $2, $3, $4, $5, $6, $7)
 		on conflict (invite_id) do update set
-			faster_rating = excluded.faster_rating,
-			risk_clarity_rating = excluded.risk_clarity_rating,
-			confusing_or_missing = excluded.confusing_or_missing,
-			bugs_hit = excluded.bugs_hit,
-			build_next = excluded.build_next,
 			would_keep_using = excluded.would_keep_using,
+			keep_using_reason = excluded.keep_using_reason,
+			most_important_features = excluded.most_important_features,
+			not_keep_using_reason = excluded.not_keep_using_reason,
+			switch_requirements = excluded.switch_requirements,
+			open_to_follow_up = excluded.open_to_follow_up,
 			submitted_at = now()
-	`, userID, req.FasterRating, req.RiskClarityRating, req.ConfusingOrMissing, req.BugsHit, req.BuildNext, req.WouldKeepUsing)
+	`, userID, req.WouldKeepUsing, req.KeepUsingReason, req.MostImportantFeatures, req.NotKeepUsingReason, req.SwitchRequirements, req.OpenToFollowUp)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "submitted"})
@@ -758,9 +754,10 @@ func scanBetaTester(row betaTesterScanner, frontendURL string) (BetaTester, erro
 		&tester.InvitedAt, &tester.Token, &tester.AcceptedAt, &tester.CompletedAt, &tester.UserID,
 		&tester.SelectedRepoID, &tester.SelectedRepoFullName, &tester.TrialStartsAt,
 		&tester.TrialEndsAt, &tester.ReviewSentAt, &tester.PilotLanguages, &tester.PublicRepoURL,
-		&tester.IssueCount, &tester.FeatureCount, &submittedAt, &questionnaire.FasterRating,
-		&questionnaire.RiskClarityRating, &questionnaire.ConfusingOrMissing,
-		&questionnaire.BugsHit, &questionnaire.BuildNext, &questionnaire.WouldKeepUsing,
+		&tester.IssueCount, &tester.FeatureCount, &submittedAt, &questionnaire.WouldKeepUsing,
+		&questionnaire.KeepUsingReason, &questionnaire.MostImportantFeatures,
+		&questionnaire.NotKeepUsingReason, &questionnaire.SwitchRequirements,
+		&questionnaire.OpenToFollowUp,
 	)
 	if err != nil {
 		return tester, err

@@ -144,12 +144,10 @@ At the end of the seven-day trial window, Isoprism should ask the tester to comp
 
 The questionnaire should capture:
 
-- Whether Isoprism helped them understand PRs faster
-- Whether the graph made review risk clearer
-- Which PR review moments felt confusing or missing
-- Bugs encountered
-- Feature requests
 - Whether they would keep using Isoprism for PR review
+- If yes, why they liked it and what is still missing
+- If no, why not and what would need to change for them to switch
+- Whether they are open to follow-up about their experience or future trials
 
 ---
 
@@ -157,7 +155,7 @@ The questionnaire should capture:
 
 Operators need a simple admin page for managing the pilot loop.
 
-The admin page should have two tabs: Pilot Users and Forms. Pilot Users lists registered users, links to their registration form, lets an admin add or delete users manually, generates access-code invite emails through Resend, tracks setup date, selected repository, and issue/feature counts, and sends the end-of-pilot review email. Forms lists Registration and Review submissions.
+The admin page should have two tabs: Pilot Users and Forms. Pilot Users lists registered users, links to their registration form, lets an admin add or delete users manually, generates access-code invite emails through Mailtrap, tracks setup date, selected repository, and issue/feature counts, and sends the end-of-pilot review email. Forms lists Registration and Review submissions.
 
 The review email links to `/pilot/review/{token}` and reuses the existing short review questionnaire.
 
