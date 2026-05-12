@@ -556,7 +556,7 @@ function FileChangeRow({ file, onClick }: { file: PRFileDiff; onClick: () => voi
   return (
     <button type="button" onClick={onClick} style={changeRowButtonStyle}>
       <span style={{ minWidth: 0, flex: 1 }}>
-        <span style={{ color: "#222222", display: "block", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, lineHeight: 1.4, overflowWrap: "anywhere" }}>
+        <span style={{ color: "#222222", display: "block", fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>
           {fileName}
         </span>
         <span style={{ color: "#888888", display: "block", fontSize: 11, marginTop: 2, overflowWrap: "anywhere" }}>
@@ -819,8 +819,8 @@ function NodeChangeDetailPanel({
 
       <TestSection tests={node.tests ?? []} />
 
-      <div style={{ marginTop: 6 }}>
-        <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>
+      <div style={{ marginTop: 22 }}>
+        <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>
           Code
         </p>
         <ComponentCodeBlock node={node} codeForNode={codeForNode} error={errorForNode} loading={loading} />
@@ -1292,7 +1292,7 @@ function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
 
   return (
     <pre style={{
-      background: "#DCDCDC",
+      background: "transparent",
       border: "none",
       borderRadius: 0,
       color: "#222222",
@@ -1307,7 +1307,7 @@ function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
     }}>
       {lines.map((line, index) => (
         <span key={index} style={{ display: "grid", gridTemplateColumns: "42px 1fr", minWidth: 0 }}>
-          <span style={{ color: "#999999", paddingRight: 10, textAlign: "right", userSelect: "none" }}>
+          <span style={{ color: "#999999", paddingRight: 10, textAlign: "left", userSelect: "none" }}>
             {segment.start_line + index}
           </span>
           <span style={{ paddingRight: 10, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{line || " "}</span>
@@ -1367,7 +1367,7 @@ function FullComponentDiffViewer({
               padding: "0 2px",
             }}
           >
-            <span style={{ color: "#777777", paddingRight: 8, textAlign: "right", userSelect: "none" }}>
+            <span style={{ color: "#777777", paddingRight: 8, textAlign: "left", userSelect: "none" }}>
               {displayLineNumber(line) ?? ""}
             </span>
             <span style={{ userSelect: "none" }}>{prefix}</span>
@@ -1584,7 +1584,7 @@ function RelationSection({
                 width: "100%",
               }}
             >
-              <span style={{ color: "#888888", flex: "0 0 34px", fontSize: 11, textAlign: "right", userSelect: "none" }}>
+              <span style={{ color: "#888888", flex: "0 0 34px", fontSize: 11, textAlign: "left", userSelect: "none" }}>
                 L{lineNumbers?.[n.id] ?? n.line_start}
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>

@@ -187,12 +187,12 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
    - Body: 13px, `#333333`, line-height 1.6 — the change summary text
 7. **"Calls" section** — 20px below:
    - Label: "Calls" — 11px uppercase `#AAAAAA`, letter-spacing 0.08em
-   - Each row: package label (11px, fuchsia) + function name (13px `#222222`)
+   - Each row: line number aligned to the panel's left content edge, package label (11px, fuchsia) + function name (13px `#222222`)
    - If the callee is itself a changed node, show its status badge inline on the right:
      - "Deleted" — `#FEE2E2` bg, `#EF4444` text, 10px, 4px border-radius
      - "Added +N" — `#DCFCE7` bg, `#16A34A` text
 8. **"Is Called By" section** — 16px below Calls, same row structure with status badges
-9. **"Code" section** — the component source/diff block. The section label is `Code`, not `Diff`; the code block background is transparent while added/removed line highlights remain visible.
+9. **"Code" section** — the component source/diff block. The section label is `Code`, not `Diff`, with comfortable spacing above and below. Code line numbers align to the panel's left content edge, and the code block background is transparent while added/removed line highlights remain visible.
 
 ---
 
