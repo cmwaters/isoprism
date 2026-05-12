@@ -53,17 +53,27 @@ export default function PilotReviewPage() {
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>Review impact</h2>
           <div style={twoColumnStyle}>
-            <input style={inputStyle} type="number" min={1} max={5} placeholder="Understood PRs faster (1-5)" value={form.faster_rating} onChange={(event) => setForm({ ...form, faster_rating: event.target.value })} />
-            <input style={inputStyle} type="number" min={1} max={5} placeholder="Review risk clearer (1-5)" value={form.risk_clarity_rating} onChange={(event) => setForm({ ...form, risk_clarity_rating: event.target.value })} />
+            <Field label="Understood PRs faster (1-5)">
+              <input style={inputStyle} type="number" min={1} max={5} value={form.faster_rating} onChange={(event) => setForm({ ...form, faster_rating: event.target.value })} />
+            </Field>
+            <Field label="Review risk clearer (1-5)">
+              <input style={inputStyle} type="number" min={1} max={5} value={form.risk_clarity_rating} onChange={(event) => setForm({ ...form, risk_clarity_rating: event.target.value })} />
+            </Field>
           </div>
-        </section>
 
-        <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>Pilot notes</h2>
-          <textarea style={textareaStyle} placeholder="What was confusing or missing?" value={form.confusing_or_missing} onChange={(event) => setForm({ ...form, confusing_or_missing: event.target.value })} />
-          <textarea style={textareaStyle} placeholder="What bugs did you hit?" value={form.bugs_hit} onChange={(event) => setForm({ ...form, bugs_hit: event.target.value })} />
-          <textarea style={textareaStyle} placeholder="What should we build next?" value={form.build_next} onChange={(event) => setForm({ ...form, build_next: event.target.value })} />
-          <input style={inputStyle} placeholder="Would you keep using Isoprism for PR review?" value={form.would_keep_using} onChange={(event) => setForm({ ...form, would_keep_using: event.target.value })} />
+          <Field label="What was confusing or missing?">
+            <textarea style={textareaStyle} value={form.confusing_or_missing} onChange={(event) => setForm({ ...form, confusing_or_missing: event.target.value })} />
+          </Field>
+          <Field label="What bugs did you hit?">
+            <textarea style={textareaStyle} value={form.bugs_hit} onChange={(event) => setForm({ ...form, bugs_hit: event.target.value })} />
+          </Field>
+          <Field label="What should we build next?">
+            <textarea style={textareaStyle} value={form.build_next} onChange={(event) => setForm({ ...form, build_next: event.target.value })} />
+          </Field>
+          <Field label="Would you keep using Isoprism for PR review?">
+            <input style={inputStyle} value={form.would_keep_using} onChange={(event) => setForm({ ...form, would_keep_using: event.target.value })} />
+          </Field>
         </section>
 
         <div style={footerStyle}>
@@ -75,7 +85,16 @@ export default function PilotReviewPage() {
   );
 }
 
-const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "#EBE9E9", color: "#111", padding: "34px 24px 48px" };
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={fieldStyle}>
+      <span style={labelStyle}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "#EBE9E9", color: "#111", padding: "34px 24px 48px", display: "grid", alignItems: "center" };
 const formStyle: React.CSSProperties = { width: "min(820px, 100%)", margin: "0 auto", display: "grid", gap: 14 };
 const headerBlockStyle: React.CSSProperties = { padding: "6px 0 4px" };
 const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 7 };
@@ -83,6 +102,8 @@ const titleStyle: React.CSSProperties = { margin: 0, fontSize: 24, lineHeight: 1
 const sectionStyle: React.CSSProperties = { border: "1px solid #D4D4D4", borderRadius: 8, background: "#FFFFFF", padding: 18, display: "grid", gap: 12 };
 const sectionTitleStyle: React.CSSProperties = { margin: 0, color: "#111111", fontSize: 15, fontWeight: 750 };
 const twoColumnStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 };
+const fieldStyle: React.CSSProperties = { display: "grid", gap: 7 };
+const labelStyle: React.CSSProperties = { color: "#111111", fontSize: 13, fontWeight: 700, lineHeight: 1.35 };
 const inputStyle: React.CSSProperties = { height: 42, border: "1px solid #D4D4D4", borderRadius: 6, background: "#FFF", padding: "0 11px", fontSize: 14 };
 const textareaStyle: React.CSSProperties = { ...inputStyle, height: 92, padding: 11, resize: "vertical", lineHeight: 1.45 };
 const footerStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" };
