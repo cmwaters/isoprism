@@ -27,8 +27,14 @@ const (
 )
 
 type graphEdgeRow struct {
-	callerID string
-	calleeID string
+	callerID     string
+	calleeID     string
+	callerName   string
+	calleeName   string
+	commitSHA    string
+	callerIsTest bool
+	calleeIsTest bool
+	changeType   string
 }
 
 type graphCandidate struct {
@@ -55,6 +61,13 @@ type rawPRNodeChange struct {
 	diffHunk      *string
 	oldFullName   *string
 	oldFilePath   *string
+}
+
+func edgeChangeTypePtr(changeType string) *string {
+	if strings.TrimSpace(changeType) == "" || changeType == "unchanged" {
+		return nil
+	}
+	return &changeType
 }
 
 func isTestGraphNode(node models.GraphNode) bool {
@@ -298,7 +311,7 @@ func canonicalizeGraphEdges(edges []models.GraphEdge, canonicalizeID func(string
 			continue
 		}
 		seen[key] = true
-		result = append(result, models.GraphEdge{CallerID: source, CalleeID: target, Weight: 1, UnderlyingEdgeCount: 1})
+		result = append(result, models.GraphEdge{CallerID: source, CalleeID: target, ChangeType: edge.ChangeType, Weight: edge.Weight, UnderlyingEdgeCount: edge.UnderlyingEdgeCount})
 	}
 	return result
 }
@@ -308,6 +321,7 @@ func appendTestFocusEdges(
 	allEdges []graphEdgeRow,
 	testChanges []models.GraphNode,
 	finalNodeMap map[string]models.GraphNode,
+	testContext map[string]models.GraphNode,
 	canonicalizeID func(string) string,
 ) []models.GraphEdge {
 	testIDs := map[string]bool{}
@@ -322,6 +336,10 @@ func appendTestFocusEdges(
 	for id := range finalNodeMap {
 		visibleProductionIDs[id] = true
 	}
+	testContextIDs := map[string]bool{}
+	for id := range testContext {
+		testContextIDs[id] = true
+	}
 
 	seen := map[string]bool{}
 	for _, e := range edges {
@@ -333,7 +351,7 @@ func appendTestFocusEdges(
 		if source == "" || target == "" || source == target || !testIDs[source] {
 			continue
 		}
-		if !testIDs[target] && !visibleProductionIDs[target] {
+		if !testIDs[target] && !visibleProductionIDs[target] && !testContextIDs[target] {
 			continue
 		}
 		key := source + "|" + target
@@ -341,7 +359,7 @@ func appendTestFocusEdges(
 			continue
 		}
 		seen[key] = true
-		edges = append(edges, models.GraphEdge{CallerID: source, CalleeID: target, Weight: 1, UnderlyingEdgeCount: 1})
+		edges = append(edges, models.GraphEdge{CallerID: source, CalleeID: target, ChangeType: edgeChangeTypePtr(e.changeType), Weight: 1, UnderlyingEdgeCount: 1})
 	}
 	return edges
 }
@@ -479,7 +497,7 @@ func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges m
 			continue
 		}
 		seenEdges[key] = true
-		visibleEdges = append(visibleEdges, models.GraphEdge{CallerID: e.callerID, CalleeID: e.calleeID, Weight: 1, UnderlyingEdgeCount: 1})
+		visibleEdges = append(visibleEdges, models.GraphEdge{CallerID: e.callerID, CalleeID: e.calleeID, ChangeType: edgeChangeTypePtr(e.changeType), Weight: 1, UnderlyingEdgeCount: 1})
 	}
 
 	return selected, visibleEdges
@@ -783,30 +801,38 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 			Edges:       []models.GraphEdge{},
 			Files:       files,
 			TestChanges: testChanges,
+			TestContext: []models.GraphNode{},
 		})
 		return
 	}
 
 	// Get full_names of the changed nodes (stored at PR head SHA)
 	changedIDToFullName := map[string]string{}
-	changedFullNames := make([]string, 0, len(changedIDs))
-	fnRows, _ := h.DB.Query(ctx, `select id, full_name from code_nodes where id = any($1::uuid[])`, changedIDs)
+	changedIDIsTest := map[string]bool{}
+	productionChangedIDs := make([]string, 0, len(changedIDs))
+	productionChangedFullNames := make([]string, 0, len(changedIDs))
+	fnRows, _ := h.DB.Query(ctx, `select id, full_name, is_test from code_nodes where id = any($1::uuid[])`, changedIDs)
 	if fnRows != nil {
 		defer fnRows.Close()
 		for fnRows.Next() {
 			var id, fn string
-			fnRows.Scan(&id, &fn)
+			var isTest bool
+			fnRows.Scan(&id, &fn, &isTest)
 			changedIDToFullName[id] = fn
-			changedFullNames = append(changedFullNames, fn)
+			changedIDIsTest[id] = isTest
+			if !isTest {
+				productionChangedIDs = append(productionChangedIDs, id)
+				productionChangedFullNames = append(productionChangedFullNames, fn)
+			}
 		}
 		fnRows.Close()
 	}
 
-	defaultBranchLookupNames := append([]string{}, changedFullNames...)
+	defaultBranchLookupNames := append([]string{}, productionChangedFullNames...)
 	changedIDToOldFullName := map[string]string{}
 	for _, id := range changedIDs {
 		c := changedSet[id]
-		if c.oldFullName == nil || strings.TrimSpace(*c.oldFullName) == "" {
+		if changedIDIsTest[id] || c.oldFullName == nil || strings.TrimSpace(*c.oldFullName) == "" {
 			continue
 		}
 		changedIDToOldFullName[id] = *c.oldFullName
@@ -834,19 +860,11 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build lookup IDs: prefer main-branch IDs (so edges resolve), fall back to PR head IDs.
-	lookupIDs := make([]string, 0, len(mainChangedIDs)+len(changedIDs))
-	lookupIDs = append(lookupIDs, mainChangedIDs...)
-	for _, id := range changedIDs {
-		if fn, ok := changedIDToFullName[id]; ok {
-			if _, hasMain := mainIDByFullName[fn]; !hasMain {
-				lookupIDs = append(lookupIDs, id)
-			}
-		}
-	}
-
 	mainIDToPRID := map[string]string{}
 	for prID2, fn := range changedIDToFullName {
+		if changedIDIsTest[prID2] {
+			continue
+		}
 		if mainID, ok := mainIDByFullName[fn]; ok {
 			mainIDToPRID[mainID] = prID2
 		}
@@ -864,18 +882,33 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var allEdges []graphEdgeRow
-	if len(lookupIDs) > 0 {
+	if len(changedIDs) > 0 {
 		eRows, _ := h.DB.Query(ctx, `
-			select caller_id, callee_id
-			from code_edges
-			where repo_id = $1
-			  and (($2 <> '' and commit_sha = $2) or ($3 <> '' and commit_sha = $3))
+			select e.commit_sha, e.caller_id, e.callee_id,
+			       caller.full_name, callee.full_name,
+			       caller.is_test, callee.is_test
+			from code_edges e
+			join code_nodes caller on caller.id = e.caller_id
+			join code_nodes callee on callee.id = e.callee_id
+			where e.repo_id = $1
+			  and (($2 <> '' and e.commit_sha = $2) or ($3 <> '' and e.commit_sha = $3))
 		`, repoID, mainCommitSHA, headCommit)
 		if eRows != nil {
 			defer eRows.Close()
+			edgeCommitState := map[string]map[string]bool{}
 			for eRows.Next() {
 				var e graphEdgeRow
-				eRows.Scan(&e.callerID, &e.calleeID)
+				eRows.Scan(&e.commitSHA, &e.callerID, &e.calleeID, &e.callerName, &e.calleeName, &e.callerIsTest, &e.calleeIsTest)
+				key := e.callerName + "|" + e.calleeName
+				if edgeCommitState[key] == nil {
+					edgeCommitState[key] = map[string]bool{}
+				}
+				if e.commitSHA == mainCommitSHA {
+					edgeCommitState[key]["base"] = true
+				}
+				if e.commitSHA == headCommit {
+					edgeCommitState[key]["head"] = true
+				}
 				e.callerID = remapID(e.callerID)
 				e.calleeID = remapID(e.calleeID)
 				if e.callerID == e.calleeID {
@@ -884,18 +917,36 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 				allEdges = append(allEdges, e)
 			}
 			eRows.Close()
+			for i := range allEdges {
+				state := edgeCommitState[allEdges[i].callerName+"|"+allEdges[i].calleeName]
+				switch {
+				case state["base"] && !state["head"]:
+					allEdges[i].changeType = "deleted"
+				case !state["base"] && state["head"]:
+					allEdges[i].changeType = "added"
+				default:
+					allEdges[i].changeType = "unchanged"
+				}
+			}
 		}
 	}
 
 	lineChanges := map[string]int{}
-	for _, id := range changedIDs {
+	for _, id := range productionChangedIDs {
 		c := changedSet[id]
 		if c.diffHunk != nil {
 			added, removed := countDiffLines(*c.diffHunk)
 			lineChanges[id] = added + removed
 		}
 	}
-	selected, edges := selectVisibleGraph(changedIDs, allEdges, lineChanges)
+	productionEdges := make([]graphEdgeRow, 0, len(allEdges))
+	for _, edge := range allEdges {
+		if edge.callerIsTest || edge.calleeIsTest {
+			continue
+		}
+		productionEdges = append(productionEdges, edge)
+	}
+	selected, edges := selectVisibleGraph(productionChangedIDs, productionEdges, lineChanges)
 
 	idSet := map[string]bool{}
 	for id := range selected {
@@ -943,7 +994,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	changedIDSet := map[string]bool{}
-	for _, id := range changedIDs {
+	for _, id := range productionChangedIDs {
 		changedIDSet[id] = true
 	}
 	canonicalByKey := map[string]string{}
@@ -1014,7 +1065,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// First pass: add changed nodes (PR-head IDs) with change info
-	for _, id := range changedIDs {
+	for _, id := range productionChangedIDs {
 		canonicalID := canonicalizeID(id)
 		meta, isSelected := selectedCanonical[canonicalID]
 		if !isSelected {
@@ -1119,7 +1170,13 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	edges = appendTestFocusEdges(edges, allEdges, testChanges, finalNodeMap, canonicalizeID)
+	testContextMap := h.loadPRTestContext(ctx, allEdges, testChanges, canonicalizeID)
+	edges = appendTestFocusEdges(edges, allEdges, testChanges, finalNodeMap, testContextMap, canonicalizeID)
+	testContext := make([]models.GraphNode, 0, len(testContextMap))
+	for _, n := range testContextMap {
+		testContext = append(testContext, n)
+	}
+	sortGraphNodes(testContext)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.GraphResponse{
@@ -1128,6 +1185,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		Edges:       edges,
 		Files:       files,
 		TestChanges: testChanges,
+		TestContext: testContext,
 	})
 }
 
@@ -1215,6 +1273,70 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 	}
 	sortGraphNodes(testChanges)
 	return testChanges
+}
+
+func (h *GraphHandler) loadPRTestContext(ctx context.Context, allEdges []graphEdgeRow, testChanges []models.GraphNode, canonicalizeID func(string) string) map[string]models.GraphNode {
+	testIDs := map[string]bool{}
+	for _, n := range testChanges {
+		testIDs[n.ID] = true
+	}
+	if len(testIDs) == 0 {
+		return map[string]models.GraphNode{}
+	}
+
+	contextIDs := map[string]bool{}
+	for _, edge := range allEdges {
+		source := canonicalizeID(edge.callerID)
+		target := canonicalizeID(edge.calleeID)
+		if source == "" || target == "" || source == target || !testIDs[source] || testIDs[target] || edge.calleeIsTest {
+			continue
+		}
+		contextIDs[target] = true
+	}
+	if len(contextIDs) == 0 {
+		return map[string]models.GraphNode{}
+	}
+
+	ids := make([]string, 0, len(contextIDs))
+	for id := range contextIDs {
+		ids = append(ids, id)
+	}
+	rows, err := h.DB.Query(ctx, `
+		select id, full_name, file_path, line_start, line_end,
+		       inputs, outputs, language, kind, is_test, is_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
+		from code_nodes
+		where id = any($1::uuid[])
+	`, ids)
+	if err != nil {
+		log.Printf("GetGraph: test context node query: %v", err)
+		return map[string]models.GraphNode{}
+	}
+	defer rows.Close()
+
+	contextNodes := map[string]models.GraphNode{}
+	for rows.Next() {
+		var n models.GraphNode
+		var inputsRaw, outputsRaw []byte
+		var docComment, summary string
+		if err := rows.Scan(
+			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTest, &n.IsEntrypoint, &docComment, &summary,
+		); err != nil {
+			continue
+		}
+		if isTestGraphNode(n) {
+			continue
+		}
+		n.Inputs = decodeTypeRefs(inputsRaw)
+		n.Outputs = decodeTypeRefs(outputsRaw)
+		applyNodeSummary(&n, docComment, summary)
+		n.NodeType = "context"
+		n.GraphDepth = 2
+		n.Tests = []models.GraphNodeTest{}
+		n.PackagePath = packagePathForNode(n)
+		contextNodes[n.ID] = n
+	}
+	return contextNodes
 }
 
 func countDiffLines(patch string) (added, removed int) {

@@ -697,7 +697,8 @@ function NodeChangeDetailPanel({
   const errorForNode = error?.nodeID === node.id ? error.message : null;
   const loading = !codeForNode && !errorForNode;
   const sourceSegment = codeForNode?.head ?? codeForNode?.base;
-  const calleeIDs = calleesOf(node.id, edges);
+  const calleeEdges = outgoingEdges(node.id, edges);
+  const calleeIDs = calleeEdges.map((edge) => edge.callee_id);
   const callSiteLines = buildCallSiteLines(sourceSegment, calleeIDs, allNodes);
 
   return (
@@ -759,6 +760,7 @@ function NodeChangeDetailPanel({
       <RelationSection
         label="Calls"
         nodeIDs={calleeIDs}
+        relationEdges={calleeEdges}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
         lineNumbers={callSiteLines}
@@ -766,7 +768,8 @@ function NodeChangeDetailPanel({
 
       <RelationSection
         label="Is Called By"
-        nodeIDs={callersOf(node.id, edges)}
+        nodeIDs={incomingEdges(node.id, edges).map((edge) => edge.caller_id)}
+        relationEdges={incomingEdges(node.id, edges)}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
       />
@@ -945,7 +948,8 @@ function NodeDetail({
   const sourceSegment = cachedCode?.node_id === node.id
     ? cachedCode.head ?? cachedCode.base
     : undefined;
-  const calleeIDs = calleesOf(node.id, edges);
+  const calleeEdges = outgoingEdges(node.id, edges);
+  const calleeIDs = calleeEdges.map((edge) => edge.callee_id);
   const callSiteLines = buildCallSiteLines(sourceSegment, calleeIDs, allNodes);
 
   return (
@@ -1042,6 +1046,7 @@ function NodeDetail({
       <RelationSection
         label="Calls"
         nodeIDs={calleeIDs}
+        relationEdges={calleeEdges}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
         lineNumbers={callSiteLines}
@@ -1050,7 +1055,8 @@ function NodeDetail({
       {/* Is Called By section */}
       <RelationSection
         label="Is Called By"
-        nodeIDs={callersOf(node.id, edges)}
+        nodeIDs={incomingEdges(node.id, edges).map((edge) => edge.caller_id)}
+        relationEdges={incomingEdges(node.id, edges)}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
       />
@@ -1495,12 +1501,14 @@ function BackControl({
 function RelationSection({
   label,
   nodeIDs,
+  relationEdges,
   allNodes,
   onSelectNode,
   lineNumbers,
 }: {
   label: string;
   nodeIDs: string[];
+  relationEdges?: GraphEdge[];
   allNodes: GraphNode[];
   onSelectNode: (id: string) => void;
   lineNumbers?: Record<string, number>;
@@ -1516,6 +1524,7 @@ function RelationSection({
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {nodes.map((n) => {
           const pkg = pkgLabel(n);
+          const relationEdge = relationEdges?.find((edge) => edge.caller_id === n.id || edge.callee_id === n.id);
           return (
             <button
               key={n.id}
@@ -1537,7 +1546,21 @@ function RelationSection({
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>
                 {pkg && <span style={{ fontSize: 11, color: "#EF5DA8", display: "block" }}>{pkg}</span>}
-                <span style={{ fontSize: 13, color: "#222222" }}>{symbolTitle(n)}</span>
+                <span style={{ alignItems: "center", display: "flex", gap: 6 }}>
+                  <span style={{ fontSize: 13, color: "#222222" }}>{symbolTitle(n)}</span>
+                  {relationEdge?.change_type && (
+                    <span style={{
+                      background: relationEdge.change_type === "added" ? "#DCFCE7" : "#FEE2E2",
+                      borderRadius: 10,
+                      color: relationEdge.change_type === "added" ? "#16A34A" : "#EF4444",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      padding: "1px 6px",
+                    }}>
+                      {relationEdge.change_type === "added" ? "Added" : "Removed"}
+                    </span>
+                  )}
+                </span>
               </div>
               <DiffPills node={n} compact />
             </button>
@@ -1584,12 +1607,12 @@ function functionDisplayName(node: GraphNode): string {
   return symbolTitle(node);
 }
 
-function calleesOf(nodeID: string, edges: GraphEdge[]): string[] {
-  return edges.filter((e) => e.caller_id === nodeID).map((e) => e.callee_id);
+function outgoingEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
+	return edges.filter((e) => e.caller_id === nodeID);
 }
 
-function callersOf(nodeID: string, edges: GraphEdge[]): string[] {
-  return edges.filter((e) => e.callee_id === nodeID).map((e) => e.caller_id);
+function incomingEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
+	return edges.filter((e) => e.callee_id === nodeID);
 }
 
 function buildCallSiteLines(

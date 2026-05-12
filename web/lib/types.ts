@@ -101,6 +101,7 @@ export interface GraphNodeTest {
 export interface GraphEdge {
   caller_id: string;
   callee_id: string;
+  change_type?: "added" | "deleted";
   weight?: number;
   changed_weight?: number;
   underlying_edge_count?: number;
@@ -141,6 +142,7 @@ export interface GraphResponse {
   edges: GraphEdge[];
   files: PRFileDiff[];
   test_changes: GraphNode[];
+  test_context: GraphNode[];
 }
 
 export interface RepoGraphResponse {

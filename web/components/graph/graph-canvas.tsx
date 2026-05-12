@@ -498,8 +498,10 @@ function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | nul
       boundary: false,
     }));
   const reachableTestNodeIDs = new Set(testNodes.map((node) => node.id));
+  const testContext = graph.test_context ?? [];
   const directTargets = graph.nodes.filter((node) => (node.tests ?? []).some((test) => sameTestEntry(testNode, test)));
-  const edgeTargets = graph.nodes.filter((node) => graph.edges.some((edge) => reachableTestNodeIDs.has(edge.caller_id) && edge.callee_id === node.id));
+  const edgeTargetPool = [...graph.nodes, ...testContext];
+  const edgeTargets = edgeTargetPool.filter((node) => graph.edges.some((edge) => reachableTestNodeIDs.has(edge.caller_id) && edge.callee_id === node.id));
   const targetByID = new Map([...directTargets, ...edgeTargets].map((node) => [node.id, node]));
   const targets = Array.from(targetByID.values());
   const nodeIDs = new Set([...reachableTestNodeIDs, ...targets.map((node) => node.id)]);
@@ -546,7 +548,7 @@ function InnerCanvas({
   repo?: Repository;
   prs?: QueuePR[];
 }) {
-  const { fitView } = useReactFlow();
+  const { fitView, getNode, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
   const [prGraphCache, setPRGraphCache] = useState<Record<number, GraphResponse>>({});
   const [loadingPRNumber, setLoadingPRNumber] = useState<number | null>(null);
@@ -609,13 +611,14 @@ function InnerCanvas({
     return baseEdges.map((e) => {
       const isConnected = selID && (e.source === selID || e.target === selID);
       const isDimmed = selID && !isConnected;
-      const color = isConnected ? "#333333" : isDimmed ? "#CCCCCC" : "#888888";
       const apiEdge = visibleGraph.edges.find((edge) => edge.caller_id === e.source && edge.callee_id === e.target);
+      const baseColor = apiEdge?.change_type === "added" ? "#16A34A" : apiEdge?.change_type === "deleted" ? "#EF4444" : "#888888";
+      const color = isConnected ? (apiEdge?.change_type === "added" || apiEdge?.change_type === "deleted" ? baseColor : "#333333") : isDimmed ? "#CCCCCC" : baseColor;
       const weightedWidth = Math.min(5, 1 + Math.log2(1 + (apiEdge?.weight ?? 1)) * 0.6);
       const width = isConnected ? Math.max(2, weightedWidth) : weightedWidth;
       return {
         ...e,
-        style: { stroke: color, strokeWidth: width },
+        style: { stroke: color, strokeWidth: width, strokeDasharray: apiEdge?.change_type === "deleted" ? "6 5" : undefined },
         markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color },
       };
     });
@@ -631,6 +634,30 @@ function InnerCanvas({
     setNodes(hexGridLayout(initialNodes, baseEdges, visibleGraph.nodes));
     setTimeout(() => fitView({ padding: 0.15 }), 50);
   }, [visibleGraph, baseEdges, fitView, initialNodes, setNodes]);
+
+  useEffect(() => {
+    const selectedID = selectedNode?.id ?? null;
+    setNodes((current) => {
+      let changed = false;
+      const next = current.map((node) => {
+        const selected = node.id === selectedID;
+        if (node.selected === selected) return node;
+        changed = true;
+        return { ...node, selected };
+      });
+      return changed ? next : current;
+    });
+    if (!selectedID) return;
+
+    const timeout = window.setTimeout(() => {
+      const node = getNode(selectedID);
+      if (!node) return;
+      const width = node.measured?.width ?? node.width ?? 180;
+      const height = node.measured?.height ?? node.height ?? 90;
+      setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: 0.78, duration: 450 });
+    }, 120);
+    return () => window.clearTimeout(timeout);
+  }, [getNode, selectedNode?.id, setCenter, setNodes]);
 
   useEffect(() => {
     setSelectedNode(null);
@@ -700,7 +727,7 @@ function InnerCanvas({
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
   const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
   const detailNodes = isPRGraph(baseVisibleGraph)
-    ? uniqueGraphNodes([...baseVisibleGraph.nodes, ...visibleGraph.nodes, ...activePRTestChanges])
+    ? uniqueGraphNodes([...baseVisibleGraph.nodes, ...visibleGraph.nodes, ...activePRTestChanges, ...(baseVisibleGraph.test_context ?? [])])
     : visibleGraph.nodes;
 
   return (

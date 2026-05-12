@@ -190,6 +190,7 @@ type GraphNodeTest struct {
 type GraphEdge struct {
 	CallerID            string            `json:"caller_id"`
 	CalleeID            string            `json:"callee_id"`
+	ChangeType          *string           `json:"change_type,omitempty"`
 	Weight              int               `json:"weight,omitempty"`
 	ChangedWeight       int               `json:"changed_weight,omitempty"`
 	UnderlyingEdgeCount int               `json:"underlying_edge_count,omitempty"`
@@ -209,6 +210,7 @@ type GraphResponse struct {
 	Edges       []GraphEdge  `json:"edges"`
 	Files       []PRFileDiff `json:"files"`
 	TestChanges []GraphNode  `json:"test_changes"`
+	TestContext []GraphNode  `json:"test_context"`
 }
 
 type RepoGraphResponse struct {
