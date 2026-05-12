@@ -50,7 +50,7 @@ You are analysing a pull request. For each changed production function, write up
 
 For tests, describe what behavior is being asserted. Do not summarize test implementation mechanics unless they are important to the assertion.
 
-For documentation, config, migrations, generated contracts, dependency manifests, build files, or deployment files, summarize the user-visible or operational effect of the change.
+Use documentation, config, migrations, generated contracts, dependency manifests, build files, or deployment files as context for the PR summary and risk score. Do not produce per-file summaries for these other changes.
 
 Use the PR title and description as intent/context, but ground your output in the diffs. If the PR description conflicts with the diff, trust the diff.
 
@@ -58,7 +58,6 @@ Return only a JSON object with this shape:
 {
   "changes": [{"full_name": "...", "change_summary": "..."}],
   "test_assertions": [{"name": "...", "assertion_summary": "..."}],
-  "other_changes": [{"path": "...", "change_summary": "..."}],
   "pr_summary": "two to three sentence describing the overall PR with an emphasis on what this changes and why this change is necessary",
   "risk_score": 5
 }
@@ -108,12 +107,6 @@ The changed function block is repeated for each added or modified production nod
       "assertion_summary": "Up to two sentences describing the behavior this test asserts."
     }
   ],
-  "other_changes": [
-    {
-      "path": "docs/example.md",
-      "change_summary": "One sentence describing the operational or user-visible effect of the non-code change."
-    }
-  ],
   "pr_summary": "Up to three sentences describing the overall PR.",
   "risk_score": 5
 }
@@ -123,7 +116,6 @@ The changed function block is repeated for each added or modified production nod
 
 - `pr_node_changes.change_summary`
 - test assertion summaries in a dedicated PR-test-change field/table, or folded into PR analysis until a dedicated schema exists
-- other changed file summaries in a dedicated PR-file-change field/table, or folded into PR analysis until a dedicated schema exists
 - `pr_analyses.summary`
 - `pr_analyses.risk_score`
 - `pr_analyses.ai_model`
@@ -135,7 +127,6 @@ The changed function block is repeated for each added or modified production nod
 - PR summary panel
 - selected node detail panel for changed nodes
 - test assertions section when tests changed
-- other changes section when docs/config/schema/build/deployment files changed
 
 **Failure behavior:** If the model call fails, `OpenPR` should log the error and continue. If JSON parsing fails, node change summaries should be empty and the PR summary should default to `PR analysis unavailable.`.
 
@@ -147,7 +138,6 @@ The product should keep model selection simple. The only default AI task is PR a
 |---|---|---|---|
 | PR change summaries | `gemini-2.5-flash` | none by default | This is the core AI task: it interprets diffs and feeds the reviewer-facing graph. Keep output consistent before adding fallback complexity. |
 | Test assertion summaries | `gemini-2.5-flash` | same model used for PR change summaries | Keep test changes in the same PR-level call so the model can compare asserted behavior against production changes without treating tests as production logic. |
-| Other changed file summaries | `gemini-2.5-flash` | same model used for PR change summaries | Docs, config, migrations, manifests, and deployment files often explain operational impact that production function diffs alone miss. |
 | PR-level summary and risk score | `gemini-2.5-flash` | same model used for PR change summaries | Generate these fields in the same call as change summaries so the model sees the same diff context. |
 | Base code node summaries | not implemented | not implemented | Isoprism should focus AI spend and UI attention on PR changes, not static summaries of the default branch. |
 | Embeddings or semantic search | not implemented | not implemented | Add a dedicated embedding model only when the product has a search/retrieval feature that needs it. |
@@ -209,7 +199,7 @@ The current code may still contain Anthropic-era behavior. Bring the implementat
 4. Deriving any UI risk label from `risk_score` in application code if a label is still needed.
 5. Recording `gemini-2.5-flash` in `pr_analyses.ai_model`.
 6. Adding PR title and PR description/body to `Enricher.EnrichPRChanges` input.
-7. Adding separate prompt sections and parsed outputs for test assertions and other changed files.
+7. Adding separate prompt sections for test assertions and other changed files, while only parsing test assertions as dedicated structured output.
 8. Removing unused provider config once no call site needs it.
 
 ## Implementation Notes
