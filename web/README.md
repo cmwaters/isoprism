@@ -92,7 +92,7 @@ The primary review route mirrors the GitHub repository path:
 The repo route renders one persistent `GraphCanvas` and side panel:
 
 - A repo graph for the whole indexed system at function-level detail.
-- A ranked PR list in the repo overview panel. Each PR card shows the PR number, title, AI summary, changed-function count, risk label, and a client-updated open-time badge.
+- A ranked PR list in the repo overview panel. Each PR card shows the PR number in the graph accent pink, title, AI summary, PR diff totals, risk label where used, and a client-updated compact open-time badge (`5h`, `3d`, `1w`).
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
@@ -115,7 +115,7 @@ PR review does not have a separate route or page.
 
 During the beta, this repository is the tester's selected trial repository. Feedback controls for bug reports and feature requests should be available from this review workspace and should capture current context such as repository, PR number, selected node, and browser path.
 
-The graph workspace shows a black beta footer banner with "Report a problem" and "Request a feature" actions. Each action opens a centered feedback form and submits to:
+The graph workspace shows a black beta footer banner with "Report a problem" and "Request a feature" actions, plus a dismiss button. Dismissal is page-session only, so the banner reappears after a full browser refresh. Each feedback action opens a centered feedback form and submits to:
 
 ```http
 POST /api/v1/beta/feedback

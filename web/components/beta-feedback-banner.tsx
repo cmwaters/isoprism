@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import {
   BetaFeedbackPayload,
@@ -29,6 +30,7 @@ export default function BetaFeedbackBanner({
   const [details, setDetails] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "submitted" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [bannerVisible, setBannerVisible] = useState(true);
 
   const appCommit = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "local";
   const sourceCommit = pr?.head_commit_sha ?? repo.main_commit_sha ?? "";
@@ -91,16 +93,21 @@ export default function BetaFeedbackBanner({
 
   return (
     <>
-      <footer style={bannerStyle}>
-        <span>This is a beta version of Isoprism.</span>
-        <button style={bannerButtonStyle} onClick={() => open("bug")}>
-          Report a problem
-        </button>
-        <span style={{ color: "#777777" }}>-</span>
-        <button style={bannerButtonStyle} onClick={() => open("feature")}>
-          Request a feature
-        </button>
-      </footer>
+      {bannerVisible && (
+        <footer style={bannerStyle}>
+          <span>This is a beta version of Isoprism.</span>
+          <button style={bannerButtonStyle} onClick={() => open("bug")}>
+            Report a problem
+          </button>
+          <span style={{ color: "#777777" }}>-</span>
+          <button style={bannerButtonStyle} onClick={() => open("feature")}>
+            Request a feature
+          </button>
+          <button style={dismissButtonStyle} onClick={() => setBannerVisible(false)} aria-label="Dismiss beta banner">
+            <X size={15} strokeWidth={2} />
+          </button>
+        </footer>
+      )}
 
       {feedbackType && (
         <div style={overlayStyle} role="dialog" aria-modal="true" aria-label="Submit beta feedback">
@@ -193,6 +200,23 @@ const bannerStyle: React.CSSProperties = {
   gap: 9,
   fontSize: 13,
   fontWeight: 500,
+};
+
+const dismissButtonStyle: React.CSSProperties = {
+  position: "absolute",
+  right: 12,
+  top: 8,
+  width: 24,
+  height: 24,
+  border: "none",
+  borderRadius: 4,
+  background: "transparent",
+  color: "#FFFFFF",
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
 };
 
 const bannerButtonStyle: React.CSSProperties = {

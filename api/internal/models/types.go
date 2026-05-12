@@ -134,6 +134,8 @@ type QueuePR struct {
 	PullRequest
 	Summary      *string `json:"summary"`
 	NodesChanged int     `json:"nodes_changed"`
+	Additions    int     `json:"additions"`
+	Deletions    int     `json:"deletions"`
 	RiskScore    *int    `json:"risk_score"`
 	RiskLabel    *string `json:"risk_label"`
 	UrgencyScore float64 `json:"urgency_score"`

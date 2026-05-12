@@ -43,6 +43,8 @@ export interface PullRequest {
 export interface QueuePR extends PullRequest {
   summary?: string;
   nodes_changed: number;
+  additions: number;
+  deletions: number;
   risk_score?: number;
   risk_label?: "low" | "medium" | "high";
   urgency_score: number;

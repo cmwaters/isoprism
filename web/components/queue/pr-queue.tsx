@@ -69,8 +69,8 @@ function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: 
 
         {/* Row 3: badges */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Badge icon="⏱" label={timeLabel ? `${timeLabel} open` : "Open"} />
-          <Badge icon="⬡" label={`${pr.nodes_changed} functions`} />
+          <Badge icon="⏱" label={timeLabel || "open"} />
+          <Badge icon="±" label={`+${pr.additions || 0} -${pr.deletions || 0}`} />
           {pr.risk_label && (
             <Badge
               icon={<Dot color={riskColor} />}
@@ -128,5 +128,8 @@ function useOpenTimeLabel(openedAt: string): string {
   if (nowMs === null) return "";
 
   const hoursOpen = Math.max(0, Math.floor((nowMs - new Date(openedAt).getTime()) / 3_600_000));
-  return hoursOpen < 24 ? `${hoursOpen}h` : `${Math.floor(hoursOpen / 24)}d`;
+  if (hoursOpen < 24) return `${hoursOpen}h`;
+  const daysOpen = Math.floor(hoursOpen / 24);
+  if (daysOpen < 7) return `${daysOpen}d`;
+  return `${Math.floor(daysOpen / 7)}w`;
 }

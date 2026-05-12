@@ -209,7 +209,7 @@ Left panel reverts to node detail. Changed nodes gain inline status in the Calls
 This is a beta version of Isoprism. Report a problem - Request a feature.
 ```
 
-"Report a problem" and "Request a feature" are links. Each opens a centered popup panel. Submissions create GitHub issues in the configured feedback repository, reference the tester's user ID, and apply either the `bug` or `feature` label.
+"Report a problem" and "Request a feature" are links. Each opens a centered popup panel. Submissions create GitHub issues in the configured feedback repository, reference the tester's user ID, and apply either the `bug` or `feature` label. The footer has an `X` dismiss control that hides it until the next full page refresh.
 
 **Graph layout:** Concentric rings. Changed nodes sit at the centre; BFS assigns each connected node a ring level. Outer rings are evenly distributed around a circle whose radius adapts to node count (`max(level × 380px, count × 300px / 2π)`). Pan and zoom freely.
 

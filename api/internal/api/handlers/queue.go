@@ -39,6 +39,8 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			pr.last_activity_at, pr.graph_status, pr.created_at,
 			coalesce(pa.summary, '') as summary,
 			coalesce(pa.nodes_changed, 0) as nodes_changed,
+			coalesce((pr.processing_stats->>'github_additions')::int, 0) as additions,
+			coalesce((pr.processing_stats->>'github_deletions')::int, 0) as deletions,
 			pa.risk_score,
 			pa.risk_label
 		from pull_requests pr
@@ -63,6 +65,8 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 		pr           models.PullRequest
 		summary      string
 		nodesChanged int
+		additions    int
+		deletions    int
 		riskScore    *int
 		riskLabel    *string
 	}
@@ -77,7 +81,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			&pr.BaseBranch, &pr.HeadBranch, &pr.BaseCommitSHA, &pr.HeadCommitSHA,
 			&pr.State, &pr.Draft, &pr.HTMLURL, &pr.OpenedAt, &pr.MergedAt,
 			&pr.LastActivityAt, &pr.GraphStatus, &pr.CreatedAt,
-			&row.summary, &row.nodesChanged, &row.riskScore, &row.riskLabel,
+			&row.summary, &row.nodesChanged, &row.additions, &row.deletions, &row.riskScore, &row.riskLabel,
 		); err != nil {
 			log.Printf("GetQueue: scan error: %v", err)
 			continue
@@ -115,6 +119,8 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 			PullRequest:  row.pr,
 			Summary:      nilStrPtr(row.summary),
 			NodesChanged: row.nodesChanged,
+			Additions:    row.additions,
+			Deletions:    row.deletions,
 			RiskScore:    row.riskScore,
 			RiskLabel:    row.riskLabel,
 			UrgencyScore: urgency,

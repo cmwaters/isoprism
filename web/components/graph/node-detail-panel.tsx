@@ -224,6 +224,7 @@ function RepoSummaryPanel({
   onSelectPR: (prNumber: number) => void;
 }) {
   const { owner, name } = splitRepoFullName(repo.full_name);
+  const openTimeLabels = useOpenTimeLabels(prs.map((pr) => [pr.id, pr.opened_at]));
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
@@ -259,7 +260,7 @@ function RepoSummaryPanel({
                   width: "100%",
                 }}
               >
-                <span style={{ color: "#AAAAAA", fontSize: 12, marginRight: 6 }}>#{pr.number}</span>
+                <span style={{ color: "#EF5DA8", fontSize: 12, fontWeight: 600, marginRight: 6 }}>#{pr.number}</span>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{pr.title}</span>
                 {loadingPRNumber === pr.number && (
                   <span style={{ color: "#888888", display: "block", fontSize: 12, marginTop: 6 }}>
@@ -273,7 +274,10 @@ function RepoSummaryPanel({
                     </span>
                   )}
                   <span style={repoPRBadgeStyle}>
-                    {pr.nodes_changed} {pr.nodes_changed === 1 ? "function" : "functions"} changed
+                    {formatPRDiff(pr)}
+                  </span>
+                  <span style={repoPRBadgeStyle}>
+                    {openTimeLabels.get(pr.id) || "open"}
                   </span>
                 </span>
                 {pr.summary && (
@@ -299,6 +303,36 @@ function RepoSummaryPanel({
 function splitRepoFullName(fullName: string): { owner: string; name: string } {
   const [owner, name] = fullName.split("/");
   return { owner: owner || fullName, name: name || fullName };
+}
+
+function useOpenTimeLabels(prs: Array<[string, string]>): Map<string, string> {
+  const [nowMs, setNowMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    const updateNow = () => setNowMs(Date.now());
+    const initialTimer = window.setTimeout(updateNow, 0);
+    const intervalTimer = window.setInterval(updateNow, 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalTimer);
+    };
+  }, []);
+
+  if (nowMs === null) return new Map();
+
+  return new Map(prs.map(([id, openedAt]) => [id, formatOpenTime(openedAt, nowMs)]));
+}
+
+function formatOpenTime(openedAt: string, nowMs = Date.now()): string {
+  const hoursOpen = Math.max(0, Math.floor((nowMs - new Date(openedAt).getTime()) / 3_600_000));
+  if (hoursOpen < 24) return `${hoursOpen}h`;
+  const daysOpen = Math.floor(hoursOpen / 24);
+  if (daysOpen < 7) return `${daysOpen}d`;
+  return `${Math.floor(daysOpen / 7)}w`;
+}
+
+function formatPRDiff(pr: Pick<QueuePR, "additions" | "deletions">): string {
+  return `+${pr.additions || 0} -${pr.deletions || 0}`;
 }
 
 const repoPRBadgeStyle: CSSProperties = {

@@ -134,6 +134,8 @@ This is a beta version of Isoprism. Report a problem - Request a feature.
 
 Both actions open a centered feedback panel and submit a GitHub issue labelled `bug` or `feature`. The issue should include the tester's user ID, repository, PR, node, browser path, app commit, and source commit context.
 
+The footer also includes a close control. Closing it only affects the current page session; it appears again after the user refreshes the website.
+
 ---
 
 ### Screen 6 — End-of-Week Questionnaire
