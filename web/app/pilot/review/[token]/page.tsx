@@ -101,10 +101,10 @@ export default function PilotReviewPage() {
 
           {form.would_keep_using === "yes" && (
             <>
-              <Field label="Why?">
+              <Field label="Why? Tell us what you liked about it">
                 <textarea style={textareaStyle} value={form.keep_using_reason} onChange={(event) => setForm({ ...form, keep_using_reason: event.target.value })} />
               </Field>
-              <Field label="What do you think are the most important features that should be added?">
+              <Field label="What do you think is missing? What would you like to be able to do but can't?">
                 <textarea style={textareaStyle} value={form.most_important_features} onChange={(event) => setForm({ ...form, most_important_features: event.target.value })} />
               </Field>
             </>
