@@ -1,78 +1,27 @@
 # AI Usage
 
-Last verified against the codebase on 2026-04-28.
+Last updated on 2026-05-11.
 
-Isoprism uses AI only in the Go API. The frontend never calls a model provider directly. AI output enriches the function graph with plain-language summaries, PR change summaries, and queue-level PR risk signals.
+This document describes the target AI contract for Isoprism. AI should be used only for pull request analysis: explaining changed code and producing a PR-level summary plus numeric risk score. Base repository code node summaries are intentionally out of scope.
 
-## Current Provider
+The frontend must never call a model provider directly. AI calls belong in the Go API, and the API should persist structured outputs for the web app to display.
 
-| Area | Current implementation |
+## Target Provider
+
+| Area | Target implementation |
 |---|---|
-| Provider | Anthropic Messages API |
-| Endpoint | `https://api.anthropic.com/v1/messages` |
-| Model | `claude-sonnet-4-6` |
-| API version header | `2023-06-01` |
-| Max tokens per call | `4096` |
-| Timeout | `120s` |
+| Provider | Google Gemini API |
+| Model | `gemini-2.5-flash` |
+| Task | PR change summaries and PR-level analysis |
+| Output mode | JSON object |
 | Code entrypoint | `api/internal/ai/enricher.go` |
-| Runtime config | `ANTHROPIC_API_KEY` |
+| Runtime config | `GEMINI_API_KEY` |
 
-The model is currently hard-coded in `api/internal/ai/enricher.go`. `OPENAI_API_KEY` exists in config but is not used by any current AI call site.
-
-If `ANTHROPIC_API_KEY` is unset, AI enrichment becomes a no-op: the API still indexes repositories and PRs, but generated summaries and risk fields may be empty.
+Gemini 2.5 Flash is the default target because the PR analysis job is high-volume, latency-sensitive, and needs reliable structured output over code diffs. Do not introduce separate models for base repository summaries.
 
 ## Where AI Is Used
 
-### 1. Base Code Node Summaries
-
-**Function:** `Enricher.EnrichNodes`
-
-**Triggered by:**
-
-- `RepoInit`, after source files have been fetched, parsed, and inserted into `code_nodes`
-- Authenticated `POST /api/v1/repos/{repoID}/index`
-- Development `POST /debug/repos/{repoID}/reindex`
-
-**Purpose:** Generate a concise summary for each production code node in the base repository graph.
-
-**Context sent to the model:**
-
-- `full_name`
-- raw function/type body text
-- nodes are batched in groups of 30 by `RepoInit`
-- test code is excluded before AI enrichment
-
-**Current prompt template:**
-
-```text
-For each function below, write exactly 2 plain-English sentences describing what the function does. Be specific and concise. Return a JSON array: [{"full_name": "...", "summary": "..."}]
-
-Functions:
-
---- {full_name} ---
-{body}
-```
-
-The `--- {full_name} ---` block is repeated for each node in the batch.
-
-**Expected output:**
-
-```json
-[
-  {
-    "full_name": "package.Type.Method",
-    "summary": "Exactly two plain-English sentences describing what the node does."
-  }
-]
-```
-
-**Stored in:** `code_nodes.summary`
-
-**Displayed in:** graph node detail panels as the "what it does" style summary.
-
-**Failure behavior:** If the Anthropic call fails, `RepoInit` logs the error and continues. If JSON parsing fails, the current implementation returns an empty summary map without failing the indexing job.
-
-### 2. PR Change Summaries and PR-Level Analysis
+### PR Change Summaries and PR-Level Analysis
 
 **Function:** `Enricher.EnrichPRChanges`
 
@@ -82,34 +31,66 @@ The `--- {full_name} ---` block is repeated for each node in the batch.
 - GitHub `pull_request` webhook actions: `opened`, `synchronize`, `reopened`, `ready_for_review`
 - Development `POST /debug/prs/{prID}/reprocess`
 
-**Purpose:** Explain what changed inside each added or modified production node, then produce one PR-level summary and a simple risk assessment for the queue.
+**Purpose:** Explain what changed inside each added or modified production node, capture relevant non-code changes, summarize what tests assert, then produce one PR-level summary and a numeric risk score for the queue.
 
 **Context sent to the model:**
 
+- PR title
+- PR description/body, preserving author-provided markdown when available
 - changed node `full_name`
 - component-scoped `diff_hunk`
+- additional changed files that are not represented as production code nodes, such as documentation, config, migrations, generated API contracts, dependency manifests, or build/deployment files
+- test changes, passed as a separate context group
 - deleted nodes are persisted as deleted changes but are not sent to the model
 
-**Current prompt template:**
+**Prompt template:**
 
 ```text
-You are analysing a pull request. For each changed function, write exactly 2 sentences describing what specifically changed (not what the function does, but what changed in this PR). Return a JSON object:
+You are analysing a pull request. For each changed production function, write up to 2 sentences describing what specifically changed in this PR. Do not describe what the function generally does unless that is necessary to explain the change.
+
+For tests, describe what behavior is being asserted. Do not summarize test implementation mechanics unless they are important to the assertion.
+
+For documentation, config, migrations, generated contracts, dependency manifests, build files, or deployment files, summarize the user-visible or operational effect of the change.
+
+Use the PR title and description as intent/context, but ground your output in the diffs. If the PR description conflicts with the diff, trust the diff.
+
+Return only a JSON object with this shape:
 {
   "changes": [{"full_name": "...", "change_summary": "..."}],
-  "pr_summary": "one sentence describing the overall PR",
-  "risk_score": 5,
-  "risk_label": "medium"
+  "test_assertions": [{"name": "...", "assertion_summary": "..."}],
+  "other_changes": [{"path": "...", "change_summary": "..."}],
+  "pr_summary": "two to three sentence describing the overall PR with an emphasis on what this changes and why this change is necessary",
+  "risk_score": 5
 }
-risk_score is 1-10; risk_label is "low" (1-3), "medium" (4-6), or "high" (7-10).
+
+risk_score is an integer from 1 to 10.
+
+PR title:
+{pr_title}
+
+PR description:
+{pr_description}
 
 Changed functions and their diffs:
 
 --- {full_name} ---
 Diff:
 {diff_hunk}
+
+Test changes:
+
+--- {test_name_or_path} ---
+Diff:
+{test_diff_hunk}
+
+Other changed files:
+
+--- {path} ---
+Diff:
+{file_diff_hunk}
 ```
 
-The changed function block is repeated for each added or modified node in the PR.
+The changed function block is repeated for each added or modified production node in the PR. Test and other-file blocks are repeated for each relevant changed file or test node.
 
 **Expected output:**
 
@@ -118,21 +99,33 @@ The changed function block is repeated for each added or modified node in the PR
   "changes": [
     {
       "full_name": "package.Type.Method",
-      "change_summary": "Exactly two sentences describing what changed in this PR."
+      "change_summary": "Up to two sentences describing what changed in this PR."
     }
   ],
-  "pr_summary": "One sentence describing the overall PR.",
-  "risk_score": 5,
-  "risk_label": "medium"
+  "test_assertions": [
+    {
+      "name": "package.TestName",
+      "assertion_summary": "Up to two sentences describing the behavior this test asserts."
+    }
+  ],
+  "other_changes": [
+    {
+      "path": "docs/example.md",
+      "change_summary": "One sentence describing the operational or user-visible effect of the non-code change."
+    }
+  ],
+  "pr_summary": "Up to three sentences describing the overall PR.",
+  "risk_score": 5
 }
 ```
 
 **Stored in:**
 
 - `pr_node_changes.change_summary`
+- test assertion summaries in a dedicated PR-test-change field/table, or folded into PR analysis until a dedicated schema exists
+- other changed file summaries in a dedicated PR-file-change field/table, or folded into PR analysis until a dedicated schema exists
 - `pr_analyses.summary`
 - `pr_analyses.risk_score`
-- `pr_analyses.risk_label`
 - `pr_analyses.ai_model`
 - `pr_analyses.generated_at`
 
@@ -141,62 +134,88 @@ The changed function block is repeated for each added or modified node in the PR
 - PR queue summary rows
 - PR summary panel
 - selected node detail panel for changed nodes
+- test assertions section when tests changed
+- other changes section when docs/config/schema/build/deployment files changed
 
-**Failure behavior:** If the Anthropic call fails, `OpenPR` logs the error and continues. If JSON parsing fails, node change summaries are empty and the PR summary defaults to `PR analysis unavailable.` in memory; persisted fields may be null depending on the returned object.
+**Failure behavior:** If the model call fails, `OpenPR` should log the error and continue. If JSON parsing fails, node change summaries should be empty and the PR summary should default to `PR analysis unavailable.`.
 
 ## Model Support Policy
 
-The product should support a small model registry instead of scattering model names through the code. Each AI job should declare its task type, default model, fallback model, and output schema.
+The product should keep model selection simple. The only default AI task is PR analysis.
 
 | Task | Default model | Fallback model | Why |
 |---|---|---|---|
-| Base code node summaries | `claude-sonnet-4-6` | smaller Anthropic fast/low-cost model when available | Needs reliable code understanding, but each node summary is short and can tolerate a cheaper fallback if output stays structured. |
-| PR change summaries | `claude-sonnet-4-6` | none by default | This is the highest-value AI task because it interprets diffs and feeds the reviewer-facing graph. Prefer quality and consistency over cost. |
-| PR-level summary and risk | `claude-sonnet-4-6` | same model used for PR change summaries | The current implementation generates these fields in the same call as change summaries so the model sees the same diff context. |
-| Embeddings or semantic search | not currently implemented | not currently implemented | Add a dedicated embedding model only when the product has a search/retrieval feature that needs it. |
-| Chat or review agent | not currently implemented | not currently implemented | Do not introduce conversational models until there is an explicit user-facing workflow for asking questions about a graph or PR. |
-
-Current code supports only the first three rows, all through Anthropic. OpenAI is configured but unused.
+| PR change summaries | `gemini-2.5-flash` | none by default | This is the core AI task: it interprets diffs and feeds the reviewer-facing graph. Keep output consistent before adding fallback complexity. |
+| Test assertion summaries | `gemini-2.5-flash` | same model used for PR change summaries | Keep test changes in the same PR-level call so the model can compare asserted behavior against production changes without treating tests as production logic. |
+| Other changed file summaries | `gemini-2.5-flash` | same model used for PR change summaries | Docs, config, migrations, manifests, and deployment files often explain operational impact that production function diffs alone miss. |
+| PR-level summary and risk score | `gemini-2.5-flash` | same model used for PR change summaries | Generate these fields in the same call as change summaries so the model sees the same diff context. |
+| Base code node summaries | not implemented | not implemented | Isoprism should focus AI spend and UI attention on PR changes, not static summaries of the default branch. |
+| Embeddings or semantic search | not implemented | not implemented | Add a dedicated embedding model only when the product has a search/retrieval feature that needs it. |
+| Chat or review agent | not implemented | not implemented | Do not introduce conversational models until there is an explicit user-facing workflow for asking questions about a graph or PR. |
 
 ## Trigger Matrix
 
 | Trigger | Event | AI calls made | Notes |
 |---|---|---|---|
-| User selects a repo and starts indexing | `RepoInit` | `EnrichNodes` | Called by `POST /api/v1/repos/{repoID}/index`; summaries are generated after parsing and graph edge extraction. |
-| Developer reindexes a repo | `RepoInit` | `EnrichNodes` | Called by `POST /debug/repos/{repoID}/reindex`; same AI path as normal indexing. |
+| User selects a repo and starts indexing | `RepoInit` | none | Repository indexing should build the structural graph without asking AI to summarize base code nodes. |
+| Developer reindexes a repo | `RepoInit` | none | `POST /debug/repos/{repoID}/reindex` should rebuild graph data without AI base summaries. |
 | GitHub PR opened | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.opened`. |
 | GitHub PR updated with new commits | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.synchronize`; old `pr_node_changes` are cleared before reprocessing. |
 | GitHub PR reopened | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.reopened`. |
 | GitHub PR marked ready for review | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.ready_for_review`. |
 | Developer reprocesses a PR | `OpenPR` | `EnrichPRChanges` | Called by `POST /debug/prs/{prID}/reprocess`; same AI path as normal PR processing. |
-| GitHub PR merged | `MergePR` | none | Advances `repositories.main_commit_sha`; no AI call in the current implementation. |
+| GitHub PR merged | `MergePR` | none | Advances repository state; no AI call. |
 
 ## Data Boundaries
 
-AI calls may send repository source snippets and PR diff hunks to Anthropic. The current implementation does not send:
+AI calls may send PR titles, PR descriptions, PR diff hunks, and changed function names to Gemini. The target implementation should not send:
 
 - user emails
 - Supabase auth tokens
 - GitHub installation tokens
 - database credentials
 - entire repositories as a single payload
-- test code as code nodes
+- base branch code nodes for standalone summaries
+- test code as code nodes unless PR diff support explicitly includes test nodes
 
-The source snippets and diffs can still contain secrets if the indexed repository contains secrets in source code. Isoprism should treat AI enrichment as a code-processing feature and disclose that code excerpts are sent to the configured model provider.
+Diffs can still contain secrets if the indexed repository contains secrets in source code. Isoprism should treat AI enrichment as a code-processing feature and disclose that code excerpts are sent to the configured model provider.
+
+## Context Selection Policy
+
+Prefer high-signal PR context over large raw tree context. The default model input should include:
+
+- PR title and description
+- changed node names
+- component-scoped diff hunks
+- change status for each node, such as added, modified, deleted, or renamed when available
+- file paths for changed nodes
+- test diffs grouped separately from production code diffs
+- non-code changed files that affect user behavior, operations, schema, dependencies, deployment, or documentation
+- directly connected callers/callees from the existing graph when they help explain likely impact
+
+Avoid sending large parts of the tree by default. Full files, broad directory listings, or unchanged base-branch function bodies usually add cost and noise without improving PR summaries. Add larger context only behind a deliberate retrieval step, such as when a changed function has many indirect dependents, the diff references symbols outside the hunk, or the model needs a nearby caller/callee body to explain impact.
+
+A good first expansion is one-hop graph context: changed node, file path, direct callers, direct callees, and whether each connected node is production or test code. If that is not enough, add only the specific adjacent function bodies needed to understand the diff.
+
+Keep tests in the same PR analysis call, but separate them in the prompt and output schema. Splitting tests into a separate model call loses useful context about whether the tests cover the production changes. Mixing tests into the production `changes` array is also noisy because test summaries should answer a different question: what behavior is being asserted?
+
+## Implementation Alignment
+
+The current code may still contain Anthropic-era behavior. Bring the implementation into line with this document by:
+
+1. Replacing the hard-coded Anthropic model/provider path with Gemini 2.5 Flash.
+2. Removing or disabling `Enricher.EnrichNodes` from `RepoInit`.
+3. Removing `risk_label` from the model prompt and expected output.
+4. Deriving any UI risk label from `risk_score` in application code if a label is still needed.
+5. Recording `gemini-2.5-flash` in `pr_analyses.ai_model`.
+6. Adding PR title and PR description/body to `Enricher.EnrichPRChanges` input.
+7. Adding separate prompt sections and parsed outputs for test assertions and other changed files.
+8. Removing unused provider config once no call site needs it.
 
 ## Implementation Notes
 
-- Model responses are expected to be JSON, but the implementation accepts text containing a JSON object or array and extracts the first JSON block.
-- There is no schema validation beyond `json.Unmarshal`.
-- There is no retry logic, streaming, tool use, cache table, prompt version, or per-call telemetry yet.
-- `pr_analyses.ai_model` records the hard-coded model name for PR analysis. Base node summaries do not currently store the model that generated `code_nodes.summary`.
-- `OpenPR` counts only non-deleted nodes in `pr_analyses.nodes_changed`.
-
-## Recommended Next Changes
-
-1. Move the model name into config, with a typed task registry in the AI package.
-2. Store `ai_model` and a prompt version for `code_nodes.summary`.
-3. Add strict JSON schema validation and fail closed for malformed model output.
-4. Add retry/backoff for transient Anthropic errors.
-5. Add per-call logging for task type, model, input count, latency, and parse success without logging source code.
-6. Remove `OPENAI_API_KEY` from config until used, or document and implement the OpenAI task it supports.
+- Model responses must be JSON objects matching the PR analysis schema above.
+- Add strict schema validation before persisting model output.
+- Add retry/backoff for transient provider errors.
+- Add per-call logging for task type, model, changed node count, latency, and parse success without logging source code.
+- `OpenPR` should count only non-deleted nodes in `pr_analyses.nodes_changed`.
