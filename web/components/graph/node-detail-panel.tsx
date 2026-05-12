@@ -1350,28 +1350,25 @@ function FullComponentDiffViewer({
       padding: 0,
     }}>
       {lines.map((line, index) => {
-        const background = line.kind === "added"
-          ? "#A7E7A4"
+        const color = line.kind === "added"
+          ? "#16A34A"
           : line.kind === "removed"
-            ? "#E58A8A"
-            : "transparent";
-        const prefix = line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " ";
+            ? "#EF4444"
+            : "#222222";
 
         return (
           <div
             key={index}
             style={{
-              background,
               display: "grid",
-              gridTemplateColumns: "42px 16px minmax(0, 1fr)",
+              gridTemplateColumns: "42px minmax(0, 1fr)",
               padding: "0 2px",
             }}
           >
             <span style={{ color: "#777777", paddingRight: 8, textAlign: "left", userSelect: "none" }}>
               {displayLineNumber(line) ?? ""}
             </span>
-            <span style={{ userSelect: "none" }}>{prefix}</span>
-            <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            <span style={{ color, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {line.text || " "}
             </span>
           </div>
@@ -1486,12 +1483,12 @@ function UnifiedDiffViewer({ patch }: { patch: string }) {
         const added = line.startsWith("+") && !line.startsWith("+++");
         const removed = line.startsWith("-") && !line.startsWith("---");
         const hunk = line.startsWith("@@");
-        const background = added ? "#A7E7A4" : removed ? "#E58A8A" : hunk ? "#E8E8FF" : "transparent";
-        const color = hunk ? "#4F46E5" : "#222222";
+        const color = added ? "#16A34A" : removed ? "#EF4444" : hunk ? "#4F46E5" : "#222222";
+        const text = added || removed ? line.slice(1) : line;
 
         return (
-          <span key={index} style={{ background, color, display: "block", padding: "0 2px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {line || " "}
+          <span key={index} style={{ color, display: "block", padding: "0 2px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {text || " "}
           </span>
         );
       })}
