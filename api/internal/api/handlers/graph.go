@@ -1142,6 +1142,16 @@ func (h *GraphHandler) ExpandGraph(w http.ResponseWriter, r *http.Request) {
 
 	visible := graphVisibleSet(req.VisibleNodeIDs, req.NodeID)
 	newIDs, hiddenCount, hasMore := selectExpansionNeighbors(req.NodeID, visible, nodeMap, allEdges)
+	expandedNodeAlreadyVisible := false
+	for _, id := range req.VisibleNodeIDs {
+		if id == req.NodeID {
+			expandedNodeAlreadyVisible = true
+			break
+		}
+	}
+	if !expandedNodeAlreadyVisible {
+		newIDs = append([]string{req.NodeID}, newIDs...)
+	}
 	responseVisible := map[string]bool{}
 	for id := range visible {
 		responseVisible[id] = true

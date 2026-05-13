@@ -103,6 +103,7 @@ The repo route renders one persistent `GraphCanvas` and side panel:
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
 - PR graphs initially show changed production nodes plus exactly one hop of production callers/callees in either direction. Context-to-context nodes beyond that first hop are not included until the reviewer expands the graph.
 - Clicking a visible PR graph edge requests one additional one-hop production neighborhood around that edge's endpoints and merges the returned nodes/edges into the current graph session.
+- Clicking a function or method node expands that component into the visible graph. Clicking a type/class node loads its methods and referenced type contents into the detail panel only; those methods or referenced types are added to the graph only when the reviewer clicks them from the panel.
 - Graph placement uses a deterministic edge-length relaxation layout. Visible edges pull connected nodes together, larger collision padding keeps cards readable, unconnected nodes repel each other, and existing node positions are preserved during expansion so the map does not reshuffle abruptly.
 - Global function/class/package collapse controls are not part of the current graph UI. Future collapse should be per-component so a reviewer can collapse or expand a specific component cluster without changing the whole map.
 
@@ -118,7 +119,9 @@ Graph responses are function-level. The API returns canonical `full_name` values
 
 PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail. Dynamic expansion uses `POST /api/v1/repos/{repoID}/graph/expand` with PR graph context; edge clicks issue that expansion for both edge endpoints and merge the returned `nodes` and `edges`.
 
-Graph nodes can be expanded from the canvas. Clicking any node selects it and, on the first click for that visible node, calls `POST /api/v1/repos/{repoID}/graph/expand` with the selected node ID, current visible node IDs, and either repo context or PR context (`{ mode: "pr", pr_id }`). The API returns hidden direct callers/callees plus visible edges for the expanded set. The client merges nodes by `id`, merges edges by `source_id|destination_id|edge_kind`, keeps existing node positions stable, preserves the selected-node highlight across the node rebuild, places newly loaded nodes near the expanded node before the edge-length relaxation pass, and preserves the current camera viewport instead of refitting. Selecting another node animates to that component at the current zoom level.
+Graph nodes can be expanded from the canvas. Clicking a function or method selects it and, on the first click for that visible node, calls `POST /api/v1/repos/{repoID}/graph/expand` with the selected node ID, current visible node IDs, and either repo context or PR context (`{ mode: "pr", pr_id }`). The API returns hidden direct callers/callees plus visible edges for the expanded set. The client merges nodes by `id`, merges edges by `source_id|destination_id|edge_kind`, keeps existing node positions stable, preserves the selected-node highlight across the node rebuild, places newly loaded nodes near the expanded node before the edge-length relaxation pass, and preserves the current camera viewport instead of refitting. Selecting another node animates to that component at the current zoom level.
+
+Type/class nodes use the same expansion endpoint but initially keep the result in panel-only detail state. The side panel shows a `Contents` tab for type nodes instead of source code. Contents lists type references from the node's structured `inputs[]` and `outputs[]`; clicking one materializes that type in the current graph session and wires it to already visible edges where available. Methods owned by a selected type are shown in the panel's `Methods` relation, but are not drawn on the canvas until the reviewer clicks a method row.
 
 PR review does not have a separate route or page.
 
@@ -135,9 +138,10 @@ The API creates a GitHub issue in the configured feedback repository with either
 The side panel has two modes:
 
 - `Overview`: repo, PR, or node summary, calls, callers, and tests. PR context shows GitHub-equivalent file diffs from the PR files API, including test files, plus a separate semantic graph-change list when graph nodes are available.
-- `Code`: a lazy-loaded source viewer for the selected function or struct. PR changed nodes automatically show the full component with changed lines highlighted. Repo nodes and unchanged context nodes show plain source.
+- `Code`: a lazy-loaded source viewer for the selected function or method. PR changed nodes automatically show the full component with changed lines highlighted. Repo nodes and unchanged context nodes show plain source.
+- `Contents`: shown for type/class nodes instead of `Code`. It lists other types referenced by that type and lets the reviewer add a referenced type to the current graph on demand.
 
-The overview/code icon controls switch the side panel mode without changing the selected graph node.
+The overview/code/contents icon controls switch the side panel mode without changing the selected graph node.
 
 ## API contract used by the PR overview
 
@@ -178,7 +182,7 @@ The PR overview groups changes into four sections after the rendered description
 
 Documentation and other file rows render the file basename as a human title without the extension, for example `3003-blockapi-stop-deadlock.md` becomes `3003 Blockapi Stop Deadlock`.
 
-Clicking a graph/test row opens a resizable middle component panel between the PR overview and the graph. The panel shows the component overview first and the `Code` section below it, with extra space above and below the section label. Relation and code line numbers align to the panel's left content edge. The code/diff block itself is transparent so it inherits the panel background; added and removed lines use green and red text without `+` or `-` prefixes. Opening or resizing the panel refits the graph. Selecting a test row temporarily centers the graph on that test entrypoint and the production nodes returned with matching `tests[]` references; selecting any production component returns the canvas to the normal PR diff graph. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
+Clicking a graph/test row opens a resizable middle component panel between the PR overview and the graph. Function and method components show the component overview first and the `Code` section below it, with extra space above and below the section label. Type/class components do not show source code in this panel; they show relation sections plus `Contents` for referenced types. Relation and code line numbers align to the panel's left content edge. The code/diff block itself is transparent so it inherits the panel background; added and removed lines use green and red text without `+` or `-` prefixes. Selecting a test row opens a focused test graph centered on that test entrypoint and the production nodes returned with matching `tests[]` references. While the focused test graph is open, selecting or expanding production methods keeps additions inside that test graph instead of returning to the normal PR diff graph. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
 
 ## API contract used by the code panel
 

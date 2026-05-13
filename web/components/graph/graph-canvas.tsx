@@ -20,7 +20,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
+import { GraphEdge, GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import { SettingsView } from "@/components/settings/settings-view";
@@ -41,7 +41,7 @@ type MeasuredNode = {
   height?: number;
   data?: { node?: APIGraphNode };
 };
-export type PanelMode = "overview" | "code";
+export type PanelMode = "overview" | "contents" | "code";
 
 const DIFF_PILLS_HEIGHT = 28;
 const CARD_CORNER_MARGIN = 20;
@@ -578,7 +578,12 @@ function sameTestEntry(test: APIGraphNode, ref: { full_name: string; file_path: 
   return test.full_name === ref.full_name && test.file_path === ref.file_path;
 }
 
-function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | null): UnifiedGraph {
+function isTypeNode(node: APIGraphNode | null | undefined): boolean {
+  if (!node) return false;
+  return ["class", "interface", "struct", "type"].includes(node.kind);
+}
+
+function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | null, extraNodeIDs: Set<string> = new Set()): UnifiedGraph {
   if (!isPRGraph(graph) || !testNode) return graph;
 
   const testChanges = graph.test_changes ?? [];
@@ -611,6 +616,12 @@ function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | nul
   const edgeTargetPool = [...graph.nodes, ...testContext];
   const edgeTargets = edgeTargetPool.filter((node) => graph.edges.some((edge) => reachableTestNodeIDs.has(edge.source_id) && edge.destination_id === node.id));
   const targetByID = new Map([...directTargets, ...edgeTargets].map((node) => [node.id, node]));
+  for (const node of graph.nodes) {
+    if (extraNodeIDs.has(node.id)) {
+      targetByID.set(node.id, node);
+    }
+  }
+
   const targets = Array.from(targetByID.values());
   const nodeIDs = new Set([...reachableTestNodeIDs, ...targets.map((node) => node.id)]);
   const edges = graph.edges
@@ -671,25 +682,30 @@ function InnerCanvas({
   const [expandingEdgeKey, setExpandingEdgeKey] = useState<string | null>(null);
   const [expandingNodeIDs, setExpandingNodeIDs] = useState<Record<string, boolean>>({});
   const [expandedNodeIDs, setExpandedNodeIDs] = useState<Record<string, boolean>>({});
+  const [focusedTestNodeID, setFocusedTestNodeID] = useState<string | null>(null);
+  const [testFocusExtraNodeIDs, setTestFocusExtraNodeIDs] = useState<Set<string>>(() => new Set());
+  const [detailExpansion, setDetailExpansion] = useState<{ nodes: APIGraphNode[]; edges: GraphEdge[] }>({ nodes: [], edges: [] });
   const selectedNodeIDRef = useRef<string | null>(null);
+  const selectAfterMergeRef = useRef<string | null>(null);
   const baseVisibleGraph = useMemo(() => collapseRenamedGraphNodes(activeGraph), [activeGraph]);
   const activeGraphKey = useMemo(() => graphContextKey(activeGraph), [activeGraph]);
   const activePRTestChanges = useMemo(
     () => isPRGraph(activeGraph) ? activeGraph.test_changes ?? [] : [],
     [activeGraph]
   );
-  const selectedTestNode = selectedPRChange?.type === "node"
-    ? activePRTestChanges.find((node) => node.id === selectedPRChange.nodeID) ?? null
+  const selectedTestNode = focusedTestNodeID
+    ? activePRTestChanges.find((node) => node.id === focusedTestNodeID) ?? null
     : null;
   const visibleGraph = useMemo(
-    () => buildTestFocusedGraph(baseVisibleGraph, selectedTestNode),
-    [baseVisibleGraph, selectedTestNode]
+    () => buildTestFocusedGraph(baseVisibleGraph, selectedTestNode, testFocusExtraNodeIDs),
+    [baseVisibleGraph, selectedTestNode, testFocusExtraNodeIDs]
   );
 
   const selectGraphNode = useCallback((id: string) => {
     selectionZoomRef.current = getZoom();
     const apiNode = visibleGraph.nodes.find((n) => n.id === id)
       ?? baseVisibleGraph.nodes.find((n) => n.id === id)
+      ?? detailExpansion.nodes.find((n) => n.id === id)
       ?? activePRTestChanges.find((n) => n.id === id)
       ?? null;
     setSelectedNode(apiNode);
@@ -697,12 +713,15 @@ function InnerCanvas({
       setSelectedPRChange(null);
       return;
     }
+    if (isTypeNode(apiNode)) {
+      setPanelMode((current) => current === "code" ? "overview" : current);
+    }
     if (isPRGraph(baseVisibleGraph) && apiNode) {
       setSelectedPRChange({ type: "node", nodeID: apiNode.id });
     } else {
       setSelectedPRChange(null);
     }
-  }, [activePRTestChanges, baseVisibleGraph, getZoom, visibleGraph]);
+  }, [activePRTestChanges, baseVisibleGraph, detailExpansion.nodes, getZoom, visibleGraph]);
 
   const initialNodes: Node[] = useMemo(() => visibleGraph.nodes.map((n) => ({
     id: n.id,
@@ -755,6 +774,9 @@ function InnerCanvas({
     layoutPositionsRef.current = {};
     setLayoutPositions({});
     setExpandedEdgeKeys(new Set());
+    setFocusedTestNodeID(null);
+    setTestFocusExtraNodeIDs(new Set());
+    setDetailExpansion({ nodes: [], edges: [] });
   }, [graph]);
 
   useEffect(() => {
@@ -816,11 +838,54 @@ function InnerCanvas({
     setPanelMode("overview");
     setExpandingNodeIDs({});
     setExpandedNodeIDs({});
+    setFocusedTestNodeID(null);
+    setTestFocusExtraNodeIDs(new Set());
+    setDetailExpansion({ nodes: [], edges: [] });
   }, [activeGraphKey]);
 
-  const expandGraphNode = useCallback(async (nodeID: string) => {
-    const node = baseVisibleGraph.nodes.find((n) => n.id === nodeID);
-    if (!node || expandingNodeIDs[nodeID] || (expandedNodeIDs[nodeID] && !node.boundary)) return;
+  useEffect(() => {
+    const pendingID = selectAfterMergeRef.current;
+    if (!pendingID || !baseVisibleGraph.nodes.some((node) => node.id === pendingID)) return;
+    selectAfterMergeRef.current = null;
+    selectGraphNode(pendingID);
+  }, [baseVisibleGraph.nodes, selectGraphNode]);
+
+  const requestNodeExpansion = useCallback((nodeID: string) => {
+    return apiFetch<GraphExpansionResponse>(`/api/v1/repos/${repoID}/graph/expand`, token, {
+      method: "POST",
+      body: JSON.stringify({
+        node_id: nodeID,
+        visible_node_ids: baseVisibleGraph.nodes.map((n) => n.id),
+        graph_context: isPRGraph(activeGraph)
+          ? { mode: "pr", pr_id: activeGraph.pr.id }
+          : { mode: "repo" },
+      }),
+    });
+  }, [activeGraph, baseVisibleGraph.nodes, repoID, token]);
+
+  const mergeDetailExpansion = useCallback((response: GraphExpansionResponse) => {
+    setDetailExpansion((current) => ({
+      nodes: uniqueGraphNodes([...current.nodes, ...response.nodes]),
+      edges: uniqueGraphEdges([...current.edges, ...response.edges]),
+    }));
+  }, []);
+
+  const mergeExpansionIntoActiveGraph = useCallback((response: GraphExpansionResponse, contextKey: string) => {
+    suppressNextFitViewRef.current = true;
+    setActiveGraph((current) => {
+      if (graphContextKey(current) !== contextKey) return current;
+      return mergeExpansionGraph(current, response);
+    });
+    if (focusedTestNodeID) {
+      setTestFocusExtraNodeIDs((current) => new Set([...current, ...response.nodes.map((node) => node.id), response.expanded_node_id]));
+    }
+  }, [focusedTestNodeID]);
+
+  const expandGraphNode = useCallback(async (nodeID: string, options: { detailOnlyForTypes?: boolean; forceGraphMerge?: boolean } = {}) => {
+    const node = baseVisibleGraph.nodes.find((n) => n.id === nodeID)
+      ?? detailExpansion.nodes.find((n) => n.id === nodeID)
+      ?? null;
+    if (expandingNodeIDs[nodeID] || (node && expandedNodeIDs[nodeID] && !node.boundary)) return;
 
     const contextKey = graphContextKey(activeGraph);
     const position = layoutPositionsRef.current[nodeID] ?? getNode(nodeID)?.position;
@@ -828,22 +893,13 @@ function InnerCanvas({
     pendingPinnedIDsRef.current = new Set([nodeID]);
     setExpandingNodeIDs((current) => ({ ...current, [nodeID]: true }));
     try {
-      const response = await apiFetch<GraphExpansionResponse>(`/api/v1/repos/${repoID}/graph/expand`, token, {
-        method: "POST",
-        body: JSON.stringify({
-          node_id: nodeID,
-          visible_node_ids: baseVisibleGraph.nodes.map((n) => n.id),
-          graph_context: isPRGraph(activeGraph)
-            ? { mode: "pr", pr_id: activeGraph.pr.id }
-            : { mode: "repo" },
-        }),
-      });
+      const response = await requestNodeExpansion(nodeID);
       setExpandedNodeIDs((current) => ({ ...current, [nodeID]: true }));
-      suppressNextFitViewRef.current = true;
-      setActiveGraph((current) => {
-        if (graphContextKey(current) !== contextKey) return current;
-        return mergeExpansionGraph(current, response);
-      });
+      if (options.detailOnlyForTypes && node && isTypeNode(node) && !options.forceGraphMerge) {
+        mergeDetailExpansion(response);
+      } else {
+        mergeExpansionIntoActiveGraph(response, contextKey);
+      }
     } catch (error) {
       console.error("Graph expansion failed", error);
     } finally {
@@ -853,14 +909,35 @@ function InnerCanvas({
         return next;
       });
     }
-  }, [activeGraph, baseVisibleGraph.nodes, expandedNodeIDs, expandingNodeIDs, getNode, repoID, token]);
+  }, [activeGraph, baseVisibleGraph.nodes, detailExpansion.nodes, expandedNodeIDs, expandingNodeIDs, getNode, mergeDetailExpansion, mergeExpansionIntoActiveGraph, requestNodeExpansion]);
+
+  const selectAndPopulateGraphNode = useCallback((id: string) => {
+    const node = visibleGraph.nodes.find((n) => n.id === id)
+      ?? baseVisibleGraph.nodes.find((n) => n.id === id)
+      ?? detailExpansion.nodes.find((n) => n.id === id)
+      ?? null;
+    if (focusedTestNodeID) {
+      setTestFocusExtraNodeIDs((current) => new Set([...current, id]));
+    }
+    if (node && baseVisibleGraph.nodes.some((candidate) => candidate.id === id)) {
+      selectGraphNode(id);
+      if (!isTypeNode(node)) {
+        void expandGraphNode(id);
+      }
+      return;
+    }
+
+    selectAfterMergeRef.current = id;
+    void expandGraphNode(id, { forceGraphMerge: true });
+  }, [baseVisibleGraph.nodes, detailExpansion.nodes, expandGraphNode, focusedTestNodeID, selectGraphNode, visibleGraph.nodes]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
       selectGraphNode(node.id);
-      void expandGraphNode(node.id);
+      const apiNode = visibleGraph.nodes.find((n) => n.id === node.id) ?? baseVisibleGraph.nodes.find((n) => n.id === node.id);
+      void expandGraphNode(node.id, { detailOnlyForTypes: isTypeNode(apiNode) });
     },
-    [expandGraphNode, selectGraphNode]
+    [baseVisibleGraph.nodes, expandGraphNode, selectGraphNode, visibleGraph.nodes]
   );
 
   const onEdgeClick: EdgeMouseHandler = useCallback(async (_, edge) => {
@@ -940,6 +1017,9 @@ function InnerCanvas({
     setSettingsOpen(false);
     setSelectedPRChange(null);
     setExpandedEdgeKeys(new Set());
+    setFocusedTestNodeID(null);
+    setTestFocusExtraNodeIDs(new Set());
+    setDetailExpansion({ nodes: [], edges: [] });
     layoutPositionsRef.current = {};
     setLayoutPositions({});
     const cached = prGraphCache[prNumber];
@@ -962,6 +1042,9 @@ function InnerCanvas({
     setSettingsOpen(false);
     setSelectedPRChange(null);
     setExpandedEdgeKeys(new Set());
+    setFocusedTestNodeID(null);
+    setTestFocusExtraNodeIDs(new Set());
+    setDetailExpansion({ nodes: [], edges: [] });
     layoutPositionsRef.current = {};
     setLayoutPositions({});
     setActiveGraph(graph);
@@ -973,24 +1056,35 @@ function InnerCanvas({
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
   const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
   const detailNodes = isPRGraph(baseVisibleGraph)
-    ? uniqueGraphNodes([...baseVisibleGraph.nodes, ...visibleGraph.nodes, ...activePRTestChanges, ...(baseVisibleGraph.test_context ?? [])])
-    : visibleGraph.nodes;
+    ? uniqueGraphNodes([...baseVisibleGraph.nodes, ...visibleGraph.nodes, ...detailExpansion.nodes, ...activePRTestChanges, ...(baseVisibleGraph.test_context ?? [])])
+    : uniqueGraphNodes([...visibleGraph.nodes, ...detailExpansion.nodes]);
+  const detailEdges = uniqueGraphEdges([...visibleGraph.edges, ...detailExpansion.edges]);
 
   return (
     <div data-layout-positions={Object.keys(layoutPositions).length} style={{ display: "flex", height: "100vh", width: "100vw", position: "relative" }}>
       <NodeDetailPanel
         node={activePR ? null : selectedNode}
-        allNodes={baseVisibleGraph.nodes}
-        edges={visibleGraph.edges}
+        allNodes={detailNodes}
+        edges={detailEdges}
         onSelectNode={(id) => {
-          selectGraphNode(id);
+          selectAndPopulateGraphNode(id);
         }}
         onSelectPRChange={(change) => {
           setSelectedPRChange(change);
           if (change.type === "node") {
-            setSelectedNode(detailNodes.find((node) => node.id === change.nodeID) ?? null);
+            const nextNode = detailNodes.find((node) => node.id === change.nodeID) ?? null;
+            setSelectedNode(nextNode);
+            if (activePRTestChanges.some((node) => node.id === change.nodeID)) {
+              setFocusedTestNodeID(change.nodeID);
+              setTestFocusExtraNodeIDs(new Set());
+            } else {
+              setFocusedTestNodeID(null);
+              setTestFocusExtraNodeIDs(new Set());
+            }
           } else {
             setSelectedNode(null);
+            setFocusedTestNodeID(null);
+            setTestFocusExtraNodeIDs(new Set());
           }
           setPanelMode("overview");
         }}
@@ -1027,7 +1121,7 @@ function InnerCanvas({
         <ComponentChangePanel
           selectedChange={selectedPRChange}
           allNodes={detailNodes}
-          edges={visibleGraph.edges}
+          edges={detailEdges}
           files={activePRFiles}
           repoID={repoID}
           prID={activePR.id}
@@ -1035,7 +1129,7 @@ function InnerCanvas({
           nodeCodeCache={nodeCodeCache}
           onCacheNodeCode={onCacheNodeCode}
           onSelectNode={(id) => {
-            selectGraphNode(id);
+            selectAndPopulateGraphNode(id);
             setSelectedPRChange({ type: "node", nodeID: id });
           }}
           onClose={() => {
@@ -1189,6 +1283,18 @@ function uniqueGraphNodes(nodes: APIGraphNode[]): APIGraphNode[] {
     seen.add(node.id);
     seenSemantic.add(semanticKey);
     result.push(node);
+  }
+  return result;
+}
+
+function uniqueGraphEdges(edges: GraphEdge[]): GraphEdge[] {
+  const seen = new Set<string>();
+  const result: GraphEdge[] = [];
+  for (const edge of edges) {
+    const key = `${edge.source_id}|${edge.destination_id}|${edge.edge_kind}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(edge);
   }
   return result;
 }

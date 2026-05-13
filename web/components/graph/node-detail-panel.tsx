@@ -3,7 +3,7 @@
 import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, PRFileDiff, QueuePR, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import type { PanelMode } from "./graph-canvas";
-import { ArrowLeft, BookOpenText, Code2, Settings, X } from "lucide-react";
+import { ArrowLeft, BookOpenText, Code2, ListTree, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -117,61 +117,59 @@ export default function NodeDetailPanel({
       }}
     >
       <div style={{ flex: 1, overflowY: "auto", paddingBottom: !pr ? 68 : 0 }}>
-        {!node || mode === "overview" ? (
-          !node ? (
-            pr ? (
-              <PRSummaryPanel
-                pr={pr}
-                files={prFiles ?? []}
-                allNodes={allNodes}
-                testChanges={testChanges ?? []}
-                onSelectNode={onSelectNode}
-                onSelectPRChange={onSelectPRChange}
-                onBackToRepo={onBackToRepo}
-              />
-            ) : (
-              <RepoSummaryPanel
-                repo={repo}
-                prs={prs ?? []}
-                allNodes={allNodes}
-                loadingPRNumber={loadingPRNumber}
-                onSelectPR={onSelectPR}
-              />
-            )
+        {!node ? (
+          pr ? (
+            <PRSummaryPanel
+              pr={pr}
+              files={prFiles ?? []}
+              allNodes={allNodes}
+              testChanges={testChanges ?? []}
+              onSelectNode={onSelectNode}
+              onSelectPRChange={onSelectPRChange}
+              onBackToRepo={onBackToRepo}
+            />
+          ) : (
+            <RepoSummaryPanel
+              repo={repo}
+              prs={prs ?? []}
+              allNodes={allNodes}
+              loadingPRNumber={loadingPRNumber}
+              onSelectPR={onSelectPR}
+            />
+          )
+        ) : mode === "code" ? (
+          <CodePanel
+            node={node}
+            repoID={repoID}
+            prID={pr?.id}
+            token={token}
+            cachedCode={nodeCodeCache[node.id]}
+            onCacheNodeCode={onCacheNodeCode}
+            onBackToOverview={() => onModeChange("overview")}
+            onBackToPR={() => {
+              onSelectNode("");
+              onModeChange("overview");
+            }}
+          />
         ) : (
-        <NodeDetail
-          node={node}
-          allNodes={allNodes}
-          edges={edges}
-          onSelectNode={onSelectNode}
-          onBackToOverview={() => {
-            onSelectNode("");
-            onModeChange("overview");
-          }}
-          mode={mode}
-          onModeChange={onModeChange}
-          onViewCode={onViewCode}
-          repoID={repoID}
-          prID={pr?.id}
-          token={token}
-          nodeCodeCache={nodeCodeCache}
-          onCacheNodeCode={onCacheNodeCode}
-        />
-        )
-      ) : (
-        <CodePanel
-          node={node}
-          repoID={repoID}
-          prID={pr?.id}
-          token={token}
-          cachedCode={nodeCodeCache[node.id]}
-          onCacheNodeCode={onCacheNodeCode}
-          onBackToOverview={() => onModeChange("overview")}
-          onBackToPR={() => {
-            onSelectNode("");
-            onModeChange("overview");
-          }}
-        />
+          <NodeDetail
+            node={node}
+            allNodes={allNodes}
+            edges={edges}
+            onSelectNode={onSelectNode}
+            onBackToOverview={() => {
+              onSelectNode("");
+              onModeChange("overview");
+            }}
+            mode={mode}
+            onModeChange={onModeChange}
+            onViewCode={onViewCode}
+            repoID={repoID}
+            prID={pr?.id}
+            token={token}
+            nodeCodeCache={nodeCodeCache}
+            onCacheNodeCode={onCacheNodeCode}
+          />
         )}
       </div>
       {!pr && (
@@ -713,8 +711,10 @@ function NodeChangeDetailPanel({
 }) {
   const [error, setError] = useState<{ nodeID: string; message: string } | null>(null);
   const pkgPrefix = pkgLabel(node);
+  const typeNode = isTypeNode(node);
 
   useEffect(() => {
+    if (typeNode) return;
     if (cachedCode?.node_id === node.id) return;
 
     let cancelled = false;
@@ -734,7 +734,7 @@ function NodeChangeDetailPanel({
     return () => {
       cancelled = true;
     };
-  }, [cachedCode?.node_id, node.id, onCacheNodeCode, prID, repoID, token]);
+  }, [cachedCode?.node_id, node.id, onCacheNodeCode, prID, repoID, token, typeNode]);
 
   const codeForNode = cachedCode?.node_id === node.id ? cachedCode : null;
   const errorForNode = error?.nodeID === node.id ? error.message : null;
@@ -837,12 +837,16 @@ function NodeChangeDetailPanel({
 
       <TestSection tests={node.tests ?? []} />
 
-      <div style={{ marginTop: 22 }}>
-        <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>
-          Code
-        </p>
-        <ComponentCodeBlock node={node} codeForNode={codeForNode} error={errorForNode} loading={loading} />
-      </div>
+      {typeNode ? (
+        <TypeContentsSection node={node} allNodes={allNodes} onSelectNode={onSelectNode} />
+      ) : (
+        <div style={{ marginTop: 22 }}>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>
+            Code
+          </p>
+          <ComponentCodeBlock node={node} codeForNode={codeForNode} error={errorForNode} loading={loading} />
+        </div>
+      )}
     </div>
   );
 }
@@ -982,7 +986,8 @@ function NodeDetail({
 }) {
   const pkgPrefix = pkgLabel(node);
   const cachedCode = nodeCodeCache[node.id];
-  const canViewCode = true;
+  const typeNode = isTypeNode(node);
+  const canViewCode = !typeNode;
 
   useEffect(() => {
     if (!canViewCode) return;
@@ -1017,7 +1022,7 @@ function NodeDetail({
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <PanelToolbar mode={mode} onModeChange={onModeChange} canViewCode={canViewCode} backOnClick={onBackToOverview} />
+      <PanelToolbar mode={mode} onModeChange={onModeChange} canViewCode={canViewCode} canViewContents={typeNode} backOnClick={onBackToOverview} />
 
       {/* File path */}
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
@@ -1043,6 +1048,10 @@ function NodeDetail({
         </div>
       )}
 
+      {mode === "contents" ? (
+        <TypeContentsSection node={node} allNodes={allNodes} onSelectNode={onSelectNode} />
+      ) : (
+        <>
       {/* Description */}
       {node.summary && (
         <p style={{ fontSize: 14, color: "#555555", lineHeight: 1.6, marginBottom: node.change_summary ? 16 : 20 }}>
@@ -1141,6 +1150,8 @@ function NodeDetail({
       />
 
       <TestSection tests={node.tests ?? []} />
+        </>
+      )}
     </div>
   );
 }
@@ -1253,12 +1264,14 @@ function PanelToolbar({
   mode,
   onModeChange,
   canViewCode = true,
+  canViewContents = false,
   backHref,
   backOnClick,
 }: {
   mode?: PanelMode;
   onModeChange?: (mode: PanelMode) => void;
   canViewCode?: boolean;
+  canViewContents?: boolean;
   backHref?: string;
   backOnClick?: () => void;
 }) {
@@ -1266,7 +1279,7 @@ function PanelToolbar({
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
       <BackControl href={backHref} onClick={backOnClick} />
       {mode && onModeChange ? (
-        <ModeToggle mode={mode} onModeChange={onModeChange} canViewCode={canViewCode} />
+        <ModeToggle mode={mode} onModeChange={onModeChange} canViewCode={canViewCode} canViewContents={canViewContents} />
       ) : (
         <span />
       )}
@@ -1278,10 +1291,12 @@ function ModeToggle({
   mode,
   onModeChange,
   canViewCode = true,
+  canViewContents = false,
 }: {
   mode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
   canViewCode?: boolean;
+  canViewContents?: boolean;
 }) {
   const buttonStyle = (active: boolean, disabled = false): CSSProperties => ({
     width: 30,
@@ -1309,16 +1324,28 @@ function ModeToggle({
       >
         <BookOpenText size={16} strokeWidth={2} />
       </button>
-      <button
-        type="button"
-        aria-label="Show code"
-        title="Code"
-        onClick={() => onModeChange("code")}
-        disabled={!canViewCode}
-        style={buttonStyle(mode === "code", !canViewCode)}
-      >
-        <Code2 size={16} strokeWidth={2} />
-      </button>
+      {canViewCode && (
+        <button
+          type="button"
+          aria-label="Show code"
+          title="Code"
+          onClick={() => onModeChange("code")}
+          style={buttonStyle(mode === "code")}
+        >
+          <Code2 size={16} strokeWidth={2} />
+        </button>
+      )}
+      {canViewContents && (
+        <button
+          type="button"
+          aria-label="Show contents"
+          title="Contents"
+          onClick={() => onModeChange("contents")}
+          style={buttonStyle(mode === "contents")}
+        >
+          <ListTree size={16} strokeWidth={2} />
+        </button>
+      )}
     </div>
   );
 }
@@ -1350,6 +1377,72 @@ function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
         </span>
       ))}
     </pre>
+  );
+}
+
+function TypeContentsSection({
+  node,
+  allNodes,
+  onSelectNode,
+}: {
+  node: GraphNode;
+  allNodes: GraphNode[];
+  onSelectNode: (id: string) => void;
+}) {
+  const typeRefs = [...(node.inputs ?? []), ...(node.outputs ?? [])];
+  const seen = new Set<string>();
+  const rows = typeRefs.flatMap((ref) => {
+    const key = ref.node_id ?? `${ref.type}:${ref.name ?? ""}`;
+    if (!key || key === node.id || seen.has(key)) return [];
+    seen.add(key);
+    const target = ref.node_id ? allNodes.find((candidate) => candidate.id === ref.node_id) : undefined;
+    if (target?.id === node.id) return [];
+    return [{ ref, target }];
+  });
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+        Contents
+      </p>
+      {rows.length === 0 ? (
+        <p style={{ color: "#777777", fontSize: 13, lineHeight: 1.5, margin: 0 }}>No referenced types found.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {rows.map(({ ref, target }) => {
+            const label = target ? symbolTitle(target) : ref.name ?? ref.type;
+            const pkg = target ? pkgLabel(target) : undefined;
+            const clickableID = target?.id ?? ref.node_id;
+            const disabled = !clickableID;
+            return (
+              <button
+                key={ref.node_id ?? `${ref.type}:${ref.name ?? ""}`}
+                type="button"
+                onClick={() => {
+                  if (clickableID) onSelectNode(clickableID);
+                }}
+                disabled={disabled}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: disabled ? "#777777" : "#222222",
+                  cursor: disabled ? "default" : "pointer",
+                  padding: "4px 0",
+                  textAlign: "left",
+                  width: "100%",
+                }}
+              >
+                {pkg && <span style={{ fontSize: 11, color: "#EF5DA8", display: "block" }}>{pkg}</span>}
+                <span style={{ display: "block", fontSize: 13 }}>{label}</span>
+                {!target && ref.type && ref.type !== label && (
+                  <span style={{ color: "#888888", display: "block", fontSize: 11, marginTop: 2 }}>{ref.type}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1676,6 +1769,10 @@ function TestSection({ tests }: { tests: GraphNode["tests"] }) {
 
 function pkgLabel(node: GraphNode): string {
   return symbolContextLabel(node);
+}
+
+function isTypeNode(node: GraphNode): boolean {
+  return ["class", "interface", "struct", "type"].includes(node.kind);
 }
 
 function functionDisplayName(node: GraphNode): string {
