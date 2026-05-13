@@ -491,10 +491,10 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 	}
 
 	subject := "Your Isoprism pilot invite"
-	html := fmt.Sprintf(`<p>Hey %s</p><p>Thanks for your interest in the Isoprism pilot. We'd love to have you help us out.</p><p><a href="%s">Click this link to get started.</a> You will be asked to connect your Github and select a repository to work from.</p><p>At the end of the week, you should receive another email to fill out a quick survey to tell us how it went. Feel free to submit any feature requests or bugs along the way.</p><p>Cheers,</p><p>Callum</p>`, htmlEscape(name), link)
+	html := pilotInviteEmailHTML(name, link)
 	if kind == "review" {
 		subject = "Share your Isoprism pilot review"
-		html = fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for trying the Isoprism pilot. Could you complete the short review questionnaire?</p><p><a href="%s">Complete the pilot review</a></p>`, htmlEscape(name), link)
+		html = pilotReviewEmailHTML(name, link)
 	}
 	if err := h.sendMailtrapEmail(r.Context(), email, subject, html); err != nil {
 		log.Printf("pilot %s email failed for pilot_user_id=%s: %v", kind, testerID, err)
@@ -507,6 +507,14 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 		"status": "sent",
 		"link":   link,
 	})
+}
+
+func pilotInviteEmailHTML(name, link string) string {
+	return fmt.Sprintf(`<p>Hey %s,</p><p>Thanks for your interest in the <strong>Isoprism</strong> pilot. We'd love to have you help us out.</p><p><a href="%s">Click this link to get started.</a> You will be asked to connect your Github and select a repository to work from.</p><p>At the end of the week, you should receive another email to fill out a quick survey to tell us how it went. Feel free to submit any feature requests or bugs along the way.</p><p>All the best,</p><p>Callum</p>`, htmlEscape(name), htmlEscape(link))
+}
+
+func pilotReviewEmailHTML(name, link string) string {
+	return fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for piloting the <strong>Isoprism</strong> prototype. We'd love if you could take a moment to answer a few questions so we can learn how to best improve this product.</p><p><a href="%s">Complete the pilot review</a></p><p>Best Regards,</p><p>Callum</p>`, htmlEscape(name), htmlEscape(link))
 }
 
 // GET /api/v1/pilot/review/{token}
