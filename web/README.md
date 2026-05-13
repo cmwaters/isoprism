@@ -95,7 +95,7 @@ The primary review route mirrors the GitHub repository path:
 The repo route renders one persistent `GraphCanvas` and side panel:
 
 - A repo graph for the whole indexed system at function-level detail.
-- A ranked PR list in the repo overview panel. Each PR card shows the PR number in the graph accent pink, title, AI summary, PR diff totals, a risk label derived from numeric `risk_score` where used, and a client-updated compact open-time badge (`5h`, `3d`, `1w`).
+- A ranked PR list in the repo overview panel. Each PR card shows the PR number in the graph accent pink, title, PR diff totals, a risk label derived from numeric `risk_score` where used, and a client-updated compact open-time badge (`5h`, `3d`, `1w`).
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
@@ -181,6 +181,8 @@ The PR overview groups changes into four sections after the rendered description
 - **Other changes**: remaining file diffs not captured by the graph, tests, or docs.
 
 Documentation and other file rows render the file basename as a human title without the extension, for example `3003-blockapi-stop-deadlock.md` becomes `3003 Blockapi Stop Deadlock`.
+
+Opening a PR shows the AI PR summary as the overview description. If no AI summary exists, the overview falls back to the PR body. When an AI summary is shown, the summary ends with a `Full PR Description` action that opens the complete PR body in the same resizable middle panel used for components. If the PR body references a GitHub issue through an issue URL, `owner/repo#123`, or a same-repo `fixes #123` / `closes #123` / `resolves #123` style reference, a `View Issue` action appears beside it and fetches the issue description from GitHub into that middle panel.
 
 Clicking a graph/test row opens a resizable middle component panel between the PR overview and the graph. Function and method components show the component overview first and the `Code` section below it, with extra space above and below the section label. Type/class components do not show source code in this panel; they show relation sections plus `Contents` for referenced types. Relation and code line numbers align to the panel's left content edge. The code/diff block itself is transparent so it inherits the panel background; added and removed lines use green and red text without `+` or `-` prefixes. Selecting a test row opens a focused test graph centered on that test entrypoint and the production nodes returned with matching `tests[]` references. While the focused test graph is open, selecting or expanding production methods keeps additions inside that test graph instead of returning to the normal PR diff graph. Clicking a documentation or other file row opens the same middle panel with the file-level GitHub patch.
 

@@ -140,6 +140,17 @@ type GHPullRequestFile struct {
 	Patch            *string `json:"patch"` // omitted by GitHub for binary or very large files
 }
 
+type GHIssue struct {
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	State   string `json:"state"`
+	HTMLURL string `json:"html_url"`
+	User    struct {
+		Login string `json:"login"`
+	} `json:"user"`
+}
+
 // ── Methods ───────────────────────────────────────────────────────────────────
 
 func (c *Client) ListInstallationRepos(ctx context.Context) ([]InstallationRepo, error) {
@@ -196,6 +207,14 @@ func (c *Client) GetAuthenticatedUser(ctx context.Context) (*GHUser, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (c *Client) GetIssue(ctx context.Context, owner, repo string, number int) (*GHIssue, error) {
+	var issue GHIssue
+	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/issues/%d", owner, repo, number), &issue); err != nil {
+		return nil, err
+	}
+	return &issue, nil
 }
 
 // GetBranchSHA returns the HEAD commit SHA of a branch.

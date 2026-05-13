@@ -252,7 +252,19 @@ type GraphPR struct {
 	BaseCommitSHA string `json:"base_commit_sha"`
 	HeadCommitSHA string `json:"head_commit_sha"`
 	Body          string `json:"body"`
+	Summary       string `json:"summary,omitempty"`
 	AuthorLogin   string `json:"author_login"`
+}
+
+type GitHubIssueDescription struct {
+	Owner       string `json:"owner"`
+	Repo        string `json:"repo"`
+	Number      int    `json:"number"`
+	Title       string `json:"title"`
+	Body        string `json:"body"`
+	HTMLURL     string `json:"html_url"`
+	State       string `json:"state"`
+	AuthorLogin string `json:"author_login"`
 }
 
 type PRFileDiff struct {

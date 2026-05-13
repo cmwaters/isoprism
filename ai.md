@@ -126,8 +126,7 @@ The changed function block is repeated for each added or modified production nod
 
 **Displayed in:**
 
-- PR queue summary rows
-- PR summary panel
+- PR summary panel as the overview description
 - selected node detail panel for changed nodes
 - test assertions section when tests changed
 

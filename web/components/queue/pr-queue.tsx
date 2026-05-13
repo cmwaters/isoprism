@@ -60,14 +60,7 @@ function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: 
           </span>
         </div>
 
-        {/* Row 2: AI summary */}
-        {pr.summary && (
-          <p style={{ color: "#666666", fontSize: 14, margin: "0 0 10px 0", lineHeight: 1.5 }}>
-            {pr.summary}
-          </p>
-        )}
-
-        {/* Row 3: badges */}
+        {/* Row 2: badges */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Badge icon="⏱" label={timeLabel || "open"} />
           <Badge icon="±" label={`+${pr.additions || 0} -${pr.deletions || 0}`} />

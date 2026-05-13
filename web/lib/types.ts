@@ -126,6 +126,24 @@ export interface GraphPR {
   base_commit_sha: string;
   head_commit_sha: string;
   body: string;
+  summary?: string;
+  author_login: string;
+}
+
+export interface GitHubIssueReference {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+export interface GitHubIssueDescription {
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  body: string;
+  html_url: string;
+  state: "open" | "closed" | string;
   author_login: string;
 }
 

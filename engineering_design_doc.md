@@ -250,11 +250,11 @@ pr_node_changes
   created_at       timestamptz
   UNIQUE (pull_request_id, node_id)
 
--- PR-level summary (for queue display and urgency scoring)
+-- PR-level summary (for the PR overview description and urgency scoring)
 pr_analyses
   id               uuid PK
   pull_request_id  uuid FK → pull_requests UNIQUE
-  summary          text              -- one-line summary for queue display
+  summary          text              -- AI summary shown as the PR overview description
   nodes_changed    int               -- count of directly changed nodes
   risk_score       int               -- 1–10
   risk_label       text              -- legacy nullable field; UI derives labels from risk_score

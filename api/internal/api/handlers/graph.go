@@ -1388,6 +1388,59 @@ func (h *GraphHandler) GetGraphByNumber(w http.ResponseWriter, r *http.Request) 
 	h.GetGraph(w, r)
 }
 
+// GET /api/v1/repos/{repoID}/prs/{prID}/issue?owner={owner}&repo={repo}&number={number}
+func (h *GraphHandler) GetGitHubIssue(w http.ResponseWriter, r *http.Request) {
+	repoID := chi.URLParam(r, "repoID")
+	prID := chi.URLParam(r, "prID")
+	userID := r.Header.Get("X-User-ID")
+	ctx := r.Context()
+
+	owner := strings.TrimSpace(r.URL.Query().Get("owner"))
+	repo := strings.TrimSpace(r.URL.Query().Get("repo"))
+	number, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("number")))
+	if owner == "" || repo == "" || err != nil || number <= 0 {
+		http.Error(w, "invalid issue reference", http.StatusBadRequest)
+		return
+	}
+
+	var installationID int64
+	err = h.DB.QueryRow(ctx, `
+		select gi.installation_id
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		join github_installations gi on gi.id = r.installation_id
+		where pr.id=$1 and pr.repo_id=$2 and r.user_id=$3
+	`, prID, repoID, userID).Scan(&installationID)
+	if err != nil {
+		http.Error(w, "pr not found", http.StatusNotFound)
+		return
+	}
+
+	ghClient, err := h.AppClient.ClientForInstallation(ctx, installationID)
+	if err != nil {
+		http.Error(w, "github client error", http.StatusInternalServerError)
+		return
+	}
+
+	issue, err := ghClient.GetIssue(ctx, owner, repo, number)
+	if err != nil {
+		http.Error(w, "github issue not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models.GitHubIssueDescription{
+		Owner:       owner,
+		Repo:        repo,
+		Number:      issue.Number,
+		Title:       issue.Title,
+		Body:        issue.Body,
+		HTMLURL:     issue.HTMLURL,
+		State:       issue.State,
+		AuthorLogin: issue.User.Login,
+	})
+}
+
 // GET /api/v1/repos/{repoID}/prs/{prID}/graph
 func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	repoID := chi.URLParam(r, "repoID")
@@ -1411,14 +1464,15 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		select pr.id, pr.number, pr.title, pr.html_url,
 		       coalesce(pr.base_commit_sha,''), coalesce(pr.head_commit_sha,''),
 		       coalesce(r.main_commit_sha,''),
-		       coalesce(pr.body,''), coalesce(pr.author_login,''), pr.base_branch, r.default_branch,
+		       coalesce(pr.body,''), coalesce(pa.summary,''), coalesce(pr.author_login,''), pr.base_branch, r.default_branch,
 		       r.full_name, gi.installation_id
 		from pull_requests pr
 		join repositories r on r.id = pr.repo_id
 		join github_installations gi on gi.id = r.installation_id
+		left join pr_analyses pa on pa.pull_request_id = pr.id
 		where pr.id=$1 and pr.repo_id=$2
 	`, prID, repoID).Scan(&pr.ID, &pr.Number, &pr.Title, &pr.HTMLURL, &baseCommit, &headCommit, &mainCommitSHA,
-		&pr.Body, &pr.AuthorLogin, &baseBranch, &defaultBranch, &fullName, &installationID)
+		&pr.Body, &pr.Summary, &pr.AuthorLogin, &baseBranch, &defaultBranch, &fullName, &installationID)
 	if err != nil {
 		http.Error(w, "pr not found", http.StatusNotFound)
 		return

@@ -1,6 +1,6 @@
 "use client";
 
-import { GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, PRFileDiff, QueuePR, Repository } from "@/lib/types";
+import { GitHubIssueDescription, GitHubIssueReference, GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, PRFileDiff, QueuePR, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import type { PanelMode } from "./graph-canvas";
 import { ArrowLeft, BookOpenText, Code2, ListTree, Settings, X } from "lucide-react";
@@ -11,7 +11,9 @@ import { renamedFromTitle, symbolContextLabel, symbolTitle } from "./symbol-form
 
 export type SelectedPRChange =
   | { type: "node"; nodeID: string }
-  | { type: "file"; fileKey: string };
+  | { type: "file"; fileKey: string }
+  | { type: "pr-description"; title: string; body: string }
+  | { type: "issue"; issue: GitHubIssueReference };
 
 interface Props {
   node: GraphNode | null;
@@ -121,6 +123,7 @@ export default function NodeDetailPanel({
           pr ? (
             <PRSummaryPanel
               pr={pr}
+              repo={repo}
               files={prFiles ?? []}
               allNodes={allNodes}
               testChanges={testChanges ?? []}
@@ -278,11 +281,6 @@ function RepoSummaryPanel({
                     {openTimeLabels.get(pr.id) || "open"}
                   </span>
                 </span>
-                {pr.summary && (
-                  <span style={{ color: "#666666", display: "block", fontSize: 12, lineHeight: 1.45, marginTop: 6 }}>
-                    {pr.summary}
-                  </span>
-                )}
               </button>
             ))}
           </div>
@@ -344,8 +342,56 @@ const repoPRBadgeStyle: CSSProperties = {
   padding: "2px 6px",
 };
 
+const inlinePanelLinkStyle: CSSProperties = {
+  background: "none",
+  border: "none",
+  color: "#6366F1",
+  cursor: "pointer",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 600,
+  padding: 0,
+  textAlign: "left",
+};
+
+function findIssueReference(body: string, repoFullName: string): GitHubIssueReference | null {
+  const trimmed = body.trim();
+  if (!trimmed) return null;
+
+  const [defaultOwner, defaultRepo] = repoFullName.split("/");
+  const githubURL = trimmed.match(/https:\/\/github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)/i);
+  if (githubURL) {
+    return {
+      owner: githubURL[1],
+      repo: githubURL[2],
+      number: Number(githubURL[3]),
+    };
+  }
+
+  const qualified = trimmed.match(/(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#(\d+)/i);
+  if (qualified) {
+    return {
+      owner: qualified[1],
+      repo: qualified[2],
+      number: Number(qualified[3]),
+    };
+  }
+
+  const sameRepo = trimmed.match(/(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|issue)\s+#(\d+)/i);
+  if (sameRepo && defaultOwner && defaultRepo) {
+    return {
+      owner: defaultOwner,
+      repo: defaultRepo,
+      number: Number(sameRepo[1]),
+    };
+  }
+
+  return null;
+}
+
 function PRSummaryPanel({
   pr,
+  repo,
   files,
   allNodes,
   testChanges,
@@ -354,6 +400,7 @@ function PRSummaryPanel({
   onBackToRepo,
 }: {
   pr: GraphPR;
+  repo: Repository;
   files: PRFileDiff[];
   allNodes: GraphNode[];
   testChanges: GraphNode[];
@@ -362,6 +409,9 @@ function PRSummaryPanel({
   onBackToRepo: () => void;
 }) {
   const changedNodes = allNodes.filter((n) => n.node_type === "changed");
+  const descriptionText = (pr.summary || pr.body || "").trim();
+  const hasAISummary = Boolean(pr.summary?.trim());
+  const issue = findIssueReference(pr.body, repo.full_name);
   const testEntrypointChanges = testChanges.filter((node) => node.is_test && node.is_entrypoint);
   const totalAdded = files.reduce((s, file) => s + (file.additions || 0), 0);
   const totalRemoved = files.reduce((s, file) => s + (file.deletions || 0), 0);
@@ -407,17 +457,37 @@ function PRSummaryPanel({
         )}
       </div>
 
-      {/* PR body (description) */}
-      {pr.body && (
+      {/* PR summary/description */}
+      {descriptionText && (
         <>
           <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
             Description
           </p>
           <div className="pr-description-markdown">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {pr.body}
+              {descriptionText}
             </ReactMarkdown>
           </div>
+          {hasAISummary && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10, marginBottom: 18 }}>
+              <button
+                type="button"
+                onClick={() => onSelectPRChange?.({ type: "pr-description", title: pr.title, body: pr.body })}
+                style={inlinePanelLinkStyle}
+              >
+                Full PR Description
+              </button>
+              {issue && (
+                <button
+                  type="button"
+                  onClick={() => onSelectPRChange?.({ type: "issue", issue })}
+                  style={inlinePanelLinkStyle}
+                >
+                  View Issue
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -663,6 +733,22 @@ export function ComponentChangePanel({
         />
       ) : file ? (
         <FileDiffPanel file={file} onClose={onClose} />
+      ) : selectedChange.type === "pr-description" ? (
+        <MarkdownDocumentPanel
+          eyebrow="Full PR Description"
+          title={selectedChange.title}
+          body={selectedChange.body}
+          emptyText="No PR description."
+          onClose={onClose}
+        />
+      ) : selectedChange.type === "issue" ? (
+        <IssueDescriptionPanel
+          repoID={repoID}
+          prID={prID}
+          token={token}
+          issue={selectedChange.issue}
+          onClose={onClose}
+        />
       ) : (
         <div style={{ padding: 20 }}>
           <PanelCloseButton onClose={onClose} />
@@ -922,6 +1008,146 @@ function FileDiffPanel({ file, onClose }: { file: PRFileDiff; onClose: () => voi
           Diff unavailable
         </div>
       )}
+    </div>
+  );
+}
+
+function MarkdownDocumentPanel({
+  eyebrow,
+  title,
+  body,
+  emptyText,
+  onClose,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  emptyText: string;
+  onClose: () => void;
+}) {
+  return (
+    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+      <PanelCloseButton onClose={onClose} />
+      <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8 }}>{eyebrow}</p>
+      <h2 style={{ color: "#111111", fontSize: 17, fontWeight: 600, lineHeight: 1.35, margin: "0 0 14px" }}>
+        {title}
+      </h2>
+      {body.trim() ? (
+        <div className="pr-description-markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {body}
+          </ReactMarkdown>
+        </div>
+      ) : (
+        <div style={{ color: "#666666", fontSize: 12 }}>
+          {emptyText}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IssueDescriptionPanel({
+  repoID,
+  prID,
+  token,
+  issue,
+  onClose,
+}: {
+  repoID: string;
+  prID?: string;
+  token: string;
+  issue: GitHubIssueReference;
+  onClose: () => void;
+}) {
+  const issueKey = `${issue.owner}/${issue.repo}#${issue.number}`;
+  const [data, setData] = useState<GitHubIssueDescription | null>(null);
+  const [error, setError] = useState<{ key: string; message: string } | null>(() => (
+    prID ? null : { key: issueKey, message: "Issue unavailable without a pull request." }
+  ));
+
+  useEffect(() => {
+    if (!prID) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const params = new URLSearchParams({
+      owner: issue.owner,
+      repo: issue.repo,
+      number: String(issue.number),
+    });
+
+    apiFetch<GitHubIssueDescription>(`/api/v1/repos/${repoID}/prs/${prID}/issue?${params.toString()}`, token)
+      .then((response) => {
+        if (!cancelled) setData(response);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError({ key: issueKey, message: err.message });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [issue.number, issue.owner, issue.repo, issueKey, prID, repoID, token]);
+
+  const matchingData = data?.owner === issue.owner && data.repo === issue.repo && data.number === issue.number ? data : null;
+  const errorMessage = error?.key === issueKey ? error.message : null;
+
+  if (errorMessage) {
+    return (
+      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+        <PanelCloseButton onClose={onClose} />
+        <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8 }}>
+          Issue #{issue.number}
+        </p>
+        <div style={{ background: "#FEE2E2", borderRadius: 6, color: "#991B1B", fontSize: 12, lineHeight: 1.5, padding: 10 }}>
+          {errorMessage}
+        </div>
+      </div>
+    );
+  }
+
+  if (!matchingData) {
+    return (
+      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+        <PanelCloseButton onClose={onClose} />
+        <p style={{ color: "#777777", fontSize: 13, margin: 0 }}>Loading issue...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+      <PanelCloseButton onClose={onClose} />
+      <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
+        {matchingData.owner}/{matchingData.repo} #{matchingData.number}
+      </p>
+      <h2 style={{ color: "#111111", fontSize: 17, fontWeight: 600, lineHeight: 1.35, margin: "0 0 10px" }}>
+        {matchingData.title}
+      </h2>
+      <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+        <span style={{ ...repoPRBadgeStyle, textTransform: "capitalize" }}>{matchingData.state}</span>
+        {matchingData.author_login && <span style={repoPRBadgeStyle}>{matchingData.author_login}</span>}
+      </div>
+      {matchingData.body.trim() ? (
+        <div className="pr-description-markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {matchingData.body}
+          </ReactMarkdown>
+        </div>
+      ) : (
+        <div style={{ color: "#666666", fontSize: 12 }}>No issue description.</div>
+      )}
+      <a
+        href={matchingData.html_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ fontSize: 13, color: "#6366F1", marginTop: 16, textDecoration: "none" }}
+      >
+        View on GitHub →
+      </a>
     </div>
   );
 }
