@@ -916,13 +916,15 @@ function NodeChangeDetailPanel({
         onSelectNode={onSelectNode}
       />
 
-      <RelationSection
-        label="Methods"
-        nodeIDs={methodEdges.map((edge) => edge.destination_id)}
-        relationEdges={methodEdges}
-        allNodes={allNodes}
-        onSelectNode={onSelectNode}
-      />
+      {!typeNode && (
+        <RelationSection
+          label="Methods"
+          nodeIDs={methodEdges.map((edge) => edge.destination_id)}
+          relationEdges={methodEdges}
+          allNodes={allNodes}
+          onSelectNode={onSelectNode}
+        />
+      )}
 
       <RelationSection
         label="Receiver"
@@ -1385,13 +1387,15 @@ function NodeDetail({
         onSelectNode={onSelectNode}
       />
 
-      <RelationSection
-        label="Methods"
-        nodeIDs={methodEdges.map((edge) => edge.destination_id)}
-        relationEdges={methodEdges}
-        allNodes={allNodes}
-        onSelectNode={onSelectNode}
-      />
+      {!typeNode && (
+        <RelationSection
+          label="Methods"
+          nodeIDs={methodEdges.map((edge) => edge.destination_id)}
+          relationEdges={methodEdges}
+          allNodes={allNodes}
+          onSelectNode={onSelectNode}
+        />
+      )}
 
       <RelationSection
         label="Receiver"
