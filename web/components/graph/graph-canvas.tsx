@@ -450,19 +450,51 @@ function edgeKey(edge: { source_id: string; destination_id: string; edge_kind?: 
   return `${edge.source_id}|${edge.destination_id}|${edge.edge_kind ?? "calls"}`;
 }
 
+function graphNodeSemanticKey(node: APIGraphNode): string {
+  return `${node.file_path}|${node.full_name}`;
+}
+
+function mergeGraphNode(existing: APIGraphNode, incoming: APIGraphNode): APIGraphNode {
+  if (incoming.change_type && !existing.change_type) {
+    return { ...incoming, id: existing.id };
+  }
+  return {
+    ...existing,
+    boundary: incoming.boundary,
+    degree: Math.max(existing.degree ?? 0, incoming.degree ?? 0),
+    tests: existing.tests?.length ? existing.tests : incoming.tests,
+  };
+}
+
 function mergeExpansionGraph(graph: UnifiedGraph, response: GraphExpansionResponse): UnifiedGraph {
   const incomingNodeIDs = new Set(response.nodes.map((node) => node.id));
   const nodeByID = new Map<string, APIGraphNode>();
+  const idBySemanticKey = new Map<string, string>();
+  const canonicalIDByIncomingID = new Map<string, string>();
 
   for (const node of graph.nodes) {
     if (node.id === response.expanded_node_id) {
-      nodeByID.set(node.id, { ...node, boundary: response.has_more });
+      const updated = { ...node, boundary: response.has_more };
+      nodeByID.set(node.id, updated);
+      idBySemanticKey.set(graphNodeSemanticKey(updated), node.id);
     } else {
-      nodeByID.set(node.id, incomingNodeIDs.has(node.id) ? { ...node, boundary: false } : node);
+      const updated = incomingNodeIDs.has(node.id) ? { ...node, boundary: false } : node;
+      nodeByID.set(node.id, updated);
+      idBySemanticKey.set(graphNodeSemanticKey(updated), node.id);
     }
   }
   for (const node of response.nodes) {
+    const semanticKey = graphNodeSemanticKey(node);
+    const existingID = idBySemanticKey.get(semanticKey);
+    if (existingID) {
+      const existing = nodeByID.get(existingID);
+      if (existing) nodeByID.set(existingID, mergeGraphNode(existing, node));
+      canonicalIDByIncomingID.set(node.id, existingID);
+      continue;
+    }
     nodeByID.set(node.id, node);
+    idBySemanticKey.set(semanticKey, node.id);
+    canonicalIDByIncomingID.set(node.id, node.id);
   }
 
   const edgeByKey = new Map<string, UnifiedGraph["edges"][number]>();
@@ -470,7 +502,11 @@ function mergeExpansionGraph(graph: UnifiedGraph, response: GraphExpansionRespon
     edgeByKey.set(edgeKey(edge), edge);
   }
   for (const edge of response.edges) {
-    edgeByKey.set(edgeKey(edge), edge);
+    const sourceID = canonicalIDByIncomingID.get(edge.source_id) ?? edge.source_id;
+    const destinationID = canonicalIDByIncomingID.get(edge.destination_id) ?? edge.destination_id;
+    if (sourceID === destinationID) continue;
+    const mergedEdge = { ...edge, source_id: sourceID, destination_id: destinationID };
+    edgeByKey.set(edgeKey(mergedEdge), mergedEdge);
   }
 
   return {
@@ -1145,10 +1181,13 @@ function fallbackRepo(repoID: string): Repository {
 
 function uniqueGraphNodes(nodes: APIGraphNode[]): APIGraphNode[] {
   const seen = new Set<string>();
+  const seenSemantic = new Set<string>();
   const result: APIGraphNode[] = [];
   for (const node of nodes) {
-    if (seen.has(node.id)) continue;
+    const semanticKey = graphNodeSemanticKey(node);
+    if (seen.has(node.id) || seenSemantic.has(semanticKey)) continue;
     seen.add(node.id);
+    seenSemantic.add(semanticKey);
     result.push(node);
   }
   return result;

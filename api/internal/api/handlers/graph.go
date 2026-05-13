@@ -892,8 +892,10 @@ func (h *GraphHandler) loadPRExpansionData(ctx context.Context, repoID, prID, ma
 		return nil, nil, err
 	}
 	mainIDByFullName := map[string]string{}
+	mainIDBySemanticKey := map[string]string{}
 	for id, node := range nodeMap {
 		mainIDByFullName[node.FullName] = id
+		mainIDBySemanticKey[semanticGraphKey(node)] = id
 	}
 
 	changedRows, err := h.DB.Query(ctx, `
@@ -967,6 +969,9 @@ func (h *GraphHandler) loadPRExpansionData(ctx context.Context, repoID, prID, ma
 		n.Tests = []models.GraphNodeTest{}
 		nodeMap[n.ID] = n
 		changedByFullName[n.FullName] = n.ID
+		if mainID, ok := mainIDBySemanticKey[semanticGraphKey(n)]; ok && mainID != n.ID {
+			delete(nodeMap, mainID)
+		}
 		if c.oldFullName != nil && strings.TrimSpace(*c.oldFullName) != "" {
 			changedByFullName[*c.oldFullName] = n.ID
 		}
