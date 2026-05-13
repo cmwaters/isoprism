@@ -263,6 +263,9 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 		http.Error(w, "failed to save installation", http.StatusInternalServerError)
 		return
 	}
+	if userID == "" {
+		userID = h.userIDForInstallation(ctx, dbInstallationID)
+	}
 
 	// Ensure user row exists
 	if userID != "" {
@@ -325,6 +328,24 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 	}
 
 	http.Redirect(w, r, redirectBaseURL+h.installationCallbackRedirectPath(ctx, userID), http.StatusFound)
+}
+
+func (h *GitHubHandler) userIDForInstallation(ctx context.Context, dbInstallationID string) string {
+	var userID string
+	_ = h.DB.QueryRow(ctx, `
+		select r.user_id
+		from repositories r
+		left join users u on u.selected_repo_id = r.id
+		left join pilot_users p on p.selected_repo_id = r.id
+		where r.installation_id = $1
+		order by
+		  (u.selected_repo_id is not null) desc,
+		  (p.selected_repo_id is not null) desc,
+		  (r.index_status = 'ready') desc,
+		  r.created_at desc
+		limit 1
+	`, dbInstallationID).Scan(&userID)
+	return userID
 }
 
 func (h *GitHubHandler) installationCallbackRedirectPath(ctx context.Context, userID string) string {

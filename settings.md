@@ -64,6 +64,8 @@ The GitHub App callback is available at `/api/v1/github/callback`. It re-syncs G
 
 The redirect decision must not rely on GitHub's `setup_action`, because settings edits can arrive with values that look like first-time setup. Existing setup is determined from `users.selected_repo_id`, `pilot_users.selected_repo_id`, or an already ready repository.
 
+GitHub may not preserve Isoprism's `state` value when a user edits GitHub App permissions from GitHub settings. In that case the callback resolves the user from the existing installation repositories before syncing and redirecting.
+
 ## 6. Out of Scope
 
 - Organization settings pages

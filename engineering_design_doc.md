@@ -396,6 +396,8 @@ For the beta flow, `state` must preserve both the authenticated user/session ide
 
 Existing setup is determined from Isoprism state, not from GitHub's `setup_action`: `users.selected_repo_id`, `pilot_users.selected_repo_id`, or an already ready repository means the account has completed setup. This prevents a GitHub App settings edit from sending an existing user back through first-time repo selection. Re-syncing the repo list applies these repository states:
 
+GitHub App settings updates may omit the original `state` value. When `state` does not contain a user ID, the callback resolves the user from existing repository rows for the installation before syncing repository authorization and deciding the redirect.
+
 - Added GitHub repositories are stored as authorized and visible, but not indexed.
 - Removed GitHub repositories are marked revoked immediately, hidden from `GET /api/v1/me/repos`, and scheduled for repository-row deletion after one day.
 - Authorized repositories that already have indexed data keep their index unless the user explicitly uninstalls them or pilot-account selection rules mark them unused.
