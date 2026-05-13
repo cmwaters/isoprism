@@ -151,6 +151,42 @@ func TestSelectVisibleGraphIncludesReceiverOwnerEdges(t *testing.T) {
 	}
 }
 
+func TestSelectVisibleGraphIncludesChangedNodeCallersAndCallees(t *testing.T) {
+	selected, edges := selectVisibleGraph(
+		[]string{"changed"},
+		[]graphEdgeRow{
+			{sourceID: "caller", destinationID: "changed", edgeKind: "calls"},
+			{sourceID: "changed", destinationID: "callee", edgeKind: "calls"},
+			{sourceID: "callee", destinationID: "second-hop", edgeKind: "calls"},
+		},
+		map[string]int{"changed": 8},
+	)
+
+	for _, id := range []string{"changed", "caller", "callee"} {
+		if _, ok := selected[id]; !ok {
+			t.Fatalf("expected %s to be selected: %#v", id, selected)
+		}
+	}
+	if _, ok := selected["second-hop"]; ok {
+		t.Fatalf("second-hop context node should not be selected: %#v", selected)
+	}
+	if !hasGraphEdge(edges, "caller", "changed") {
+		t.Fatalf("missing incoming caller edge: %#v", edges)
+	}
+	if !hasGraphEdge(edges, "changed", "callee") {
+		t.Fatalf("missing outgoing callee edge: %#v", edges)
+	}
+	if hasGraphEdge(edges, "callee", "second-hop") {
+		t.Fatalf("edge to second-hop node should not be visible: %#v", edges)
+	}
+	if selected["changed"].depth != 0 {
+		t.Fatalf("changed depth = %d, want 0", selected["changed"].depth)
+	}
+	if selected["caller"].depth != 1 || selected["callee"].depth != 1 {
+		t.Fatalf("one-hop depths = caller %d callee %d, want 1", selected["caller"].depth, selected["callee"].depth)
+	}
+}
+
 func hasGraphEdge(edges []models.GraphEdge, sourceID, destinationID string) bool {
 	for _, edge := range edges {
 		if edge.SourceID == sourceID && edge.DestinationID == destinationID {

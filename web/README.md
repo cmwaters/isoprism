@@ -101,6 +101,10 @@ The repo route renders one persistent `GraphCanvas` and side panel:
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
 - Node cards with package/type labels, function or method titles, structured inputs/outputs, and added/removed/deleted pills.
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
+- PR graphs initially show changed production nodes plus exactly one hop of production callers/callees in either direction. Context-to-context nodes beyond that first hop are not included until the reviewer expands the graph.
+- Clicking a visible PR graph edge requests one additional one-hop production neighborhood around that edge's endpoints and merges the returned nodes/edges into the current graph session.
+- Graph placement uses a deterministic edge-length relaxation layout. Visible edges pull connected nodes together, collision/repulsion keep cards readable, and existing node positions are preserved during expansion/collapse so the map does not reshuffle abruptly.
+- The graph canvas has function, class, and package collapse modes. Class/package views are client-derived from the loaded graph, aggregate inter-group edge weights, hide intra-group edges, and seed expanded child positions around the collapsed group position.
 
 During beta, the PR queue only includes open, non-draft PRs targeting the repository's indexed default branch whose `base_commit_sha` exactly matches the repository's indexed `main_commit_sha`. PRs from other base branches, or PRs whose base SHA is out of sync with the indexed default-branch graph, are hidden rather than shown with approximate graph data.
 
@@ -112,7 +116,7 @@ Each PR stores the latest processing snapshot on `pull_requests`: `processor_com
 
 Graph responses are function-level. The API returns canonical `full_name` values, but the UI splits them into a pink package/receiver label and a black title that contains only the function or method name. Nodes expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records.
 
-PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail.
+PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail. Dynamic expansion uses `GET /api/v1/repos/{repoID}/prs/{prID}/graph/expand?source={nodeID}&target={nodeID}&hops=1` and returns additional `nodes`, `edges`, and optional `test_context` using the same graph node/edge shapes.
 
 PR review does not have a separate route or page.
 

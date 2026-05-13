@@ -397,7 +397,7 @@ func appendTestFocusEdges(
 	return edges
 }
 
-func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
+func selectRankedVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
 	adj := map[string]map[string]bool{}
 	sourceCount := map[string]int{}
 	destinationCount := map[string]int{}
@@ -505,6 +505,112 @@ func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges m
 			break
 		}
 		selected[c.id] = c
+	}
+	for id, c := range selected {
+		for nb := range adj[id] {
+			if _, ok := selected[nb]; !ok {
+				c.boundary = true
+				selected[id] = c
+				break
+			}
+		}
+	}
+
+	visibleEdges := make([]models.GraphEdge, 0)
+	seenEdges := map[string]bool{}
+	for _, e := range allEdges {
+		if _, ok := selected[e.sourceID]; !ok {
+			continue
+		}
+		if _, ok := selected[e.destinationID]; !ok {
+			continue
+		}
+		key := e.sourceID + "|" + e.destinationID + "|" + e.edgeKind
+		if seenEdges[key] {
+			continue
+		}
+		seenEdges[key] = true
+		visibleEdges = append(visibleEdges, models.GraphEdge{SourceID: e.sourceID, DestinationID: e.destinationID, EdgeKind: e.edgeKind, ChangeType: edgeChangeTypePtr(e.changeType), Weight: 1, UnderlyingEdgeCount: 1})
+	}
+
+	return selected, visibleEdges
+}
+
+func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
+	adj := map[string]map[string]bool{}
+	sourceCount := map[string]int{}
+	destinationCount := map[string]int{}
+	knownIDs := map[string]bool{}
+
+	ensure := func(id string) {
+		if id == "" {
+			return
+		}
+		knownIDs[id] = true
+		if adj[id] == nil {
+			adj[id] = map[string]bool{}
+		}
+	}
+	seedSet := map[string]bool{}
+	for _, id := range seedIDs {
+		ensure(id)
+		seedSet[id] = true
+	}
+	for _, e := range allEdges {
+		if e.sourceID == "" || e.destinationID == "" || e.sourceID == e.destinationID {
+			continue
+		}
+		ensure(e.sourceID)
+		ensure(e.destinationID)
+		if !adj[e.sourceID][e.destinationID] {
+			adj[e.sourceID][e.destinationID] = true
+			adj[e.destinationID][e.sourceID] = true
+			destinationCount[e.sourceID]++
+			sourceCount[e.destinationID]++
+		}
+	}
+
+	selected := map[string]graphCandidate{}
+	for _, id := range seedIDs {
+		if !knownIDs[id] {
+			continue
+		}
+		selected[id] = graphCandidate{
+			id:               id,
+			seed:             true,
+			lines:            lineChanges[id],
+			sourceCount:      sourceCount[id],
+			destinationCount: destinationCount[id],
+			degree:           len(adj[id]),
+			depth:            0,
+			weight:           lineChanges[id] + sourceCount[id] + destinationCount[id],
+		}
+	}
+	for _, e := range allEdges {
+		sourceSeed := seedSet[e.sourceID]
+		targetSeed := seedSet[e.destinationID]
+		if !sourceSeed && !targetSeed {
+			continue
+		}
+		for _, id := range []string{e.sourceID, e.destinationID} {
+			if selected[id].id != "" {
+				continue
+			}
+			depth := 1
+			if seedSet[id] {
+				depth = 0
+			}
+			selected[id] = graphCandidate{
+				id:               id,
+				seed:             seedSet[id],
+				lines:            lineChanges[id],
+				sourceCount:      sourceCount[id],
+				destinationCount: destinationCount[id],
+				degree:           len(adj[id]),
+				depth:            depth,
+				weight:           lineChanges[id] + sourceCount[id] + destinationCount[id],
+			}
+		}
 	}
 	for id, c := range selected {
 		for nb := range adj[id] {
@@ -665,7 +771,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		edgeRows.Close()
 	}
 
-	selected, edges := selectVisibleGraph(seedIDs, allEdges, map[string]int{})
+	selected, edges := selectRankedVisibleGraph(seedIDs, allEdges, map[string]int{})
 	seedSet := map[string]bool{}
 	for _, id := range seedIDs {
 		seedSet[id] = true
@@ -1219,6 +1325,213 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		Files:       files,
 		TestChanges: testChanges,
 		TestContext: testContext,
+	})
+}
+
+type graphExpansionResponse struct {
+	Nodes       []models.GraphNode `json:"nodes"`
+	Edges       []models.GraphEdge `json:"edges"`
+	TestContext []models.GraphNode `json:"test_context"`
+}
+
+// GET /api/v1/repos/{repoID}/prs/{prID}/graph/expand?source={nodeID}&target={nodeID}&hops=1
+func (h *GraphHandler) GetGraphExpansion(w http.ResponseWriter, r *http.Request) {
+	repoID := chi.URLParam(r, "repoID")
+	prID := chi.URLParam(r, "prID")
+	userID := r.Header.Get("X-User-ID")
+	sourceID := strings.TrimSpace(r.URL.Query().Get("source"))
+	targetID := strings.TrimSpace(r.URL.Query().Get("target"))
+	ctx := r.Context()
+
+	if sourceID == "" || targetID == "" {
+		http.Error(w, "source and target are required", http.StatusBadRequest)
+		return
+	}
+	hops, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("hops")))
+	if err != nil || hops < 1 {
+		hops = 1
+	}
+	if hops > 1 {
+		hops = 1
+	}
+
+	var baseCommit, headCommit, mainCommitSHA, baseBranch, defaultBranch string
+	err = h.DB.QueryRow(ctx, `
+		select coalesce(pr.base_commit_sha,''), coalesce(pr.head_commit_sha,''),
+		       coalesce(r.main_commit_sha,''), pr.base_branch, r.default_branch
+		from pull_requests pr
+		join repositories r on r.id = pr.repo_id
+		where pr.id=$1 and pr.repo_id=$2 and r.user_id=$3
+	`, prID, repoID, userID).Scan(&baseCommit, &headCommit, &mainCommitSHA, &baseBranch, &defaultBranch)
+	if err != nil {
+		http.Error(w, "pr not found", http.StatusNotFound)
+		return
+	}
+	if baseBranch != defaultBranch {
+		http.Error(w, "PR graph only supports pull requests targeting the indexed default branch", http.StatusConflict)
+		return
+	}
+	if baseCommit == "" || mainCommitSHA == "" || baseCommit != mainCommitSHA {
+		http.Error(w, "PR base SHA does not match the indexed default branch SHA", http.StatusConflict)
+		return
+	}
+
+	seedIDs := []string{sourceID, targetID}
+	rows, err := h.DB.Query(ctx, `
+		select e.source_id, e.destination_id, e.edge_kind
+		from code_edges e
+		join code_nodes source on source.id = e.source_id
+		join code_nodes target on target.id = e.destination_id
+		where e.repo_id = $1
+		  and (($2 <> '' and e.commit_sha = $2) or ($3 <> '' and e.commit_sha = $3))
+		  and source.is_test = false
+		  and target.is_test = false
+		  and (
+		    e.source_id = any($4::uuid[]) or e.destination_id = any($4::uuid[])
+		  )
+	`, repoID, mainCommitSHA, headCommit, seedIDs)
+	if err != nil {
+		log.Printf("GetGraphExpansion: edge query: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	allEdges := []graphEdgeRow{}
+	visibleIDs := map[string]bool{sourceID: true, targetID: true}
+	for rows.Next() {
+		var e graphEdgeRow
+		if err := rows.Scan(&e.sourceID, &e.destinationID, &e.edgeKind); err != nil {
+			continue
+		}
+		if e.sourceID == e.destinationID {
+			continue
+		}
+		allEdges = append(allEdges, e)
+		visibleIDs[e.sourceID] = true
+		visibleIDs[e.destinationID] = true
+	}
+	rows.Close()
+
+	idList := make([]string, 0, len(visibleIDs))
+	for id := range visibleIDs {
+		idList = append(idList, id)
+	}
+	nodeRows, err := h.DB.Query(ctx, `
+		select id, full_name, file_path, line_start, line_end,
+		       inputs, outputs, language, kind, is_test, is_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
+		from code_nodes
+		where id = any($1::uuid[])
+	`, idList)
+	if err != nil {
+		log.Printf("GetGraphExpansion: node query: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	defer nodeRows.Close()
+
+	nodeMap := map[string]models.GraphNode{}
+	for nodeRows.Next() {
+		var n models.GraphNode
+		var inputsRaw, outputsRaw []byte
+		var docComment, summary string
+		if err := nodeRows.Scan(
+			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+			&inputsRaw, &outputsRaw, &n.Language, &n.Kind, &n.IsTest, &n.IsEntrypoint, &docComment, &summary,
+		); err != nil {
+			continue
+		}
+		n.Inputs = decodeTypeRefs(inputsRaw)
+		n.Outputs = decodeTypeRefs(outputsRaw)
+		if isTestGraphNode(n) {
+			continue
+		}
+		applyNodeSummary(&n, docComment, summary)
+		n.NodeType = "context"
+		n.PackagePath = packagePathForNode(n)
+		n.Tests = []models.GraphNodeTest{}
+		nodeMap[n.ID] = n
+	}
+
+	changedRows, err := h.DB.Query(ctx, `
+		select pnc.node_id, pnc.change_type, pnc.change_summary, pnc.diff_hunk,
+		       pnc.old_full_name, pnc.old_file_path
+		from pr_node_changes pnc
+		where pnc.pull_request_id = $1 and pnc.node_id = any($2::uuid[])
+	`, prID, idList)
+	if err == nil {
+		defer changedRows.Close()
+		for changedRows.Next() {
+			var c rawPRNodeChange
+			if err := changedRows.Scan(&c.nodeID, &c.changeType, &c.changeSummary, &c.diffHunk, &c.oldFullName, &c.oldFilePath); err != nil {
+				continue
+			}
+			n, ok := nodeMap[c.nodeID]
+			if !ok {
+				continue
+			}
+			n.NodeType = "changed"
+			n.ChangeType = &c.changeType
+			n.ChangeSummary = c.changeSummary
+			n.DiffHunk = c.diffHunk
+			n.OldFullName = c.oldFullName
+			n.OldFilePath = c.oldFilePath
+			if c.diffHunk != nil {
+				added, removed := countDiffLines(*c.diffHunk)
+				n.LinesAdded = added
+				n.LinesRemoved = removed
+			}
+			nodeMap[c.nodeID] = n
+		}
+	} else {
+		log.Printf("GetGraphExpansion: pr_node_changes query: %v", err)
+	}
+
+	for _, e := range allEdges {
+		source, sourceOK := nodeMap[e.sourceID]
+		target, targetOK := nodeMap[e.destinationID]
+		if !sourceOK || !targetOK {
+			continue
+		}
+		if source.NodeType == "changed" && target.NodeType != "changed" {
+			target.NodeType = "callee"
+			nodeMap[target.ID] = target
+		}
+		if target.NodeType == "changed" && source.NodeType != "changed" {
+			source.NodeType = "caller"
+			nodeMap[source.ID] = source
+		}
+	}
+
+	resolveGraphTypeRefs(nodeMap)
+	nodes := make([]models.GraphNode, 0, len(nodeMap))
+	for _, n := range nodeMap {
+		nodes = append(nodes, n)
+	}
+	sortGraphNodes(nodes)
+
+	edges := make([]models.GraphEdge, 0, len(allEdges))
+	seenEdges := map[string]bool{}
+	for _, e := range allEdges {
+		if _, ok := nodeMap[e.sourceID]; !ok {
+			continue
+		}
+		if _, ok := nodeMap[e.destinationID]; !ok {
+			continue
+		}
+		key := e.sourceID + "|" + e.destinationID + "|" + e.edgeKind
+		if seenEdges[key] {
+			continue
+		}
+		seenEdges[key] = true
+		edges = append(edges, models.GraphEdge{SourceID: e.sourceID, DestinationID: e.destinationID, EdgeKind: e.edgeKind, Weight: 1, UnderlyingEdgeCount: 1})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(graphExpansionResponse{
+		Nodes:       nodes,
+		Edges:       edges,
+		TestContext: []models.GraphNode{},
 	})
 }
 

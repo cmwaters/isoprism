@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useEffect, useMemo } from "react";
+import { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Node,
@@ -13,13 +13,14 @@ import {
   useReactFlow,
   ReactFlowProvider,
   NodeMouseHandler,
+  EdgeMouseHandler,
   PanOnScrollMode,
   ConnectionMode,
   MarkerType,
   useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
+import { GraphEdge, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import { SettingsView } from "@/components/settings/settings-view";
@@ -41,6 +42,7 @@ type MeasuredNode = {
   data?: { node?: APIGraphNode };
 };
 export type PanelMode = "overview" | "code";
+type CollapseMode = "function" | "class" | "package";
 
 const DIFF_PILLS_HEIGHT = 28;
 const CARD_CORNER_MARGIN = 20;
@@ -276,10 +278,9 @@ export function cardColorByKind(kind: string): string {
   }
 }
 
-// ── Weighted hex-grid layout ──────────────────────────────────────────────────
+// ── Edge-length layout ────────────────────────────────────────────────────────
 const NODE_W = 280;
-const HEX_X = 360;
-const HEX_Y = 300;
+const NODE_H = 136;
 const PANEL_MIN_WIDTH = 260;
 const PANEL_MAX_WIDTH = 620;
 const PANEL_DEFAULT_WIDTH = 370;
@@ -287,137 +288,183 @@ const COMPONENT_PANEL_MIN_WIDTH = 320;
 const COMPONENT_PANEL_MAX_WIDTH = 720;
 const COMPONENT_PANEL_DEFAULT_WIDTH = 430;
 
-export function hexGridLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraphNode[]): Node[] {
-  type Hex = { q: number; r: number; ring: number; x: number; y: number };
+type LayoutOptions = {
+  previousPositions?: Record<string, Point>;
+  anchor?: Point;
+  pinnedIDs?: Set<string>;
+  iterations?: number;
+};
 
-  const graphByID = new Map(graphNodes.map((n) => [n.id, n]));
-  const nodeByID = new Map(nodes.map((n) => [n.id, n]));
-  const neighbors = new Map<string, string[]>();
-  nodes.forEach((n) => neighbors.set(n.id, []));
-  edges.forEach((e) => {
-    if (!nodeByID.has(e.source) || !nodeByID.has(e.target)) return;
-    neighbors.get(e.source)?.push(e.target);
-    neighbors.get(e.target)?.push(e.source);
+function edgeWeight(edge: Edge): number {
+  const data = edge.data as { weight?: number; underlyingEdgeCount?: number } | undefined;
+  return Math.min(5, Math.max(1, data?.underlyingEdgeCount ?? data?.weight ?? 1));
+}
+
+function initialPosition(index: number, total: number, anchor?: Point): Point {
+  const radius = Math.max(280, Math.sqrt(Math.max(total, 1)) * 135);
+  const angle = (index / Math.max(total, 1)) * Math.PI * 2;
+  const center = anchor ?? { x: 0, y: 0 };
+  return {
+    x: center.x + Math.cos(angle) * radius,
+    y: center.y + Math.sin(angle) * radius,
+  };
+}
+
+export function edgeLengthLayout(nodes: Node[], edges: Edge[], options: LayoutOptions = {}): Node[] {
+  if (nodes.length === 0) return [];
+
+  const nodeIDs = new Set(nodes.map((node) => node.id));
+  const sizes = new Map(nodes.map((node) => [
+    node.id,
+    {
+      width: node.measured?.width ?? node.width ?? NODE_W,
+      height: node.measured?.height ?? node.height ?? NODE_H,
+    },
+  ]));
+  const positions = new Map<string, Point>();
+  const velocities = new Map<string, Point>();
+  nodes.forEach((node, index) => {
+    const previous = options.previousPositions?.[node.id];
+    const initial = previous ?? initialPosition(index, nodes.length, options.anchor);
+    positions.set(node.id, { ...initial });
+    velocities.set(node.id, { x: 0, y: 0 });
   });
 
-  const ringOf = (q: number, r: number) => Math.max(Math.abs(q), Math.abs(r), Math.abs(-q - r));
-  const hexToPoint = (q: number, r: number) => ({
-    x: HEX_X * (q + r / 2),
-    y: HEX_Y * r,
-  });
+  const validEdges = edges.filter((edge) => nodeIDs.has(edge.source) && nodeIDs.has(edge.target));
+  const previous = options.previousPositions ?? {};
+  const iterations = options.iterations ?? (Object.keys(previous).length > 0 ? 90 : 220);
+  const pinnedIDs = options.pinnedIDs ?? new Set<string>();
 
-  const maxDepth = Math.max(0, ...graphNodes.map((n) => n.graph_depth ?? 0));
-  const outerRing = Math.max(maxDepth + 1, Math.ceil(Math.sqrt(nodes.length / 3)) + 1);
-  const cells: Hex[] = [];
-  for (let q = -outerRing; q <= outerRing; q++) {
-    for (let r = -outerRing; r <= outerRing; r++) {
-      const ring = ringOf(q, r);
-      if (ring <= outerRing) cells.push({ q, r, ring, ...hexToPoint(q, r) });
-    }
-  }
-  cells.sort((a, b) => a.ring - b.ring || a.y - b.y || a.x - b.x);
+  for (let tick = 0; tick < iterations; tick++) {
+    const forces = new Map(nodes.map((node) => [node.id, { x: 0, y: 0 }]));
 
-  const rank = (node: Node) => {
-    const meta = graphByID.get(node.id);
-    const seed = meta?.node_type === "changed" || meta?.node_type === "entrypoint";
-    const typeRank = seed ? 0 : meta?.boundary ? 3 : (meta?.graph_depth ?? 2);
-    return {
-      typeRank,
-      weight: meta?.weight ?? 0,
-      degree: meta?.degree ?? (neighbors.get(node.id)?.length ?? 0),
-      depth: meta?.graph_depth ?? 2,
-      file: meta?.file_path ?? "",
-    };
-  };
+    validEdges.forEach((edge) => {
+      const source = positions.get(edge.source);
+      const target = positions.get(edge.target);
+      const sourceSize = sizes.get(edge.source);
+      const targetSize = sizes.get(edge.target);
+      if (!source || !target || !sourceSize || !targetSize) return;
 
-  const ordered = [...nodes].sort((a, b) => {
-    const ra = rank(a);
-    const rb = rank(b);
-    return ra.typeRank - rb.typeRank
-      || rb.weight - ra.weight
-      || ra.depth - rb.depth
-      || rb.degree - ra.degree
-      || ra.file.localeCompare(rb.file)
-      || a.id.localeCompare(b.id);
-  });
-
-  const assigned = new Map<string, Hex>();
-  const occupied = new Set<string>();
-  const cellKey = (cell: Hex) => `${cell.q},${cell.r}`;
-  const desiredRing = (id: string) => {
-    const meta = graphByID.get(id);
-    if (meta?.boundary) return outerRing;
-    if (meta?.node_type === "changed" || meta?.node_type === "entrypoint") {
-      return (meta.weight ?? 0) > 0 ? 0 : 1;
-    }
-    return Math.max(1, meta?.graph_depth ?? 2);
-  };
-  const dist = (a: Hex, b: Hex) => {
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  ordered.forEach((node) => {
-    const targetRing = desiredRing(node.id);
-    let best = cells.find((cell) => !occupied.has(cellKey(cell))) ?? cells[0];
-    let bestCost = Number.POSITIVE_INFINITY;
-    cells.forEach((cell) => {
-      if (occupied.has(cellKey(cell))) return;
-      const ringCost = Math.abs(cell.ring - targetRing) * 5000;
-      const centerCost = (graphByID.get(node.id)?.weight ?? 0) * cell.ring * cell.ring * 4;
-      const edgeCost = (neighbors.get(node.id) ?? []).reduce((sum, nb) => {
-        const placed = assigned.get(nb);
-        return placed ? sum + dist(cell, placed) : sum;
-      }, 0);
-      const cost = ringCost + edgeCost + centerCost;
-      if (cost < bestCost || (cost === bestCost && cell.ring < best.ring)) {
-        best = cell;
-        bestCost = cost;
+      const sx = source.x + sourceSize.width / 2;
+      const sy = source.y + sourceSize.height / 2;
+      const tx = target.x + targetSize.width / 2;
+      const ty = target.y + targetSize.height / 2;
+      const dx = tx - sx;
+      const dy = ty - sy;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const desired = 310;
+      const strength = 0.012 * edgeWeight(edge);
+      const force = (distance - desired) * strength;
+      const fx = (dx / distance) * force;
+      const fy = (dy / distance) * force;
+      const sourceForce = forces.get(edge.source);
+      const targetForce = forces.get(edge.target);
+      if (sourceForce && targetForce) {
+        sourceForce.x += fx;
+        sourceForce.y += fy;
+        targetForce.x -= fx;
+        targetForce.y -= fy;
       }
     });
-    assigned.set(node.id, best);
-    occupied.add(cellKey(best));
-  });
 
-  const edgeLengthScore = (id: string, cell: Hex) => (neighbors.get(id) ?? []).reduce((sum, nb) => {
-    const other = assigned.get(nb);
-    return other ? sum + dist(cell, other) : sum;
-  }, 0);
-
-  for (let pass = 0; pass < 3; pass++) {
-    for (let i = 0; i < ordered.length; i++) {
-      for (let j = i + 1; j < ordered.length; j++) {
-        const a = ordered[i];
-        const b = ordered[j];
-        const cellA = assigned.get(a.id);
-        const cellB = assigned.get(b.id);
-        if (!cellA || !cellB) continue;
-        if (Math.abs(cellA.ring - desiredRing(b.id)) > 1 || Math.abs(cellB.ring - desiredRing(a.id)) > 1) continue;
-        const before = edgeLengthScore(a.id, cellA) + edgeLengthScore(b.id, cellB);
-        const after = edgeLengthScore(a.id, cellB) + edgeLengthScore(b.id, cellA);
-        if (after + 20 < before) {
-          assigned.set(a.id, cellB);
-          assigned.set(b.id, cellA);
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i];
+        const b = nodes[j];
+        const pa = positions.get(a.id);
+        const pb = positions.get(b.id);
+        const sa = sizes.get(a.id);
+        const sb = sizes.get(b.id);
+        if (!pa || !pb || !sa || !sb) continue;
+        const ax = pa.x + sa.width / 2;
+        const ay = pa.y + sa.height / 2;
+        const bx = pb.x + sb.width / 2;
+        const by = pb.y + sb.height / 2;
+        const dx = bx - ax || 0.01;
+        const dy = by - ay || 0.01;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        const minDistance = (sa.width + sb.width) / 2 + 80;
+        const overlap = Math.max(0, minDistance - distance);
+        const force = overlap * 0.025 + 180 / (distance * distance);
+        const fx = (dx / distance) * force;
+        const fy = (dy / distance) * force;
+        const fa = forces.get(a.id);
+        const fb = forces.get(b.id);
+        if (fa && fb) {
+          fa.x -= fx;
+          fa.y -= fy;
+          fb.x += fx;
+          fb.y += fy;
         }
       }
     }
+
+    nodes.forEach((node) => {
+      const position = positions.get(node.id);
+      const force = forces.get(node.id);
+      const velocity = velocities.get(node.id);
+      if (!position || !force || !velocity) return;
+
+      force.x += -position.x * 0.002;
+      force.y += -position.y * 0.002;
+      const previousPosition = previous[node.id];
+      if (previousPosition) {
+        const preserveStrength = pinnedIDs.has(node.id) ? 0.12 : 0.025;
+        force.x += (previousPosition.x - position.x) * preserveStrength;
+        force.y += (previousPosition.y - position.y) * preserveStrength;
+      }
+
+      velocity.x = (velocity.x + force.x) * 0.72;
+      velocity.y = (velocity.y + force.y) * 0.72;
+      position.x += Math.max(-36, Math.min(36, velocity.x));
+      position.y += Math.max(-36, Math.min(36, velocity.y));
+    });
   }
 
-  const positions = new Map<string, { x: number; y: number }>();
-  assigned.forEach((cell, id) => positions.set(id, { x: cell.x, y: cell.y }));
-
-  return nodes.map((n) => ({
-    ...n,
-    position: positions.get(n.id) ?? { x: 0, y: 0 },
+  return nodes.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
   }));
+}
+
+export function hexGridLayout(nodes: Node[], edges: Edge[], ...rest: unknown[]): Node[] {
+  void rest;
+  return edgeLengthLayout(nodes, edges);
 }
 
 // ── Inner canvas ──────────────────────────────────────────────────────────────
 type UnifiedGraph = GraphResponse | RepoGraphResponse;
+type GraphExpansionResponse = {
+  nodes: APIGraphNode[];
+  edges: GraphEdge[];
+  test_context?: APIGraphNode[];
+};
 
 function isPRGraph(graph: UnifiedGraph): graph is GraphResponse {
   return "pr" in graph;
+}
+
+function graphEdgeKey(edge: Pick<GraphEdge, "source_id" | "destination_id" | "edge_kind">): string {
+  return `${edge.source_id}|${edge.destination_id}|${edge.edge_kind}`;
+}
+
+function mergeGraphExpansion(graph: UnifiedGraph, expansion: GraphExpansionResponse): UnifiedGraph {
+  const nodes = uniqueGraphNodes([...graph.nodes, ...expansion.nodes]);
+  const edgeMap = new Map<string, GraphEdge>();
+  [...graph.edges, ...expansion.edges].forEach((edge) => edgeMap.set(graphEdgeKey(edge), edge));
+  if (!isPRGraph(graph)) {
+    return { ...graph, nodes, edges: [...edgeMap.values()] };
+  }
+  const testContext = uniqueGraphNodes([...(graph.test_context ?? []), ...(expansion.test_context ?? [])]);
+  return { ...graph, nodes, edges: [...edgeMap.values()], test_context: testContext };
+}
+
+function positionsFromNodes(nodes: Node[]): Record<string, Point> {
+  const positions: Record<string, Point> = {};
+  nodes.forEach((node) => {
+    positions[node.id] = { x: node.position.x, y: node.position.y };
+  });
+  return positions;
 }
 
 function nodeMatchesRenameSource(node: APIGraphNode, oldFullName: string, oldFilePath: string): boolean {
@@ -464,6 +511,170 @@ function collapseRenamedGraphNodes(graph: UnifiedGraph): UnifiedGraph {
       return [{ ...edge, source_id: sourceID, destination_id: destinationID }];
     }),
   };
+}
+
+function nodePackagePath(node: APIGraphNode): string {
+  if (node.package_path) return node.package_path;
+  const path = node.file_path.replaceAll("\\", "/");
+  const slash = path.lastIndexOf("/");
+  return slash >= 0 ? path.slice(0, slash) : ".";
+}
+
+function nodeGroupLabel(node: APIGraphNode, mode: CollapseMode, ownedBy: Map<string, APIGraphNode>): string {
+  if (mode === "package") return nodePackagePath(node);
+  if (mode === "class") {
+    const owner = ownedBy.get(node.id);
+    if (owner) return owner.full_name;
+    if (node.kind === "struct" || node.kind === "type" || node.kind === "interface") return node.full_name;
+  }
+  return node.full_name;
+}
+
+function ownerMapForGraph(graph: UnifiedGraph): Map<string, APIGraphNode> {
+  const nodeByID = new Map(graph.nodes.map((node) => [node.id, node]));
+  const ownedBy = new Map<string, APIGraphNode>();
+  graph.edges.forEach((edge) => {
+    if (edge.edge_kind !== "owns_method") return;
+    const owner = nodeByID.get(edge.source_id);
+    if (owner) ownedBy.set(edge.destination_id, owner);
+  });
+  return ownedBy;
+}
+
+function visualIDForNode(node: APIGraphNode, mode: CollapseMode, ownedBy: Map<string, APIGraphNode>): string {
+  return mode === "function" ? node.id : `${mode}:${nodeGroupLabel(node, mode, ownedBy)}`;
+}
+
+function nodeTypeRank(nodeType: APIGraphNode["node_type"]): number {
+  switch (nodeType) {
+    case "changed": return 0;
+    case "entrypoint": return 1;
+    case "caller": return 2;
+    case "callee": return 3;
+    default: return 4;
+  }
+}
+
+function collapseGraph(graph: UnifiedGraph, mode: CollapseMode): UnifiedGraph {
+  if (mode === "function") return graph;
+
+  const ownedBy = ownerMapForGraph(graph);
+
+  const groupKeyByNodeID = new Map<string, string>();
+  const grouped = new Map<string, APIGraphNode[]>();
+  graph.nodes.forEach((node) => {
+    const key = visualIDForNode(node, mode, ownedBy);
+    groupKeyByNodeID.set(node.id, key);
+    grouped.set(key, [...(grouped.get(key) ?? []), node]);
+  });
+
+  const nodes: APIGraphNode[] = [];
+  grouped.forEach((children, key) => {
+    const first = children[0];
+    const title = key.slice(mode.length + 1);
+    const bestType = children.reduce((best, child) => nodeTypeRank(child.node_type) < nodeTypeRank(best) ? child.node_type : best, "context" as APIGraphNode["node_type"]);
+    nodes.push({
+      ...first,
+      id: key,
+      full_name: mode === "package" ? title : title,
+      file_path: mode === "package" ? title : first.file_path,
+      package_path: mode === "package" ? title : nodePackagePath(first),
+      line_start: Math.min(...children.map((node) => node.line_start || 0)),
+      line_end: Math.max(...children.map((node) => node.line_end || 0)),
+      inputs: [],
+      outputs: [],
+      kind: mode,
+      node_type: bestType,
+      summary: `${children.length} ${mode === "package" ? "components" : "members"}`,
+      change_summary: children.filter((node) => node.change_type).length > 0
+        ? `${children.filter((node) => node.change_type).length} changed components`
+        : undefined,
+      diff_hunk: undefined,
+      change_type: children.some((node) => node.change_type) ? "modified" : undefined,
+      lines_added: children.reduce((sum, node) => sum + (node.lines_added ?? 0), 0),
+      lines_removed: children.reduce((sum, node) => sum + (node.lines_removed ?? 0), 0),
+      weight: children.length,
+      degree: 0,
+      graph_depth: 0,
+      boundary: false,
+      tests: children.flatMap((node) => node.tests ?? []),
+    });
+  });
+
+  const edgeMap = new Map<string, GraphEdge>();
+  graph.edges.forEach((edge) => {
+    const source = groupKeyByNodeID.get(edge.source_id);
+    const target = groupKeyByNodeID.get(edge.destination_id);
+    if (!source || !target || source === target) return;
+    const key = `${source}|${target}|${edge.edge_kind}`;
+    const existing = edgeMap.get(key);
+    if (existing) {
+      existing.weight = (existing.weight ?? 1) + (edge.weight ?? 1);
+      existing.underlying_edge_count = (existing.underlying_edge_count ?? 1) + (edge.underlying_edge_count ?? 1);
+      return;
+    }
+    edgeMap.set(key, {
+      source_id: source,
+      destination_id: target,
+      edge_kind: edge.edge_kind,
+      change_type: edge.change_type,
+      weight: edge.weight ?? 1,
+      underlying_edge_count: edge.underlying_edge_count ?? 1,
+      sample_edges: edge.sample_edges,
+    });
+  });
+
+  const degree = new Map<string, number>();
+  edgeMap.forEach((edge) => {
+    degree.set(edge.source_id, (degree.get(edge.source_id) ?? 0) + 1);
+    degree.set(edge.destination_id, (degree.get(edge.destination_id) ?? 0) + 1);
+  });
+
+  return {
+    ...graph,
+    nodes: nodes.map((node) => ({ ...node, degree: degree.get(node.id) ?? 0 })),
+    edges: [...edgeMap.values()],
+  };
+}
+
+function seedPositionsForCollapseMode(
+  graph: UnifiedGraph,
+  fromMode: CollapseMode,
+  toMode: CollapseMode,
+  currentPositions: Record<string, Point>
+): Record<string, Point> {
+  const fromOwners = ownerMapForGraph(graph);
+  const toOwners = fromOwners;
+  const grouped = new Map<string, APIGraphNode[]>();
+  graph.nodes.forEach((node) => {
+    const key = visualIDForNode(node, toMode, toOwners);
+    grouped.set(key, [...(grouped.get(key) ?? []), node]);
+  });
+
+  const seeded: Record<string, Point> = {};
+  grouped.forEach((children, targetID) => {
+    const sourcePositions = children
+      .map((child) => currentPositions[visualIDForNode(child, fromMode, fromOwners)] ?? currentPositions[child.id])
+      .filter((position): position is Point => Boolean(position));
+    if (sourcePositions.length === 0) return;
+    const center = sourcePositions.reduce((sum, position) => ({
+      x: sum.x + position.x / sourcePositions.length,
+      y: sum.y + position.y / sourcePositions.length,
+    }), { x: 0, y: 0 });
+    if (toMode !== "function") {
+      seeded[targetID] = center;
+      return;
+    }
+    children.forEach((child, index) => {
+      const angle = (index / Math.max(children.length, 1)) * Math.PI * 2;
+      const radius = children.length > 1 ? 95 : 0;
+      seeded[child.id] = {
+        x: center.x + Math.cos(angle) * radius,
+        y: center.y + Math.sin(angle) * radius,
+      };
+    });
+  });
+  return seeded;
 }
 
 function sameTestEntry(test: APIGraphNode, ref: { full_name: string; file_path: string }): boolean {
@@ -552,6 +763,13 @@ function InnerCanvas({
   const [componentPanelWidth, setComponentPanelWidth] = useState(COMPONENT_PANEL_DEFAULT_WIDTH);
   const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [layoutPositions, setLayoutPositions] = useState<Record<string, Point>>({});
+  const layoutPositionsRef = useRef<Record<string, Point>>({});
+  const pendingLayoutAnchorRef = useRef<Point | undefined>(undefined);
+  const pendingPinnedIDsRef = useRef<Set<string>>(new Set());
+  const [collapseMode, setCollapseMode] = useState<CollapseMode>("function");
+  const [expandedEdgeKeys, setExpandedEdgeKeys] = useState<Set<string>>(() => new Set());
+  const [expandingEdgeKey, setExpandingEdgeKey] = useState<string | null>(null);
   const baseVisibleGraph = useMemo(() => collapseRenamedGraphNodes(activeGraph), [activeGraph]);
   const activePRTestChanges = useMemo(
     () => isPRGraph(activeGraph) ? activeGraph.test_changes ?? [] : [],
@@ -560,9 +778,13 @@ function InnerCanvas({
   const selectedTestNode = selectedPRChange?.type === "node"
     ? activePRTestChanges.find((node) => node.id === selectedPRChange.nodeID) ?? null
     : null;
-  const visibleGraph = useMemo(
+  const functionVisibleGraph = useMemo(
     () => buildTestFocusedGraph(baseVisibleGraph, selectedTestNode),
     [baseVisibleGraph, selectedTestNode]
+  );
+  const visibleGraph = useMemo(
+    () => collapseGraph(functionVisibleGraph, collapseMode),
+    [collapseMode, functionVisibleGraph]
   );
 
   const selectGraphNode = useCallback((id: string) => {
@@ -575,8 +797,10 @@ function InnerCanvas({
       setSelectedPRChange(null);
       return;
     }
-    if (isPRGraph(baseVisibleGraph) && apiNode) {
+    if (isPRGraph(baseVisibleGraph) && apiNode && !apiNode.id.startsWith("class:") && !apiNode.id.startsWith("package:")) {
       setSelectedPRChange({ type: "node", nodeID: apiNode.id });
+    } else {
+      setSelectedPRChange(null);
     }
   }, [activePRTestChanges, baseVisibleGraph, visibleGraph]);
 
@@ -592,10 +816,11 @@ function InnerCanvas({
     source: e.source_id,
     target: e.destination_id,
     type: "smartBezier",
+    data: { weight: e.weight, underlyingEdgeCount: e.underlying_edge_count },
   })), [visibleGraph.edges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(
-    hexGridLayout(initialNodes, baseEdges, visibleGraph.nodes)
+    edgeLengthLayout(initialNodes, baseEdges)
   );
 
   // Recompute edge styles whenever selection changes
@@ -623,10 +848,30 @@ function InnerCanvas({
 
   useEffect(() => {
     setActiveGraph(graph);
+    layoutPositionsRef.current = {};
+    setLayoutPositions({});
+    setExpandedEdgeKeys(new Set());
+    setCollapseMode("function");
   }, [graph]);
 
   useEffect(() => {
-    setNodes(hexGridLayout(initialNodes, baseEdges, visibleGraph.nodes));
+    setNodes((current) => {
+      const previousPositions = Object.keys(layoutPositionsRef.current).length > 0
+        ? layoutPositionsRef.current
+        : positionsFromNodes(current);
+      const next = edgeLengthLayout(initialNodes, baseEdges, {
+        previousPositions,
+        anchor: pendingLayoutAnchorRef.current,
+        pinnedIDs: pendingPinnedIDsRef.current,
+        iterations: Object.keys(previousPositions).length > 0 ? 90 : 220,
+      });
+      pendingLayoutAnchorRef.current = undefined;
+      pendingPinnedIDsRef.current = new Set();
+      const nextPositions = positionsFromNodes(next);
+      layoutPositionsRef.current = nextPositions;
+      setLayoutPositions(nextPositions);
+      return next;
+    });
     setTimeout(() => fitView({ padding: 0.15 }), 50);
   }, [visibleGraph, baseEdges, fitView, initialNodes, setNodes]);
 
@@ -667,6 +912,38 @@ function InnerCanvas({
     [selectGraphNode]
   );
 
+  const onEdgeClick: EdgeMouseHandler = useCallback(async (_, edge) => {
+    if (!isPRGraph(activeGraph) || edge.source.startsWith("class:") || edge.source.startsWith("package:") || edge.target.startsWith("class:") || edge.target.startsWith("package:")) {
+      return;
+    }
+    const apiEdge = visibleGraph.edges.find((candidate) => candidate.source_id === edge.source && candidate.destination_id === edge.target);
+    if (!apiEdge) return;
+
+    const key = graphEdgeKey(apiEdge);
+    if (expandedEdgeKeys.has(key) || expandingEdgeKey === key) return;
+
+    const sourcePosition = layoutPositionsRef.current[edge.source] ?? getNode(edge.source)?.position;
+    const targetPosition = layoutPositionsRef.current[edge.target] ?? getNode(edge.target)?.position;
+    if (sourcePosition && targetPosition) {
+      pendingLayoutAnchorRef.current = {
+        x: (sourcePosition.x + targetPosition.x) / 2,
+        y: (sourcePosition.y + targetPosition.y) / 2,
+      };
+    }
+    pendingPinnedIDsRef.current = new Set([edge.source, edge.target]);
+    setExpandingEdgeKey(key);
+    try {
+      const expansion = await apiFetch<GraphExpansionResponse>(
+        `/api/v1/repos/${repoID}/prs/${activeGraph.pr.id}/graph/expand?source=${encodeURIComponent(edge.source)}&target=${encodeURIComponent(edge.target)}&hops=1`,
+        token
+      );
+      setExpandedEdgeKeys((current) => new Set([...current, key]));
+      setActiveGraph((current) => mergeGraphExpansion(current, expansion));
+    } finally {
+      setExpandingEdgeKey(null);
+    }
+  }, [activeGraph, expandedEdgeKeys, expandingEdgeKey, getNode, repoID, token, visibleGraph.edges]);
+
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
     setSelectedPRChange(null);
@@ -694,6 +971,10 @@ function InnerCanvas({
   const onSelectPR = useCallback(async (prNumber: number) => {
     setSettingsOpen(false);
     setSelectedPRChange(null);
+    setExpandedEdgeKeys(new Set());
+    layoutPositionsRef.current = {};
+    setLayoutPositions({});
+    setCollapseMode("function");
     const cached = prGraphCache[prNumber];
     if (cached) {
       setActiveGraph(cached);
@@ -713,8 +994,25 @@ function InnerCanvas({
   const onBackToRepo = useCallback(() => {
     setSettingsOpen(false);
     setSelectedPRChange(null);
+    setExpandedEdgeKeys(new Set());
+    layoutPositionsRef.current = {};
+    setLayoutPositions({});
+    setCollapseMode("function");
     setActiveGraph(graph);
   }, [graph]);
+
+  const onChangeCollapseMode = useCallback((mode: CollapseMode) => {
+    if (mode === collapseMode) return;
+    const seeded = seedPositionsForCollapseMode(functionVisibleGraph, collapseMode, mode, layoutPositionsRef.current);
+    if (Object.keys(seeded).length > 0) {
+      layoutPositionsRef.current = seeded;
+      setLayoutPositions(seeded);
+    }
+    setSelectedNode(null);
+    setSelectedPRChange(null);
+    setPanelMode("overview");
+    setCollapseMode(mode);
+  }, [collapseMode, functionVisibleGraph]);
 
   const totalNodes = visibleGraph.nodes.length;
   const maxNodes = 20;
@@ -726,7 +1024,7 @@ function InnerCanvas({
     : visibleGraph.nodes;
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", position: "relative" }}>
+    <div data-layout-positions={Object.keys(layoutPositions).length} style={{ display: "flex", height: "100vh", width: "100vw", position: "relative" }}>
       <NodeDetailPanel
         node={activePR ? null : selectedNode}
         allNodes={baseVisibleGraph.nodes}
@@ -818,6 +1116,7 @@ function InnerCanvas({
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             connectionMode={ConnectionMode.Loose}
             fitView
@@ -830,6 +1129,40 @@ function InnerCanvas({
             <Background color="#D8D6D6" gap={20} size={1} />
           </ReactFlow>
 
+
+          <div style={{
+            position: "absolute",
+            top: 20,
+            right: 24,
+            display: "flex",
+            background: "#FFFFFF",
+            border: "1px solid #D8D6D6",
+            borderRadius: 6,
+            overflow: "hidden",
+            zIndex: 10,
+          }}>
+            {(["function", "class", "package"] as CollapseMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => onChangeCollapseMode(mode)}
+                style={{
+                  border: 0,
+                  borderLeft: mode === "function" ? 0 : "1px solid #E4E4E4",
+                  background: collapseMode === mode ? "#111111" : "#FFFFFF",
+                  color: collapseMode === mode ? "#FFFFFF" : "#444444",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  height: 32,
+                  padding: "0 12px",
+                  textTransform: "capitalize",
+                }}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
 
           <div style={{
             position: "absolute",
