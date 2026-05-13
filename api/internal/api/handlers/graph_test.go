@@ -108,14 +108,25 @@ func TestEdgeChangesOnlyApplyToChangedProductionEndpoints(t *testing.T) {
 	gotChanged := markEdgeChangeType(graphEdgeRow{
 		sourceName:      "rpc/grpc:coregrpc.BlockAPI.Stop",
 		destinationName: "types:types.EventBus.Unsubscribe",
+		edgeKind:        "calls",
 	}, baseOnly, changedNames)
 	if gotChanged != "deleted" {
 		t.Fatalf("edge touching changed node = %q, want deleted", gotChanged)
 	}
 
+	gotUnchangedCaller := markEdgeChangeType(graphEdgeRow{
+		sourceName:      "rpc/grpc:coregrpc.StartGRPCServer",
+		destinationName: "rpc/grpc:coregrpc.BlockAPI.Stop",
+		edgeKind:        "calls",
+	}, baseOnly, changedNames)
+	if gotUnchangedCaller != "unchanged" {
+		t.Fatalf("edge from unchanged caller to changed callee = %q, want unchanged", gotUnchangedCaller)
+	}
+
 	gotContext := markEdgeChangeType(graphEdgeRow{
 		sourceName:      "rpc/client/local:local.Local.Unsubscribe",
 		destinationName: "types:types.EventBus.Unsubscribe",
+		edgeKind:        "calls",
 	}, baseOnly, changedNames)
 	if gotContext != "unchanged" {
 		t.Fatalf("context edge = %q, want unchanged", gotContext)
@@ -184,6 +195,74 @@ func TestSelectVisibleGraphIncludesChangedNodeCallersAndCallees(t *testing.T) {
 	}
 	if selected["caller"].depth != 1 || selected["callee"].depth != 1 {
 		t.Fatalf("one-hop depths = caller %d callee %d, want 1", selected["caller"].depth, selected["callee"].depth)
+	}
+}
+
+func TestSelectExpansionNeighborsSkipsVisibleAndRanksChangedNodes(t *testing.T) {
+	changeType := "modified"
+	nodeMap := map[string]models.GraphNode{
+		"expanded": {ID: "expanded", FullName: "pkg.Expanded", FilePath: "pkg/a.go", PackagePath: "pkg"},
+		"visible":  {ID: "visible", FullName: "pkg.Visible", FilePath: "pkg/a.go", PackagePath: "pkg"},
+		"changed":  {ID: "changed", FullName: "pkg.Changed", FilePath: "pkg/b.go", PackagePath: "pkg", ChangeType: &changeType},
+		"entry":    {ID: "entry", FullName: "main", FilePath: "cmd/main.go", PackagePath: "cmd", IsEntrypoint: true},
+		"far":      {ID: "far", FullName: "other.Far", FilePath: "other/far.go", PackagePath: "other"},
+	}
+	visible := graphVisibleSet([]string{"expanded", "visible"}, "expanded")
+	neighbors, hiddenCount, hasMore := selectExpansionNeighbors("expanded", visible, nodeMap, []graphEdgeRow{
+		{sourceID: "visible", destinationID: "expanded", edgeKind: "calls"},
+		{sourceID: "changed", destinationID: "expanded", edgeKind: "calls"},
+		{sourceID: "expanded", destinationID: "entry", edgeKind: "calls"},
+		{sourceID: "expanded", destinationID: "far", edgeKind: "calls"},
+		{sourceID: "far", destinationID: "entry", edgeKind: "calls"},
+	})
+
+	if hasMore {
+		t.Fatalf("hasMore = true for small neighborhood")
+	}
+	if hiddenCount != 3 {
+		t.Fatalf("hiddenCount = %d, want 3", hiddenCount)
+	}
+	if len(neighbors) != 3 {
+		t.Fatalf("neighbors = %#v, want 3 hidden nodes", neighbors)
+	}
+	if neighbors[0] != "changed" {
+		t.Fatalf("first neighbor = %q, want changed node first; all neighbors %#v", neighbors[0], neighbors)
+	}
+	for _, id := range neighbors {
+		if id == "visible" {
+			t.Fatalf("visible node should not be returned: %#v", neighbors)
+		}
+	}
+}
+
+func TestGraphEdgesForVisibleSetIncludesNewAndExistingEdges(t *testing.T) {
+	visible := graphVisibleSet([]string{"expanded", "existing"}, "expanded")
+	visible["new"] = true
+	edges := graphEdgesForVisibleSet([]graphEdgeRow{
+		{sourceID: "existing", destinationID: "expanded", edgeKind: "calls"},
+		{sourceID: "expanded", destinationID: "new", edgeKind: "calls"},
+		{sourceID: "new", destinationID: "outside", edgeKind: "calls"},
+		{sourceID: "expanded", destinationID: "new", edgeKind: "calls"},
+	}, visible)
+
+	if len(edges) != 2 {
+		t.Fatalf("edges = %#v, want only two visible deduped edges", edges)
+	}
+	if !hasGraphEdge(edges, "existing", "expanded") {
+		t.Fatalf("missing existing -> expanded edge: %#v", edges)
+	}
+	if !hasGraphEdge(edges, "expanded", "new") {
+		t.Fatalf("missing expanded -> new edge: %#v", edges)
+	}
+}
+
+func TestGraphHasHiddenNeighborClearsBoundaryWhenFullyVisible(t *testing.T) {
+	visible := graphVisibleSet([]string{"expanded", "neighbor"}, "expanded")
+	if graphHasHiddenNeighbor("expanded", visible, []graphEdgeRow{{sourceID: "expanded", destinationID: "neighbor", edgeKind: "calls"}}) {
+		t.Fatalf("expanded node should not have hidden neighbors")
+	}
+	if !graphHasHiddenNeighbor("expanded", visible, []graphEdgeRow{{sourceID: "expanded", destinationID: "outside", edgeKind: "calls"}}) {
+		t.Fatalf("expanded node should have hidden neighbors")
 	}
 }
 

@@ -225,6 +225,25 @@ type RepoGraphResponse struct {
 	Edges []GraphEdge `json:"edges"`
 }
 
+type GraphExpansionContext struct {
+	Mode string `json:"mode"`
+	PRID string `json:"pr_id,omitempty"`
+}
+
+type GraphExpansionRequest struct {
+	NodeID         string                `json:"node_id"`
+	VisibleNodeIDs []string              `json:"visible_node_ids"`
+	GraphContext   GraphExpansionContext `json:"graph_context"`
+}
+
+type GraphExpansionResponse struct {
+	Nodes               []GraphNode `json:"nodes"`
+	Edges               []GraphEdge `json:"edges"`
+	ExpandedNodeID      string      `json:"expanded_node_id"`
+	HasMore             bool        `json:"has_more"`
+	HiddenNeighborCount int         `json:"hidden_neighbor_count"`
+}
+
 type GraphPR struct {
 	ID            string `json:"id"`
 	Number        int    `json:"number"`

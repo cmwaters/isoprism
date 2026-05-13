@@ -154,6 +154,25 @@ export interface RepoGraphResponse {
   edges: GraphEdge[];
 }
 
+export interface GraphExpansionContext {
+  mode: "repo" | "pr";
+  pr_id?: string;
+}
+
+export interface GraphExpansionRequest {
+  node_id: string;
+  visible_node_ids: string[];
+  graph_context: GraphExpansionContext;
+}
+
+export interface GraphExpansionResponse {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  expanded_node_id: string;
+  has_more: boolean;
+  hidden_neighbor_count: number;
+}
+
 // ── Node code ────────────────────────────────────────────────────────────────
 
 export interface NodeCodeSegment {
