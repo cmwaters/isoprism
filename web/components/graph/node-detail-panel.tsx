@@ -838,7 +838,7 @@ function NodeChangeDetailPanel({
       <TestSection tests={node.tests ?? []} />
 
       {typeNode ? (
-        <TypeContentsSection node={node} allNodes={allNodes} onSelectNode={onSelectNode} />
+        <TypeContentsSection node={node} allNodes={allNodes} edges={edges} onSelectNode={onSelectNode} />
       ) : (
         <div style={{ marginTop: 22 }}>
           <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>
@@ -1049,7 +1049,7 @@ function NodeDetail({
       )}
 
       {mode === "contents" ? (
-        <TypeContentsSection node={node} allNodes={allNodes} onSelectNode={onSelectNode} />
+        <TypeContentsSection node={node} allNodes={allNodes} edges={edges} onSelectNode={onSelectNode} />
       ) : (
         <>
       {/* Description */}
@@ -1383,15 +1383,23 @@ function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
 function TypeContentsSection({
   node,
   allNodes,
+  edges,
   onSelectNode,
 }: {
   node: GraphNode;
   allNodes: GraphNode[];
+  edges: GraphEdge[];
   onSelectNode: (id: string) => void;
 }) {
   const typeRefs = [...(node.inputs ?? []), ...(node.outputs ?? [])];
   const seen = new Set<string>();
-  const rows = typeRefs.flatMap((ref) => {
+  const methodRows = outgoingOwnershipEdges(node.id, edges).flatMap((edge) => {
+    const target = allNodes.find((candidate) => candidate.id === edge.destination_id);
+    if (!target || target.id === node.id || seen.has(target.id)) return [];
+    seen.add(target.id);
+    return [target];
+  });
+  const refRows = typeRefs.flatMap((ref) => {
     const key = ref.node_id ?? `${ref.type}:${ref.name ?? ""}`;
     if (!key || key === node.id || seen.has(key)) return [];
     seen.add(key);
@@ -1399,47 +1407,86 @@ function TypeContentsSection({
     if (target?.id === node.id) return [];
     return [{ ref, target }];
   });
+  const hasContents = methodRows.length > 0 || refRows.length > 0;
 
   return (
     <div style={{ marginTop: 20 }}>
       <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
         Contents
       </p>
-      {rows.length === 0 ? (
-        <p style={{ color: "#777777", fontSize: 13, lineHeight: 1.5, margin: 0 }}>No referenced types found.</p>
+      {!hasContents ? (
+        <p style={{ color: "#777777", fontSize: 13, lineHeight: 1.5, margin: 0 }}>No methods or referenced types found.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {rows.map(({ ref, target }) => {
-            const label = target ? symbolTitle(target) : ref.name ?? ref.type;
-            const pkg = target ? pkgLabel(target) : undefined;
-            const clickableID = target?.id ?? ref.node_id;
-            const disabled = !clickableID;
-            return (
-              <button
-                key={ref.node_id ?? `${ref.type}:${ref.name ?? ""}`}
-                type="button"
-                onClick={() => {
-                  if (clickableID) onSelectNode(clickableID);
-                }}
-                disabled={disabled}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: disabled ? "#777777" : "#222222",
-                  cursor: disabled ? "default" : "pointer",
-                  padding: "4px 0",
-                  textAlign: "left",
-                  width: "100%",
-                }}
-              >
-                {pkg && <span style={{ fontSize: 11, color: "#EF5DA8", display: "block" }}>{pkg}</span>}
-                <span style={{ display: "block", fontSize: 13 }}>{label}</span>
-                {!target && ref.type && ref.type !== label && (
-                  <span style={{ color: "#888888", display: "block", fontSize: 11, marginTop: 2 }}>{ref.type}</span>
-                )}
-              </button>
-            );
-          })}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {methodRows.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <p style={{ color: "#AAAAAA", fontSize: 11, letterSpacing: "0.08em", margin: "0 0 2px", textTransform: "uppercase" }}>Methods</p>
+              {methodRows.map((target) => {
+                const pkg = pkgLabel(target);
+                return (
+                  <button
+                    key={target.id}
+                    type="button"
+                    onClick={() => onSelectNode(target.id)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#222222",
+                      cursor: "pointer",
+                      display: "grid",
+                      gap: 8,
+                      gridTemplateColumns: "34px 1fr",
+                      padding: "4px 0",
+                      textAlign: "left",
+                      width: "100%",
+                    }}
+                  >
+                    <span style={{ color: "#888888", fontSize: 11, userSelect: "none" }}>L{target.line_start}</span>
+                    <span style={{ minWidth: 0 }}>
+                      {pkg && <span style={{ fontSize: 11, color: "#EF5DA8", display: "block" }}>{pkg}</span>}
+                      <span style={{ display: "block", fontSize: 13 }}>{symbolTitle(target)}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {refRows.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <p style={{ color: "#AAAAAA", fontSize: 11, letterSpacing: "0.08em", margin: "0 0 2px", textTransform: "uppercase" }}>Referenced Types</p>
+              {refRows.map(({ ref, target }) => {
+                const label = target ? symbolTitle(target) : ref.name ?? ref.type;
+                const pkg = target ? pkgLabel(target) : undefined;
+                const clickableID = target?.id ?? ref.node_id;
+                const disabled = !clickableID;
+                return (
+                  <button
+                    key={ref.node_id ?? `${ref.type}:${ref.name ?? ""}`}
+                    type="button"
+                    onClick={() => {
+                      if (clickableID) onSelectNode(clickableID);
+                    }}
+                    disabled={disabled}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: disabled ? "#777777" : "#222222",
+                      cursor: disabled ? "default" : "pointer",
+                      padding: "4px 0",
+                      textAlign: "left",
+                      width: "100%",
+                    }}
+                  >
+                    {pkg && <span style={{ fontSize: 11, color: "#EF5DA8", display: "block" }}>{pkg}</span>}
+                    <span style={{ display: "block", fontSize: 13 }}>{label}</span>
+                    {!target && ref.type && ref.type !== label && (
+                      <span style={{ color: "#888888", display: "block", fontSize: 11, marginTop: 2 }}>{ref.type}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
