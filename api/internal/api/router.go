@@ -200,7 +200,9 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 
 		r.Route("/api/v1/repos/{repoID}", func(r chi.Router) {
 			r.Get("/", repoHandler.GetRepo)
+			r.Post("/select", repoHandler.SelectRepo)
 			r.Post("/index", indexRepoHandler(db, appClient, enricher))
+			r.Delete("/index", repoHandler.UnindexRepo)
 			r.Get("/status", repoHandler.GetRepoStatus)
 			r.Get("/queue", queueHandler.GetQueue)
 			r.Get("/graph", graphHandler.GetRepoGraph)
@@ -222,6 +224,8 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 		repoID := chi.URLParam(r, "repoID")
 		userID := r.Header.Get("X-User-ID")
 		ctx := r.Context()
+		handlers.EnsureUserExists(ctx, db, userID)
+		handlers.CleanupExpiredRepositories(ctx, db)
 
 		var installationID int64
 		var fullName, defaultBranch string
@@ -230,7 +234,7 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 			select gi.installation_id, r.full_name, r.default_branch, r.main_commit_sha
 			from repositories r
 			join github_installations gi on gi.id = r.installation_id
-			where r.id=$1 and r.user_id=$2
+			where r.id=$1 and r.user_id=$2 and r.is_active = true
 		`, repoID, userID).Scan(&installationID, &fullName, &defaultBranch, &mainCommitSHA)
 		if err != nil {
 			http.Error(w, "repo not found", http.StatusNotFound)
@@ -252,7 +256,10 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 			http.Error(w, "github branch error", http.StatusInternalServerError)
 			return
 		}
-		markPilotRepoSelected(ctx, db, userID, repoID)
+		if err := handlers.SelectRepository(ctx, db, userID, repoID); err != nil {
+			http.Error(w, "failed to select repo", http.StatusInternalServerError)
+			return
+		}
 
 		var jobStatus string
 		_ = db.QueryRow(ctx, `
@@ -262,7 +269,10 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 
 		if jobStatus == "ready" || (mainCommitSHA != nil && *mainCommitSHA == headSHA) {
 			_, _ = db.Exec(ctx, `
-				update repositories set index_status='ready', main_commit_sha=$1 where id=$2
+				update repositories
+				set index_status='ready', main_commit_sha=$1, indexed_at=coalesce(indexed_at, now()),
+				    unused_at=null, purge_after=null
+				where id=$2
 			`, headSHA, repoID)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
@@ -295,7 +305,7 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 				finished_at=null,
 				error=null
 		`, repoID, headSHA)
-		db.Exec(ctx, `update repositories set index_status='pending' where id=$1`, repoID)
+		db.Exec(ctx, `update repositories set index_status='pending', unused_at=null, purge_after=null where id=$1`, repoID)
 
 		go func() {
 			bgCtx := context.Background()
@@ -310,17 +320,6 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 			"commit_sha": headSHA,
 		})
 	}
-}
-
-func markPilotRepoSelected(ctx context.Context, db *pgxpool.Pool, userID, repoID string) {
-	_, _ = db.Exec(ctx, `
-		update pilot_users
-		set selected_repo_id = $1,
-			trial_starts_at = coalesce(trial_starts_at, now()),
-			trial_ends_at = coalesce(trial_ends_at, now() + interval '7 days'),
-			status = case when status in ('registered', 'invited') then 'active' else status end
-		where user_id = $2
-	`, repoID, userID)
 }
 
 func supabaseAuthMiddleware(_ string) func(http.Handler) http.Handler {

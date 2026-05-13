@@ -14,6 +14,8 @@ type User struct {
 	AvatarURL      *string   `json:"avatar_url"`
 	GitHubUserID   *int64    `json:"github_user_id"`
 	GitHubUsername *string   `json:"github_username"`
+	SelectedRepoID *string   `json:"selected_repo_id"`
+	AccountClass   string    `json:"account_class"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -31,16 +33,25 @@ type GitHubInstallation struct {
 // ── Repository ────────────────────────────────────────────────────────────────
 
 type Repository struct {
-	ID             string    `json:"id"`
-	UserID         string    `json:"user_id"`
-	InstallationID string    `json:"installation_id"`
-	GitHubRepoID   int64     `json:"github_repo_id"`
-	FullName       string    `json:"full_name"`
-	DefaultBranch  string    `json:"default_branch"`
-	MainCommitSHA  *string   `json:"main_commit_sha"`
-	IndexStatus    string    `json:"index_status"` // pending | running | ready | failed
-	IsActive       bool      `json:"is_active"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID                 string     `json:"id"`
+	UserID             string     `json:"user_id"`
+	InstallationID     string     `json:"installation_id"`
+	GitHubRepoID       int64      `json:"github_repo_id"`
+	FullName           string     `json:"full_name"`
+	DefaultBranch      string     `json:"default_branch"`
+	MainCommitSHA      *string    `json:"main_commit_sha"`
+	IndexStatus        string     `json:"index_status"` // pending | running | ready | failed
+	IsActive           bool       `json:"is_active"`
+	GitHubAccessStatus string     `json:"github_access_status"`
+	AuthorizedAt       *time.Time `json:"authorized_at"`
+	RevokedAt          *time.Time `json:"revoked_at"`
+	IndexedAt          *time.Time `json:"indexed_at"`
+	SelectedAt         *time.Time `json:"selected_at"`
+	UnusedAt           *time.Time `json:"unused_at"`
+	PurgeAfter         *time.Time `json:"purge_after"`
+	IsSelected         bool       `json:"is_selected"`
+	UserClass          string     `json:"user_class"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 // ── Pull Request ──────────────────────────────────────────────────────────────

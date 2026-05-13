@@ -239,7 +239,13 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	// Mark the structural graph ready before optional AI enrichment. Large repos can
 	// spend a long time in enrichment, but the graph is already usable here.
 	_, err = db.Exec(ctx, `
-		update repositories set index_status='ready', main_commit_sha=$1 where id=$2
+		update repositories
+		set index_status='ready',
+		    main_commit_sha=$1,
+		    indexed_at=coalesce(indexed_at, now()),
+		    unused_at=null,
+		    purge_after=null
+		where id=$2
 	`, headSHA, repoID)
 	if err != nil {
 		fail("marking ready", err)

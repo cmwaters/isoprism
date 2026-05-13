@@ -10,6 +10,15 @@ export interface Repository {
   main_commit_sha?: string;
   index_status: "pending" | "running" | "ready" | "failed";
   is_active: boolean;
+  github_access_status?: "authorized" | "revoked";
+  authorized_at?: string;
+  revoked_at?: string;
+  indexed_at?: string;
+  selected_at?: string;
+  unused_at?: string;
+  purge_after?: string;
+  is_selected?: boolean;
+  user_class?: "pilot" | "regular";
   created_at: string;
 }
 

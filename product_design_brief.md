@@ -69,9 +69,9 @@ Direct visits to `isoprism.com` should not start the beta unless there is an act
 
 ### Screen 2 — Repo Selection
 
-After login and GitHub App permission, the tester sees the repositories available through the GitHub App installation. They select **one** repository for the beta trial. That's it.
+After login and GitHub App permission, the tester sees the repositories available through the GitHub App installation. They select **one** repository for the pilot trial. That's it for first-time setup.
 
-The product should make the one-repo rule explicit: the selected repository is the repository Isoprism will use for the one-week trial. Changing repositories is out of scope unless done manually by the operator during beta support.
+The product should make the pilot one-repo rule explicit: the selected repository is the repository Isoprism will use for the one-week trial. In settings, a pilot can choose a different authorized repository, but doing so marks the previous indexed repository as unused and schedules its indexed data for deletion after one day. Regular users can keep multiple indexed repositories, but still select only one current review workspace at a time.
 
 The backend begins indexing that repo — tracking function-level changes on the `main` branch.
 
@@ -79,7 +79,7 @@ The backend begins indexing that repo — tracking function-level changes on the
 
 ### Screen 3 — Indexing State
 
-After the tester selects one repository, Isoprism indexes that repository and shows progress until the graph is ready or indexing fails.
+After the tester selects one repository, Isoprism indexes that repository and shows progress until the graph is ready or indexing fails. Progress should include the current phase, file/node/edge counters when available, and a rough ETA.
 
 ---
 
