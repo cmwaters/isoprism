@@ -629,6 +629,8 @@ function InnerCanvas({
   const pendingLayoutAnchorRef = useRef<Point | undefined>(undefined);
   const pendingPinnedIDsRef = useRef<Set<string>>(new Set());
   const suppressNextFitViewRef = useRef(false);
+  const selectionZoomRef = useRef<number | null>(null);
+  const previousComponentPanelWidthRef = useRef(componentPanelWidth);
   const [expandedEdgeKeys, setExpandedEdgeKeys] = useState<Set<string>>(() => new Set());
   const [expandingEdgeKey, setExpandingEdgeKey] = useState<string | null>(null);
   const [expandingNodeIDs, setExpandingNodeIDs] = useState<Record<string, boolean>>({});
@@ -649,6 +651,7 @@ function InnerCanvas({
   );
 
   const selectGraphNode = useCallback((id: string) => {
+    selectionZoomRef.current = getZoom();
     const apiNode = visibleGraph.nodes.find((n) => n.id === id)
       ?? baseVisibleGraph.nodes.find((n) => n.id === id)
       ?? activePRTestChanges.find((n) => n.id === id)
@@ -663,7 +666,7 @@ function InnerCanvas({
     } else {
       setSelectedPRChange(null);
     }
-  }, [activePRTestChanges, baseVisibleGraph, visibleGraph]);
+  }, [activePRTestChanges, baseVisibleGraph, getZoom, visibleGraph]);
 
   const initialNodes: Node[] = useMemo(() => visibleGraph.nodes.map((n) => ({
     id: n.id,
@@ -764,7 +767,9 @@ function InnerCanvas({
       if (!node) return;
       const width = node.measured?.width ?? node.width ?? 180;
       const height = node.measured?.height ?? node.height ?? 90;
-      setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: getZoom(), duration: 450 });
+      const zoom = selectionZoomRef.current ?? getZoom();
+      selectionZoomRef.current = null;
+      setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom, duration: 450 });
     }, 120);
     return () => window.clearTimeout(timeout);
   }, [getNode, getZoom, selectedNode?.id, setCenter, setNodes]);
@@ -884,7 +889,9 @@ function InnerCanvas({
   }, []);
 
   useEffect(() => {
-    if (!selectedPRChange || settingsOpen) return;
+    const previousWidth = previousComponentPanelWidthRef.current;
+    previousComponentPanelWidthRef.current = componentPanelWidth;
+    if (!selectedPRChange || settingsOpen || previousWidth === componentPanelWidth) return;
     const timeout = window.setTimeout(() => fitView({ padding: 0.15 }), 60);
     return () => window.clearTimeout(timeout);
   }, [componentPanelWidth, fitView, selectedPRChange, settingsOpen]);
