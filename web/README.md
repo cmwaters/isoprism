@@ -61,9 +61,9 @@ Admin capabilities:
 - Add pilot users manually with a name and optional email.
 - Generate an access code and send the pilot invite email through Mailtrap.
 - Copy generated invite links from the pilot user details.
-- Track started pilots by setup date, selected repo, and submitted issue/feature counts. The selected repo is updated when the pilot user indexes a repo and replaces the requested public repo from registration. Repository names are shown without the `https://github.com/` prefix and selected repositories link to an admin repo viewer for exploring that pilot user's PRs.
-- Open a pilot user's review form link when an invite token exists.
-- Jump from a pilot user to their Registration Form or submitted Review Form. The Review Form button stays disabled until that pilot user has submitted the review form.
+- Track started pilots by setup date, selected repo, and submitted issue/feature counts. The selected repo is updated when the pilot user indexes a repo and replaces the requested public repo from registration. Repository names are shown without the `https://github.com/` prefix and selected repositories link to an admin repo viewer for exploring that pilot user's PRs; requested public repos fall back to GitHub links.
+- Open the actual review form link that is sent by email when an invite token exists.
+- Jump from a pilot user to their Registration Form or submitted Review Form from the user action row. The Review Form button stays disabled until that pilot user has submitted the review form.
 - Send a review email after the pilot period once the pilot user has been invited and has registered with GitHub.
 - Delete pilot users.
 

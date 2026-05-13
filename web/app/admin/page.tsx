@@ -280,8 +280,8 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
         const registrationFormID = linkedForms.find((form) => form.form_type === "registration")?.id;
         const reviewFormID = linkedForms.find((form) => form.form_type === "review")?.id;
         const repoLabel = repoDisplayName(user.selected_repo_full_name ?? user.public_repo_url);
-        const repoHref = user.selected_repo_id && user.user_id ? `/admin/repos/${encodeURIComponent(user.selected_repo_id)}?user=${encodeURIComponent(user.user_id)}` : undefined;
-        const reviewLink = user.token ? `/pilot/review/${encodeURIComponent(user.token)}` : undefined;
+        const repoHref = repoLink(user);
+        const reviewLink = user.token ? reviewFormLink(user.link, user.token) : undefined;
         const canSendReviewEmail = Boolean(user.email && user.token && user.user_id);
         const reviewDisabledReason = !user.email
           ? "A review email needs an email address."
@@ -292,16 +292,14 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
               : undefined;
         return (
           <div key={user.id} style={userCardStyle}>
-            <div style={userButtonStyle}>
+            <div style={userButtonStyle} onClick={() => setExpanded(open ? "" : user.id)}>
               <div>
-                <button style={rowToggleButtonStyle} onClick={() => setExpanded(open ? "" : user.id)}>
-                  <strong>{user.name}</strong>
-                  <div style={mutedStyle}>{user.email ?? "No email"}</div>
-                </button>
+                <strong>{user.name}</strong>
+                <div style={mutedStyle}>{user.email ?? "No email"}</div>
               </div>
               <div>
                 {repoHref ? (
-                  <a style={inlineLinkStyle} href={repoHref}>
+                  <a style={inlineLinkStyle} href={repoHref} onClick={(event) => event.stopPropagation()}>
                     {repoLabel}
                   </a>
                 ) : repoLabel}
@@ -313,8 +311,8 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
               <div style={expandedStyle}>
                 <Info label="Started" value={user.trial_starts_at ? formatDate(user.trial_starts_at) : "Not started"} />
                 <Info label="Invite link" value={user.link ? <CopyButton value={user.link} /> : "Not generated"} />
-                <Info label="Review link" value={reviewLink ? <a style={inlineLinkStyle} href={reviewLink}>Open review form</a> : "Not generated"} />
-                <div style={formButtonGroupStyle}>
+                <Info label="Review link" value={reviewLink ? <a style={inlineLinkStyle} href={reviewLink}>{reviewLink}</a> : "Not generated"} />
+                <div style={actionsRowStyle}>
                   <button style={registrationFormID ? secondaryButtonStyle : disabledButtonStyle} disabled={!registrationFormID} onClick={() => registrationFormID && onSelectForm(registrationFormID)}>
                     Registration Form
                   </button>
@@ -326,8 +324,6 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
                   >
                     Review Form
                   </button>
-                </div>
-                <div style={actionsRowStyle}>
                   <button style={secondaryButtonStyle} disabled={!user.email || busy === `invite:${user.id}`} onClick={() => onAction(user, "invite")}>{busy === `invite:${user.id}` ? "Sending..." : "Send invite"}</button>
                   <button
                     style={canSendReviewEmail ? secondaryButtonStyle : disabledButtonStyle}
@@ -400,6 +396,30 @@ function repoDisplayName(value?: string | null) {
     .replace(/\/$/, "");
 }
 
+function repoLink(user: PilotUser) {
+  if (user.selected_repo_id && user.user_id) {
+    return `/admin/repos/${encodeURIComponent(user.selected_repo_id)}?user=${encodeURIComponent(user.user_id)}`;
+  }
+  const repoName = repoDisplayName(user.selected_repo_full_name ?? user.public_repo_url);
+  if (repoName === "No repo yet") return undefined;
+  return `https://github.com/${repoName}`;
+}
+
+function reviewFormLink(inviteLink: string, token: string) {
+  if (inviteLink) {
+    try {
+      const url = new URL(inviteLink);
+      url.pathname = `/pilot/review/${encodeURIComponent(token)}`;
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    } catch {
+      // Fall back to the current origin below.
+    }
+  }
+  return `${window.location.origin}/pilot/review/${encodeURIComponent(token)}`;
+}
+
 const mainStyle: React.CSSProperties = { width: "min(1180px, 100%)", margin: "0 auto", padding: "42px 24px" };
 const loginStyle: React.CSSProperties = { width: "min(420px, 100%)", margin: "0 auto", padding: "120px 24px 48px" };
 const stackStyle: React.CSSProperties = { display: "grid", gap: 14 };
@@ -422,14 +442,12 @@ const buttonRowStyle: React.CSSProperties = { display: "flex", gap: 8, flexWrap:
 const actionsRowStyle: React.CSSProperties = { gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "nowrap" };
 const linkButtonStyle: React.CSSProperties = { border: 0, padding: 0, background: "transparent", color: "#111", cursor: "pointer", textDecoration: "underline", font: "inherit", textAlign: "left", overflowWrap: "anywhere" };
 const inlineLinkStyle: React.CSSProperties = { color: "#111", textDecoration: "underline", overflowWrap: "anywhere" };
-const formButtonGroupStyle: React.CSSProperties = { display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" };
 const tableHeaderStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", padding: "0 8px 8px" };
 const detailCardStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: "10px 8px" };
 const summaryStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, cursor: "pointer", fontSize: 13 };
 const preStyle: React.CSSProperties = { margin: "12px 0 0", padding: 12, borderRadius: 6, background: "#F7F7F7", overflow: "auto", fontSize: 12 };
 const userCardStyle: React.CSSProperties = { border: "1px solid #E0E0E0", borderRadius: 8, overflow: "hidden", marginTop: 8, background: "#F7F7F7" };
-const userButtonStyle: React.CSSProperties = { width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 0.7fr", gap: 12, border: 0, background: "transparent", padding: 12, textAlign: "left", alignItems: "center", fontSize: 13 };
-const rowToggleButtonStyle: React.CSSProperties = { border: 0, background: "transparent", padding: 0, cursor: "pointer", textAlign: "left", font: "inherit", color: "inherit" };
+const userButtonStyle: React.CSSProperties = { width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 0.7fr", gap: 12, border: 0, background: "transparent", padding: 12, textAlign: "left", alignItems: "center", fontSize: 13, cursor: "pointer" };
 const expandedStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 };
 const mutedStyle: React.CSSProperties = { color: "#777", fontSize: 12, marginTop: 2 };
 const smallLabelStyle: React.CSSProperties = { color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 4 };

@@ -155,7 +155,7 @@ The questionnaire should capture:
 
 Operators need a simple admin page for managing the pilot loop.
 
-The admin page should have two tabs: Pilot Users and Forms. Pilot Users lists registered users, shows Registration Form and Review Form buttons for jumping to submitted forms, lets an admin add or delete users manually, generates access-code invite emails through Mailtrap, copies invite links from the user details, tracks setup date, selected repository, and issue/feature counts, and sends the end-of-pilot review email. Selected repositories are displayed as owner/repo names without the GitHub URL prefix and link to an admin repo viewer for exploring that pilot user's PRs. Forms lists Registration and Review submissions.
+The admin page should have two tabs: Pilot Users and Forms. Pilot Users lists registered users, shows Registration Form and Review Form buttons in the user action row for jumping to submitted forms, lets an admin add or delete users manually, generates access-code invite emails through Mailtrap, copies invite links from the user details, shows the actual emailed review form link, tracks setup date, selected repository, and issue/feature counts, and sends the end-of-pilot review email. Selected repositories are displayed as owner/repo names without the GitHub URL prefix and link to an admin repo viewer for exploring that pilot user's PRs; requested public repos fall back to GitHub links. Forms lists Registration and Review submissions.
 
 The review email links to `/pilot/review/{token}` and reuses the existing short review questionnaire.
 
