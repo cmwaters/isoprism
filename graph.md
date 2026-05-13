@@ -70,7 +70,7 @@ The PR overview only lists changed test entrypoints (`is_test = true` and `is_en
 After the PR description, the PR overview is grouped into:
 
 1. **Graph changes**: all changed production components shown in the graph.
-2. **Test changes**: all changed test functions returned by `test_changes[]`.
+2. **Test changes**: changed test entrypoints returned by `test_changes[]`.
 3. **Documentation changes**: Markdown file diffs from the GitHub file list.
 4. **Other changes**: remaining file diffs not captured by graph, tests, or documentation.
 

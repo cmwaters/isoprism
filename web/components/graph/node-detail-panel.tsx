@@ -414,7 +414,7 @@ function PRSummaryPanel({
   onSelectPRChange?: (change: SelectedPRChange) => void;
   onBackToRepo: () => void;
 }) {
-  const changedNodes = allNodes.filter((n) => n.node_type === "changed");
+  const changedNodes = allNodes.filter((n) => n.node_type === "changed" && !n.is_test);
   const descriptionText = (pr.summary || pr.body || "").trim();
   const hasAISummary = Boolean(pr.summary?.trim());
   const issue = findIssueReference(pr.body, repo.full_name);
