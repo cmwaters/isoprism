@@ -1,5 +1,28 @@
 -- Repository selection and delayed indexed-data cleanup.
 
+create table if not exists users (
+  id              uuid primary key references auth.users(id) on delete cascade,
+  email           text not null default '',
+  display_name    text,
+  avatar_url      text,
+  github_user_id  bigint unique,
+  github_username text,
+  created_at      timestamptz not null default now()
+);
+
+insert into users (id, email)
+select distinct user_id, ''
+from repositories
+where user_id is not null
+on conflict (id) do nothing;
+
+insert into users (id, email)
+select distinct user_id, coalesce(email, '')
+from pilot_users
+where user_id is not null
+on conflict (id) do update set
+  email = case when users.email = '' then excluded.email else users.email end;
+
 alter table if exists users
   add column if not exists selected_repo_id uuid references repositories(id) on delete set null;
 
