@@ -39,7 +39,7 @@ export default function PilotRegisterPage() {
       });
       if (!response.ok) throw new Error(await response.text());
       setStatus("submitted");
-      setMessage("Thanks. Your response has been saved.");
+      setMessage("Thanks. Your response has been submitted.");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Could not submit registration.");
@@ -116,8 +116,8 @@ export default function PilotRegisterPage() {
         </section>
 
         <div style={footerStyle}>
-          {message && <div style={status === "error" ? errorStyle : successStyle}>{message}</div>}
           <button style={primaryButtonStyle} disabled={status === "submitting"}>{status === "submitting" ? "Submitting..." : "Submit registration"}</button>
+          {message && <div style={status === "error" ? errorStyle : successStyle}>{message}</div>}
         </div>
       </form>
     </main>
@@ -158,8 +158,8 @@ const rangeValueStyle: React.CSSProperties = { minWidth: 34, color: "#333333", f
 const toolRowStyle: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" };
 const toolInputStyle: React.CSSProperties = { ...inputStyle, flex: "1 1 220px", minWidth: 0 };
 const detailsGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 };
-const footerStyle: React.CSSProperties = { display: "grid", justifyItems: "end", gap: 10 };
+const footerStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" };
 const primaryButtonStyle: React.CSSProperties = { height: 40, border: 0, borderRadius: 6, background: "#111", color: "#FFF", padding: "0 14px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
-const statusMessageStyle: React.CSSProperties = { maxWidth: 360, padding: "10px 12px", borderRadius: 8, fontSize: 13, lineHeight: 1.4, textAlign: "right" };
+const statusMessageStyle: React.CSSProperties = { maxWidth: 360, marginLeft: "auto", padding: "10px 12px", borderRadius: 8, fontSize: 13, lineHeight: 1.4 };
 const successStyle: React.CSSProperties = { ...statusMessageStyle, border: "1px solid #BFE2C5", background: "#EEF8F0", color: "#225B2D" };
 const errorStyle: React.CSSProperties = { ...statusMessageStyle, border: "1px solid #F3B4B4", background: "#FFF1F1", color: "#991B1B" };

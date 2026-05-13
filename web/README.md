@@ -26,7 +26,7 @@ npm run build
 
 The pilot starts at `/pilot/register`. Prospective testers submit the registration form, including their software experience, how they currently review code, whether AI writes most of their software, how much of their work is spent reviewing code, whether they review AI-written software differently, and whether they want to pilot Isoprism for one week with one repository.
 
-Admins review registrations at `/admin`, generate an access code, and send the invite email through Mailtrap. The invite link goes to `/pilot/{token}`, which forwards into the login/GitHub setup flow. A review email can only be sent after the invite has been generated and the pilot user has registered with GitHub; it goes to `/pilot/review/{token}` and saves the end-of-pilot review form.
+Admins review registrations at `/admin`, generate an access code, and send the invite email through Mailtrap. The invite link goes to `/pilot/{token}`, which forwards into the login/GitHub setup flow. A review email can only be sent after the invite has been generated and the pilot user has registered with GitHub; it goes to `/pilot/review/{token}` and submits the end-of-pilot review form.
 
 The current root route is login-first: unauthenticated visitors go to `/login`, and signed-in visitors only skip login when `GET /api/v1/auth/status?user_id=...` returns a ready repo (`/{owner}/{repo}`) or an installed-but-unindexed repo (`/onboarding/repos`). If auth status returns `/onboarding`, root maps that to `/login`; the OAuth callback keeps `/onboarding` so newly signed-in GitHub users without a connected Isoprism repo are prompted to install the GitHub App and grant repo permissions.
 

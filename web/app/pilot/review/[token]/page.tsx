@@ -56,7 +56,7 @@ export default function PilotReviewPage() {
       });
       if (!response.ok) throw new Error(await response.text());
       setStatus("submitted");
-      setMessage("Thanks. Your review has been saved.");
+      setMessage("Thanks. Your review has been submitted.");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Could not submit review.");
@@ -127,8 +127,8 @@ export default function PilotReviewPage() {
         </section>
 
         <div style={footerStyle}>
-          {message && <div style={status === "error" ? errorStyle : successStyle}>{message}</div>}
           <button style={primaryButtonStyle} disabled={status === "submitting" || !token}>{status === "submitting" ? "Submitting..." : "Submit review"}</button>
+          {message && <div style={status === "error" ? errorStyle : successStyle}>{message}</div>}
         </div>
       </form>
     </main>
@@ -168,5 +168,6 @@ const inputStyle: React.CSSProperties = { height: 42, border: "1px solid #D4D4D4
 const textareaStyle: React.CSSProperties = { ...inputStyle, height: 92, padding: 11, resize: "vertical", lineHeight: 1.45 };
 const footerStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" };
 const primaryButtonStyle: React.CSSProperties = { height: 40, border: 0, borderRadius: 6, background: "#111", color: "#FFF", padding: "0 14px", cursor: "pointer", fontWeight: 700, fontSize: 13 };
-const successStyle: React.CSSProperties = { border: "1px solid #BFE2C5", borderRadius: 8, background: "#EEF8F0", color: "#225B2D", padding: 12 };
-const errorStyle: React.CSSProperties = { border: "1px solid #F3B4B4", borderRadius: 8, background: "#FFF1F1", color: "#991B1B", padding: 12 };
+const statusMessageStyle: React.CSSProperties = { maxWidth: 360, marginLeft: "auto", padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.4 };
+const successStyle: React.CSSProperties = { ...statusMessageStyle, border: "1px solid #BFE2C5", background: "#EEF8F0", color: "#225B2D" };
+const errorStyle: React.CSSProperties = { ...statusMessageStyle, border: "1px solid #F3B4B4", background: "#FFF1F1", color: "#991B1B" };
