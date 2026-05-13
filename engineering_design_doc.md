@@ -398,6 +398,8 @@ Existing setup is determined from Isoprism state, not from GitHub's `setup_actio
 
 GitHub App settings updates may omit the original `state` value. When `state` does not contain a user ID, the callback resolves the user from existing repository rows for the installation before syncing repository authorization and deciding the redirect.
 
+The callback emits `github_callback` Railway log lines for concrete production diagnosis. These logs include query parameter names, `setup_action`, `installation_id`, state presence/length, whether state decoded to a user, the user resolution source, repository sync counts, setup decision, and final redirect. Raw `state` is not logged.
+
 - Added GitHub repositories are stored as authorized and visible, but not indexed.
 - Removed GitHub repositories are marked revoked immediately, hidden from `GET /api/v1/me/repos`, and scheduled for repository-row deletion after one day.
 - Authorized repositories that already have indexed data keep their index unless the user explicitly uninstalls them or pilot-account selection rules mark them unused.

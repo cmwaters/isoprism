@@ -66,6 +66,8 @@ The redirect decision must not rely on GitHub's `setup_action`, because settings
 
 GitHub may not preserve Isoprism's `state` value when a user edits GitHub App permissions from GitHub settings. In that case the callback resolves the user from the existing installation repositories before syncing and redirecting.
 
+The callback logs a `github_callback` breadcrumb in Railway for production debugging. The log includes query parameter names, `setup_action`, `installation_id`, whether `state` was present and decoded to a user, the user resolution source (`state`, `installation`, or `none`), repository sync counts, and the final redirect. It intentionally does not log the raw `state` value.
+
 ## 6. Out of Scope
 
 - Organization settings pages

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/isoprism/api/internal/ai"
@@ -224,10 +225,31 @@ func (h *GitHubHandler) handleInstallationReposEvent(ctx context.Context, body [
 func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	installationIDStr := r.URL.Query().Get("installation_id")
-	userID, redirectBaseURL := h.parseInstallState(r.URL.Query().Get("state"))
+	rawState := r.URL.Query().Get("state")
+	userID, redirectBaseURL := h.parseInstallState(rawState)
 	setupAction := r.URL.Query().Get("setup_action")
+	queryKeys := callbackQueryKeys(r)
+	userSource := "none"
+	if userID != "" {
+		userSource = "state"
+	}
+
+	log.Printf(
+		"github_callback: received path=%q query_keys=%q installation_id=%q setup_action=%q has_state=%t state_len=%d state_user=%t redirect_base=%q referer=%q user_agent=%q",
+		r.URL.Path,
+		strings.Join(queryKeys, ","),
+		installationIDStr,
+		setupAction,
+		rawState != "",
+		len(rawState),
+		userID != "",
+		redirectBaseURL,
+		r.Header.Get("Referer"),
+		r.UserAgent(),
+	)
 
 	if setupAction == "request" {
+		log.Printf("github_callback: request action redirect=%q", redirectBaseURL+"/request-sent")
 		http.Redirect(w, r, redirectBaseURL+"/request-sent", http.StatusFound)
 		return
 	}
@@ -265,7 +287,19 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 	}
 	if userID == "" {
 		userID = h.userIDForInstallation(ctx, dbInstallationID)
+		if userID != "" {
+			userSource = "installation"
+		}
 	}
+	log.Printf(
+		"github_callback: installation_saved installation_id=%d db_installation_id=%q account=%q account_type=%q resolved_user=%t user_source=%q",
+		installationID,
+		dbInstallationID,
+		installation.Account.Login,
+		installation.Account.Type,
+		userID != "",
+		userSource,
+	)
 
 	// Ensure user row exists
 	if userID != "" {
@@ -303,6 +337,14 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 					`, userID, dbInstallationID, repo.ID, repo.FullName, repo.DefaultBranch)
 				}
 			}
+			log.Printf(
+				"github_callback: repos_synced installation_id=%d db_installation_id=%q resolved_user=%t repo_count=%d active_repo_ids=%d",
+				installationID,
+				dbInstallationID,
+				userID != "",
+				len(repos),
+				len(activeRepoIDs),
+			)
 			if userID != "" {
 				if len(activeRepoIDs) == 0 {
 					_, _ = h.DB.Exec(ctx, `
@@ -327,7 +369,16 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 		}
 	}
 
-	http.Redirect(w, r, redirectBaseURL+h.installationCallbackRedirectPath(ctx, userID), http.StatusFound)
+	redirectPath, isSetup := h.installationCallbackRedirectPath(ctx, userID)
+	log.Printf(
+		"github_callback: redirect_decision installation_id=%d resolved_user=%t user_source=%q is_setup=%t redirect=%q",
+		installationID,
+		userID != "",
+		userSource,
+		isSetup,
+		redirectBaseURL+redirectPath,
+	)
+	http.Redirect(w, r, redirectBaseURL+redirectPath, http.StatusFound)
 }
 
 func (h *GitHubHandler) userIDForInstallation(ctx context.Context, dbInstallationID string) string {
@@ -348,9 +399,9 @@ func (h *GitHubHandler) userIDForInstallation(ctx context.Context, dbInstallatio
 	return userID
 }
 
-func (h *GitHubHandler) installationCallbackRedirectPath(ctx context.Context, userID string) string {
+func (h *GitHubHandler) installationCallbackRedirectPath(ctx context.Context, userID string) (string, bool) {
 	if userID == "" {
-		return "/onboarding/repos"
+		return "/onboarding/repos", false
 	}
 
 	var isSetup bool
@@ -380,9 +431,18 @@ func (h *GitHubHandler) installationCallbackRedirectPath(ctx context.Context, us
 	`, userID).Scan(&isSetup)
 
 	if isSetup {
-		return "/settings"
+		return "/settings", true
 	}
-	return "/onboarding/repos"
+	return "/onboarding/repos", false
+}
+
+func callbackQueryKeys(r *http.Request) []string {
+	keys := make([]string, 0, len(r.URL.Query()))
+	for key := range r.URL.Query() {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 type installState struct {
