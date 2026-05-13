@@ -344,6 +344,35 @@ const repoPRBadgeStyle: CSSProperties = {
   padding: "2px 6px",
 };
 
+const middlePanelTitleStyle: CSSProperties = {
+  color: "#111111",
+  fontSize: 22,
+  fontWeight: 600,
+  lineHeight: 1.35,
+  margin: "0 0 12px 0",
+};
+
+const issuePillStyle: CSSProperties = {
+  border: "1px solid #D4D4D4",
+  borderRadius: 999,
+  color: "#555555",
+  display: "inline-flex",
+  fontSize: 11,
+  lineHeight: 1.3,
+  padding: "2px 10px",
+};
+
+function issueStatePillStyle(state: string): CSSProperties {
+  const closed = state.toLowerCase() === "closed";
+  return {
+    ...issuePillStyle,
+    background: closed ? "#FEE2E2" : "#DCFCE7",
+    borderColor: closed ? "#FECACA" : "#BBF7D0",
+    color: closed ? "#EF4444" : "#16A34A",
+    textTransform: "capitalize",
+  };
+}
+
 const inlinePanelLinkStyle: CSSProperties = {
   background: "none",
   border: "none",
@@ -554,14 +583,14 @@ function PRSummaryPanel({
         </ChangeSection>
       )}
 
-      {/* View on GitHub */}
+      {/* Open on Github */}
       <a
         href={pr.html_url}
         target="_blank"
         rel="noopener noreferrer"
         style={{ fontSize: 13, color: "#6366F1", textDecoration: "none" }}
       >
-        View on GitHub →
+        Open on Github →
       </a>
     </div>
   );
@@ -857,7 +886,7 @@ function NodeChangeDetailPanel({
         </p>
       )}
 
-      <h2 style={{ fontSize: 22, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
+      <h2 style={middlePanelTitleStyle}>
         {symbolTitle(node)}
       </h2>
 
@@ -1039,7 +1068,7 @@ function MarkdownDocumentPanel({
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
       <PanelCloseButton onClose={onClose} />
-      <h2 style={{ color: "#111111", fontSize: 17, fontWeight: 600, lineHeight: 1.35, margin: "0 0 14px" }}>
+      <h2 style={middlePanelTitleStyle}>
         PR Description
       </h2>
       {body.trim() ? (
@@ -1060,7 +1089,7 @@ function MarkdownDocumentPanel({
           rel="noopener noreferrer"
           style={{ fontSize: 13, color: "#6366F1", marginTop: 16, textDecoration: "none" }}
         >
-          Open on GitHub →
+          Open on Github →
         </a>
       )}
     </div>
@@ -1152,12 +1181,12 @@ function IssueDescriptionPanel({
       <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8, wordBreak: "break-all" }}>
         {matchingData.owner}/{matchingData.repo} #{matchingData.number}
       </p>
-      <h2 style={{ color: "#111111", fontSize: 17, fontWeight: 600, lineHeight: 1.35, margin: "0 0 10px" }}>
+      <h2 style={middlePanelTitleStyle}>
         {matchingData.title}
       </h2>
       <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-        <span style={{ ...repoPRBadgeStyle, textTransform: "capitalize" }}>{matchingData.state}</span>
-        {matchingData.author_login && <span style={repoPRBadgeStyle}>{matchingData.author_login}</span>}
+        <span style={issueStatePillStyle(matchingData.state)}>{matchingData.state}</span>
+        {matchingData.author_login && <span style={issuePillStyle}>{matchingData.author_login}</span>}
       </div>
       {matchingData.body.trim() ? (
         <div className="pr-description-markdown">
@@ -1174,7 +1203,7 @@ function IssueDescriptionPanel({
         rel="noopener noreferrer"
         style={{ fontSize: 13, color: "#6366F1", marginTop: 16, textDecoration: "none" }}
       >
-        View on GitHub →
+        Open on Github →
       </a>
     </div>
   );
@@ -1291,7 +1320,7 @@ function NodeDetail({
       )}
 
       {/* Function name */}
-      <h2 style={{ fontSize: 22, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
+      <h2 style={middlePanelTitleStyle}>
         {symbolTitle(node)}
       </h2>
 
@@ -1483,7 +1512,7 @@ function CodePanel({
           {pkgPrefix}
         </p>
       )}
-      <h2 style={{ fontSize: 20, fontWeight: 600, color: "#111111", margin: "0 0 12px 0" }}>
+      <h2 style={middlePanelTitleStyle}>
         {symbolTitle(node)}
       </h2>
 
