@@ -101,8 +101,9 @@ export interface GraphNodeTest {
 }
 
 export interface GraphEdge {
-  caller_id: string;
-  callee_id: string;
+  source_id: string;
+  destination_id: string;
+  edge_kind: "calls" | "owns_method";
   change_type?: "added" | "deleted";
   weight?: number;
   changed_weight?: number;
@@ -111,10 +112,10 @@ export interface GraphEdge {
 }
 
 export interface GraphEdgeSample {
-  caller_id: string;
-  callee_id: string;
-  caller_name: string;
-  callee_name: string;
+  source_id: string;
+  destination_id: string;
+  source_name: string;
+  destination_name: string;
 }
 
 export interface GraphPR {

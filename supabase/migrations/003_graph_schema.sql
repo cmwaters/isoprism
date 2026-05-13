@@ -77,16 +77,18 @@ create table code_nodes (
   unique (repo_id, commit_sha, full_name, file_path)
 );
 
--- ── 5. Code edges (call graph at a given commit) ─────────────
+-- ── 5. Code edges (semantic graph at a given commit) ──────────
 
 create table code_edges (
   id          uuid primary key default gen_random_uuid(),
   repo_id     uuid not null references repositories(id) on delete cascade,
   commit_sha  text not null,
-  caller_id   uuid not null references code_nodes(id) on delete cascade,
-  callee_id   uuid not null references code_nodes(id) on delete cascade,
+  source_id   uuid not null references code_nodes(id) on delete cascade,
+  destination_id uuid not null references code_nodes(id) on delete cascade,
+  edge_kind   text not null default 'calls'
+              check (edge_kind in ('calls', 'owns_method')),
   created_at  timestamptz not null default now(),
-  unique (repo_id, commit_sha, caller_id, callee_id)
+  unique (repo_id, commit_sha, source_id, destination_id, edge_kind)
 );
 
 -- ── 6. PR node changes (delta overlay) ───────────────────────
@@ -124,8 +126,9 @@ create index on pull_requests (repo_id, state);
 create index on pull_requests (repo_id, graph_status);
 create index on code_nodes (repo_id, commit_sha);
 create index on code_edges (repo_id, commit_sha);
-create index on code_edges (caller_id);
-create index on code_edges (callee_id);
+create index on code_edges (source_id);
+create index on code_edges (destination_id);
+create index on code_edges (repo_id, commit_sha, edge_kind);
 create index on pr_node_changes (pull_request_id);
 create index on pr_analyses (pull_request_id);
 

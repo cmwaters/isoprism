@@ -222,7 +222,7 @@ Expected behavior:
 - `modified`: uses a component-scoped slice of the GitHub patch; added component stats are counted from the synthetic component hunk so moved/copied body lines are not undercounted as unchanged context.
 - `doc_comment`: cleaned contiguous source comment immediately above the parsed component, if present. The graph API prepends it to `summary` for display without changing AI enrichment.
 - Rename detection is conservative: matching body hashes or rename metadata can produce `renamed`, but line overlap alone leaves the head component `added` and any unmatched base component `deleted`.
-- Caller/callee context nodes are not PR changes; they show the head version when available.
+- Caller/callee and receiver-owner context nodes are not PR changes; they show the head version when available.
 - The UI reconstructs a full component diff from source only when the required sides are available: both `base` and `head` for `modified` / `renamed`, `head` for `added`, and `base` for `deleted`.
 - If source fetching or identity lookup leaves a PR change without the required side, the UI uses `diff_hunk` from graph processing so it does not render a modified component as entirely added or deleted.
 

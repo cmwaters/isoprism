@@ -740,9 +740,11 @@ function NodeChangeDetailPanel({
   const errorForNode = error?.nodeID === node.id ? error.message : null;
   const loading = !codeForNode && !errorForNode;
   const sourceSegment = codeForNode?.head ?? codeForNode?.base;
-  const calleeEdges = outgoingEdges(node.id, edges);
-  const calleeIDs = calleeEdges.map((edge) => edge.callee_id);
-  const callSiteLines = buildCallSiteLines(sourceSegment, calleeIDs, allNodes);
+  const destinationEdges = outgoingCallEdges(node.id, edges);
+  const destinationIDs = destinationEdges.map((edge) => edge.destination_id);
+  const callSiteLines = buildCallSiteLines(sourceSegment, destinationIDs, allNodes);
+  const methodEdges = outgoingOwnershipEdges(node.id, edges);
+  const ownerEdges = incomingOwnershipEdges(node.id, edges);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
@@ -802,8 +804,8 @@ function NodeChangeDetailPanel({
 
       <RelationSection
         label="Calls"
-        nodeIDs={calleeIDs}
-        relationEdges={calleeEdges}
+        nodeIDs={destinationIDs}
+        relationEdges={destinationEdges}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
         lineNumbers={callSiteLines}
@@ -811,8 +813,24 @@ function NodeChangeDetailPanel({
 
       <RelationSection
         label="Is Called By"
-        nodeIDs={incomingEdges(node.id, edges).map((edge) => edge.caller_id)}
-        relationEdges={incomingEdges(node.id, edges)}
+        nodeIDs={incomingCallEdges(node.id, edges).map((edge) => edge.source_id)}
+        relationEdges={incomingCallEdges(node.id, edges)}
+        allNodes={allNodes}
+        onSelectNode={onSelectNode}
+      />
+
+      <RelationSection
+        label="Methods"
+        nodeIDs={methodEdges.map((edge) => edge.destination_id)}
+        relationEdges={methodEdges}
+        allNodes={allNodes}
+        onSelectNode={onSelectNode}
+      />
+
+      <RelationSection
+        label="Receiver"
+        nodeIDs={ownerEdges.map((edge) => edge.source_id)}
+        relationEdges={ownerEdges}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
       />
@@ -991,9 +1009,11 @@ function NodeDetail({
   const sourceSegment = cachedCode?.node_id === node.id
     ? cachedCode.head ?? cachedCode.base
     : undefined;
-  const calleeEdges = outgoingEdges(node.id, edges);
-  const calleeIDs = calleeEdges.map((edge) => edge.callee_id);
-  const callSiteLines = buildCallSiteLines(sourceSegment, calleeIDs, allNodes);
+  const destinationEdges = outgoingCallEdges(node.id, edges);
+  const destinationIDs = destinationEdges.map((edge) => edge.destination_id);
+  const callSiteLines = buildCallSiteLines(sourceSegment, destinationIDs, allNodes);
+  const methodEdges = outgoingOwnershipEdges(node.id, edges);
+  const ownerEdges = incomingOwnershipEdges(node.id, edges);
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
@@ -1088,8 +1108,8 @@ function NodeDetail({
       {/* Calls section */}
       <RelationSection
         label="Calls"
-        nodeIDs={calleeIDs}
-        relationEdges={calleeEdges}
+        nodeIDs={destinationIDs}
+        relationEdges={destinationEdges}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
         lineNumbers={callSiteLines}
@@ -1098,8 +1118,24 @@ function NodeDetail({
       {/* Is Called By section */}
       <RelationSection
         label="Is Called By"
-        nodeIDs={incomingEdges(node.id, edges).map((edge) => edge.caller_id)}
-        relationEdges={incomingEdges(node.id, edges)}
+        nodeIDs={incomingCallEdges(node.id, edges).map((edge) => edge.source_id)}
+        relationEdges={incomingCallEdges(node.id, edges)}
+        allNodes={allNodes}
+        onSelectNode={onSelectNode}
+      />
+
+      <RelationSection
+        label="Methods"
+        nodeIDs={methodEdges.map((edge) => edge.destination_id)}
+        relationEdges={methodEdges}
+        allNodes={allNodes}
+        onSelectNode={onSelectNode}
+      />
+
+      <RelationSection
+        label="Receiver"
+        nodeIDs={ownerEdges.map((edge) => edge.source_id)}
+        relationEdges={ownerEdges}
         allNodes={allNodes}
         onSelectNode={onSelectNode}
       />
@@ -1564,7 +1600,7 @@ function RelationSection({
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {nodes.map((n) => {
           const pkg = pkgLabel(n);
-          const relationEdge = relationEdges?.find((edge) => edge.caller_id === n.id || edge.callee_id === n.id);
+          const relationEdge = relationEdges?.find((edge) => edge.source_id === n.id || edge.destination_id === n.id);
           return (
             <button
               key={n.id}
@@ -1646,17 +1682,25 @@ function functionDisplayName(node: GraphNode): string {
   return symbolTitle(node);
 }
 
-function outgoingEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
-	return edges.filter((e) => e.caller_id === nodeID);
+function outgoingCallEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
+  return edges.filter((e) => e.edge_kind === "calls" && e.source_id === nodeID);
 }
 
-function incomingEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
-	return edges.filter((e) => e.callee_id === nodeID);
+function incomingCallEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
+  return edges.filter((e) => e.edge_kind === "calls" && e.destination_id === nodeID);
+}
+
+function outgoingOwnershipEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
+  return edges.filter((e) => e.edge_kind === "owns_method" && e.source_id === nodeID);
+}
+
+function incomingOwnershipEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
+  return edges.filter((e) => e.edge_kind === "owns_method" && e.destination_id === nodeID);
 }
 
 function buildCallSiteLines(
   segment: NodeCodeSegment | undefined,
-  calleeIDs: string[],
+  destinationIDs: string[],
   allNodes: GraphNode[]
 ): Record<string, number> {
   if (!segment) return {};
@@ -1664,7 +1708,7 @@ function buildCallSiteLines(
   const lines = segment.source.split("\n");
   const byID: Record<string, number> = {};
 
-  for (const id of calleeIDs) {
+  for (const id of destinationIDs) {
     const callee = allNodes.find((candidate) => candidate.id === id);
     if (!callee) continue;
 

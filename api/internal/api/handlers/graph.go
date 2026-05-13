@@ -27,26 +27,27 @@ const (
 )
 
 type graphEdgeRow struct {
-	callerID     string
-	calleeID     string
-	callerName   string
-	calleeName   string
-	commitSHA    string
-	callerIsTest bool
-	calleeIsTest bool
-	changeType   string
+	sourceID          string
+	destinationID     string
+	sourceName        string
+	destinationName   string
+	commitSHA         string
+	edgeKind          string
+	sourceIsTest      bool
+	destinationIsTest bool
+	changeType        string
 }
 
 type graphCandidate struct {
-	id          string
-	seed        bool
-	lines       int
-	callerCount int
-	calleeCount int
-	degree      int
-	depth       int
-	boundary    bool
-	weight      int
+	id               string
+	seed             bool
+	lines            int
+	sourceCount      int
+	destinationCount int
+	degree           int
+	depth            int
+	boundary         bool
+	weight           int
 }
 
 type graphNodeRecord struct {
@@ -71,7 +72,7 @@ func edgeChangeTypePtr(changeType string) *string {
 }
 
 func markEdgeChangeType(edge graphEdgeRow, state map[string]bool, changedNames map[string]bool) string {
-	if !changedNames[edge.callerName] && !changedNames[edge.calleeName] {
+	if !changedNames[edge.sourceName] && !changedNames[edge.destinationName] {
 		return "unchanged"
 	}
 	switch {
@@ -85,13 +86,16 @@ func markEdgeChangeType(edge graphEdgeRow, state map[string]bool, changedNames m
 }
 
 func relevantProductionEdge(edge graphEdgeRow, changedNames map[string]bool) bool {
-	if edge.callerIsTest || edge.calleeIsTest {
+	if edge.sourceIsTest || edge.destinationIsTest {
 		return false
+	}
+	if edge.edgeKind == "owns_method" {
+		return changedNames[edge.sourceName] || changedNames[edge.destinationName]
 	}
 	if edge.changeType == "added" || edge.changeType == "deleted" {
 		return true
 	}
-	return changedNames[edge.callerName] || changedNames[edge.calleeName]
+	return changedNames[edge.sourceName] || changedNames[edge.destinationName]
 }
 
 func isTestGraphNode(node models.GraphNode) bool {
@@ -230,17 +234,19 @@ func (h *GraphHandler) attachTestsFromEdges(ctx context.Context, repoID string, 
 	}
 	rows, err := h.DB.Query(ctx, `
 		with recursive reachable(target_id, current_id, depth) as (
-			select e.callee_id, e.caller_id, 1
+			select e.destination_id, e.source_id, 1
 			from code_edges e
 			where e.repo_id = $1
 			  and e.commit_sha = any($2)
-			  and e.callee_id = any($3::uuid[])
+			  and e.destination_id = any($3::uuid[])
+			  and e.edge_kind = 'calls'
 			union
-			select r.target_id, e.caller_id, r.depth + 1
+			select r.target_id, e.source_id, r.depth + 1
 			from reachable r
-			join code_edges e on e.callee_id = r.current_id
+			join code_edges e on e.destination_id = r.current_id
 			where e.repo_id = $1
 			  and e.commit_sha = any($2)
+			  and e.edge_kind = 'calls'
 			  and r.depth < 8
 		)
 		select r.target_id, t.full_name, t.file_path, t.line_start, t.line_end
@@ -295,11 +301,11 @@ func mergeGraphCandidate(current graphCandidate, next graphCandidate, id string)
 	}
 	current.seed = current.seed || next.seed
 	current.lines += next.lines
-	if next.callerCount > current.callerCount {
-		current.callerCount = next.callerCount
+	if next.sourceCount > current.sourceCount {
+		current.sourceCount = next.sourceCount
 	}
-	if next.calleeCount > current.calleeCount {
-		current.calleeCount = next.calleeCount
+	if next.destinationCount > current.destinationCount {
+		current.destinationCount = next.destinationCount
 	}
 	if next.degree > current.degree {
 		current.degree = next.degree
@@ -322,20 +328,20 @@ func canonicalizeGraphEdges(edges []models.GraphEdge, canonicalizeID func(string
 	result := make([]models.GraphEdge, 0, len(edges))
 	seen := map[string]bool{}
 	for _, edge := range edges {
-		source := canonicalizeID(edge.CallerID)
-		target := canonicalizeID(edge.CalleeID)
+		source := canonicalizeID(edge.SourceID)
+		target := canonicalizeID(edge.DestinationID)
 		if source == "" || target == "" || source == target {
 			continue
 		}
 		if !visible[source] || !visible[target] {
 			continue
 		}
-		key := source + "|" + target
+		key := source + "|" + target + "|" + edge.EdgeKind
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		result = append(result, models.GraphEdge{CallerID: source, CalleeID: target, ChangeType: edge.ChangeType, Weight: edge.Weight, UnderlyingEdgeCount: edge.UnderlyingEdgeCount})
+		result = append(result, models.GraphEdge{SourceID: source, DestinationID: target, EdgeKind: edge.EdgeKind, ChangeType: edge.ChangeType, Weight: edge.Weight, UnderlyingEdgeCount: edge.UnderlyingEdgeCount})
 	}
 	return result
 }
@@ -367,31 +373,34 @@ func appendTestFocusEdges(
 
 	seen := map[string]bool{}
 	for _, e := range edges {
-		seen[e.CallerID+"|"+e.CalleeID] = true
+		seen[e.SourceID+"|"+e.DestinationID+"|"+e.EdgeKind] = true
 	}
 	for _, e := range allEdges {
-		source := canonicalizeID(e.callerID)
-		target := canonicalizeID(e.calleeID)
+		if e.edgeKind != "calls" {
+			continue
+		}
+		source := canonicalizeID(e.sourceID)
+		target := canonicalizeID(e.destinationID)
 		if source == "" || target == "" || source == target || !testIDs[source] {
 			continue
 		}
 		if !testIDs[target] && !visibleProductionIDs[target] && !testContextIDs[target] {
 			continue
 		}
-		key := source + "|" + target
+		key := source + "|" + target + "|" + e.edgeKind
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		edges = append(edges, models.GraphEdge{CallerID: source, CalleeID: target, ChangeType: edgeChangeTypePtr(e.changeType), Weight: 1, UnderlyingEdgeCount: 1})
+		edges = append(edges, models.GraphEdge{SourceID: source, DestinationID: target, EdgeKind: e.edgeKind, ChangeType: edgeChangeTypePtr(e.changeType), Weight: 1, UnderlyingEdgeCount: 1})
 	}
 	return edges
 }
 
 func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
 	adj := map[string]map[string]bool{}
-	callerCount := map[string]int{}
-	calleeCount := map[string]int{}
+	sourceCount := map[string]int{}
+	destinationCount := map[string]int{}
 	knownIDs := map[string]bool{}
 
 	ensure := func(id string) {
@@ -407,16 +416,16 @@ func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges m
 		ensure(id)
 	}
 	for _, e := range allEdges {
-		if e.callerID == "" || e.calleeID == "" || e.callerID == e.calleeID {
+		if e.sourceID == "" || e.destinationID == "" || e.sourceID == e.destinationID {
 			continue
 		}
-		ensure(e.callerID)
-		ensure(e.calleeID)
-		if !adj[e.callerID][e.calleeID] {
-			adj[e.callerID][e.calleeID] = true
-			adj[e.calleeID][e.callerID] = true
-			calleeCount[e.callerID]++
-			callerCount[e.calleeID]++
+		ensure(e.sourceID)
+		ensure(e.destinationID)
+		if !adj[e.sourceID][e.destinationID] {
+			adj[e.sourceID][e.destinationID] = true
+			adj[e.destinationID][e.sourceID] = true
+			destinationCount[e.sourceID]++
+			sourceCount[e.destinationID]++
 		}
 	}
 
@@ -461,15 +470,15 @@ func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges m
 			continue
 		}
 		c := graphCandidate{
-			id:          id,
-			seed:        seedSet[id],
-			lines:       lineChanges[id],
-			callerCount: callerCount[id],
-			calleeCount: calleeCount[id],
-			degree:      len(adj[id]),
-			depth:       depth,
+			id:               id,
+			seed:             seedSet[id],
+			lines:            lineChanges[id],
+			sourceCount:      sourceCount[id],
+			destinationCount: destinationCount[id],
+			degree:           len(adj[id]),
+			depth:            depth,
 		}
-		c.weight = c.lines + c.callerCount + c.calleeCount
+		c.weight = c.lines + c.sourceCount + c.destinationCount
 		candidates = append(candidates, c)
 	}
 
@@ -510,18 +519,18 @@ func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges m
 	visibleEdges := make([]models.GraphEdge, 0)
 	seenEdges := map[string]bool{}
 	for _, e := range allEdges {
-		if _, ok := selected[e.callerID]; !ok {
+		if _, ok := selected[e.sourceID]; !ok {
 			continue
 		}
-		if _, ok := selected[e.calleeID]; !ok {
+		if _, ok := selected[e.destinationID]; !ok {
 			continue
 		}
-		key := e.callerID + "|" + e.calleeID
+		key := e.sourceID + "|" + e.destinationID + "|" + e.edgeKind
 		if seenEdges[key] {
 			continue
 		}
 		seenEdges[key] = true
-		visibleEdges = append(visibleEdges, models.GraphEdge{CallerID: e.callerID, CalleeID: e.calleeID, ChangeType: edgeChangeTypePtr(e.changeType), Weight: 1, UnderlyingEdgeCount: 1})
+		visibleEdges = append(visibleEdges, models.GraphEdge{SourceID: e.sourceID, DestinationID: e.destinationID, EdgeKind: e.edgeKind, ChangeType: edgeChangeTypePtr(e.changeType), Weight: 1, UnderlyingEdgeCount: 1})
 	}
 
 	return selected, visibleEdges
@@ -630,7 +639,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	allEdges := make([]graphEdgeRow, 0)
 	if len(nodeMap) > 0 {
 		edgeRows, err := h.DB.Query(ctx, `
-			select caller_id, callee_id
+			select source_id, destination_id, edge_kind
 			from code_edges
 			where repo_id=$1 and commit_sha=$2
 		`, repoID, *repo.MainCommitSHA)
@@ -642,13 +651,13 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		defer edgeRows.Close()
 		for edgeRows.Next() {
 			var e graphEdgeRow
-			if err := edgeRows.Scan(&e.callerID, &e.calleeID); err != nil {
+			if err := edgeRows.Scan(&e.sourceID, &e.destinationID, &e.edgeKind); err != nil {
 				continue
 			}
-			if _, ok := nodeMap[e.callerID]; !ok {
+			if _, ok := nodeMap[e.sourceID]; !ok {
 				continue
 			}
-			if _, ok := nodeMap[e.calleeID]; !ok {
+			if _, ok := nodeMap[e.destinationID]; !ok {
 				continue
 			}
 			allEdges = append(allEdges, e)
@@ -913,12 +922,12 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	var allEdges []graphEdgeRow
 	if len(changedIDs) > 0 {
 		eRows, _ := h.DB.Query(ctx, `
-			select e.commit_sha, e.caller_id, e.callee_id,
+			select e.commit_sha, e.source_id, e.destination_id, e.edge_kind,
 			       caller.full_name, callee.full_name,
 			       caller.is_test, callee.is_test
 			from code_edges e
-			join code_nodes caller on caller.id = e.caller_id
-			join code_nodes callee on callee.id = e.callee_id
+			join code_nodes caller on caller.id = e.source_id
+			join code_nodes callee on callee.id = e.destination_id
 			where e.repo_id = $1
 			  and (($2 <> '' and e.commit_sha = $2) or ($3 <> '' and e.commit_sha = $3))
 		`, repoID, mainCommitSHA, headCommit)
@@ -927,8 +936,8 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 			edgeCommitState := map[string]map[string]bool{}
 			for eRows.Next() {
 				var e graphEdgeRow
-				eRows.Scan(&e.commitSHA, &e.callerID, &e.calleeID, &e.callerName, &e.calleeName, &e.callerIsTest, &e.calleeIsTest)
-				key := e.callerName + "|" + e.calleeName
+				eRows.Scan(&e.commitSHA, &e.sourceID, &e.destinationID, &e.edgeKind, &e.sourceName, &e.destinationName, &e.sourceIsTest, &e.destinationIsTest)
+				key := e.sourceName + "|" + e.destinationName + "|" + e.edgeKind
 				if edgeCommitState[key] == nil {
 					edgeCommitState[key] = map[string]bool{}
 				}
@@ -938,16 +947,16 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 				if e.commitSHA == headCommit {
 					edgeCommitState[key]["head"] = true
 				}
-				e.callerID = remapID(e.callerID)
-				e.calleeID = remapID(e.calleeID)
-				if e.callerID == e.calleeID {
+				e.sourceID = remapID(e.sourceID)
+				e.destinationID = remapID(e.destinationID)
+				if e.sourceID == e.destinationID {
 					continue
 				}
 				allEdges = append(allEdges, e)
 			}
 			eRows.Close()
 			for i := range allEdges {
-				state := edgeCommitState[allEdges[i].callerName+"|"+allEdges[i].calleeName]
+				state := edgeCommitState[allEdges[i].sourceName+"|"+allEdges[i].destinationName+"|"+allEdges[i].edgeKind]
 				allEdges[i].changeType = markEdgeChangeType(allEdges[i], state, productionChangedNameSet)
 			}
 		}
@@ -1078,11 +1087,11 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	callerSet := map[string]bool{}
 	calleeSet := map[string]bool{}
 	for _, e := range edges {
-		if changedIDSet[e.CalleeID] {
-			callerSet[e.CallerID] = true
+		if e.EdgeKind == "calls" && changedIDSet[e.DestinationID] {
+			callerSet[e.SourceID] = true
 		}
-		if changedIDSet[e.CallerID] {
-			calleeSet[e.CalleeID] = true
+		if e.EdgeKind == "calls" && changedIDSet[e.SourceID] {
+			calleeSet[e.DestinationID] = true
 		}
 	}
 
@@ -1131,8 +1140,10 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		n := record.node
 		if callerSet[id] {
 			n.NodeType = "caller"
-		} else {
+		} else if calleeSet[id] {
 			n.NodeType = "callee"
+		} else {
+			n.NodeType = "context"
 		}
 		n.Weight = meta.weight
 		n.Degree = meta.degree
@@ -1170,7 +1181,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 
 	seenEdges := map[string]bool{}
 	for _, e := range edges {
-		seenEdges[e.CallerID+"|"+e.CalleeID] = true
+		seenEdges[e.SourceID+"|"+e.DestinationID+"|"+e.EdgeKind] = true
 	}
 
 	// Add implicit struct → method edges (methods whose full_name = StructName.MethodName)
@@ -1184,10 +1195,10 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if strings.HasPrefix(methodNode.FullName, prefix) {
-				key := structID + "|" + methodID
+				key := structID + "|" + methodID + "|owns_method"
 				if !seenEdges[key] {
 					seenEdges[key] = true
-					edges = append(edges, models.GraphEdge{CallerID: structID, CalleeID: methodID, Weight: 1, UnderlyingEdgeCount: 1})
+					edges = append(edges, models.GraphEdge{SourceID: structID, DestinationID: methodID, EdgeKind: "owns_method", Weight: 1, UnderlyingEdgeCount: 1})
 				}
 			}
 		}
@@ -1308,9 +1319,12 @@ func (h *GraphHandler) loadPRTestContext(ctx context.Context, allEdges []graphEd
 
 	contextIDs := map[string]bool{}
 	for _, edge := range allEdges {
-		source := canonicalizeID(edge.callerID)
-		target := canonicalizeID(edge.calleeID)
-		if source == "" || target == "" || source == target || !testIDs[source] || testIDs[target] || edge.calleeIsTest {
+		if edge.edgeKind != "calls" {
+			continue
+		}
+		source := canonicalizeID(edge.sourceID)
+		target := canonicalizeID(edge.destinationID)
+		if source == "" || target == "" || source == target || !testIDs[source] || testIDs[target] || edge.destinationIsTest {
 			continue
 		}
 		contextIDs[target] = true

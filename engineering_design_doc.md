@@ -216,17 +216,18 @@ code_nodes
   created_at       timestamptz
   UNIQUE (repo_id, commit_sha, full_name, file_path)
 
--- Call/reference edges at a given commit
+-- Semantic edges at a given commit
 code_edges
   id               uuid PK
   repo_id          uuid FK → repositories
   commit_sha       text
-  caller_id        uuid FK → code_nodes
-  callee_id        uuid FK → code_nodes
+  source_id        uuid FK → code_nodes
+  destination_id   uuid FK → code_nodes
+  edge_kind        text              -- 'calls' | 'owns_method'
   created_at       timestamptz
-  UNIQUE (repo_id, commit_sha, caller_id, callee_id)
+  UNIQUE (repo_id, commit_sha, source_id, destination_id, edge_kind)
 
-The graph API serves this canonical function/type graph directly. `code_nodes` and `code_edges` remain the source of truth; graph responses do not expose package/object projections. Test nodes are stored in `code_nodes` and linked through `code_edges`, but default graph responses filter them out unless the frontend is showing a test-focused graph.
+The graph API serves this canonical function/type graph directly. `code_nodes` and `code_edges` remain the source of truth; graph responses do not expose package/object projections. Test nodes are stored in `code_nodes` and linked through `calls` edges, but default graph responses filter them out unless the frontend is showing a test-focused graph.
 
 -- ────────────────────────────────────────────
 -- PR delta: what changed and AI change summaries
@@ -348,13 +349,15 @@ The admin API is password-gated with `ADMIN_PASSWORD`. Frontend requests send th
 
 **`code_nodes` is a content-addressed snapshot store.** The same function at two different commits is two rows. The `body_hash` field enables change detection between commits without re-parsing. Base repository AI summaries are not generated in the current PR-focused AI flow.
 
-**`node_type` is not stored.** Whether a node is `changed`, `caller`, or `callee` is a property of its relationship to a specific PR, not of the node itself. The API computes this at query time by:
+**`node_type` is not stored.** Whether a node is `changed`, `caller`, `callee`, or general `context` is a property of its relationship to a specific PR, not of the node itself. The API computes this at query time by:
 1. Looking up the set of `pr_node_changes` for the PR → these are `changed` nodes
-2. Traversing one hop of `code_edges` from that set → callers and callees
+2. Traversing one hop of `code_edges` from that set → callers, callees, and semantic context such as receiver owner types
 
 **Separate base graph and PR delta.** `code_nodes` + `code_edges` are the base graph, built during `RepoInit` and kept current by `MergePR`. `pr_node_changes` is the PR-specific semantic overlay, built during `OpenPR`. The PR graph endpoint also returns GitHub's changed-file list from the Pull Request Files API so the PR view keeps full file-diff parity with GitHub, including docs, config, generated files, global variable edits, and other non-node changes that do not become graph nodes.
 
-**Tests are first-class code nodes, not default graph cards.** Test code is persisted in `code_nodes` with `is_test` / `is_entrypoint`, and test-to-production relationships are represented as `code_edges`. Default repo/PR graph responses filter test nodes out of the visible graph, then attach matching test callers to production nodes as `tests[]`. PR processing also persists changed test functions in `pr_node_changes`; the PR graph endpoint returns them in `test_changes[]` so the PR view can show test-function labels and diffs separately from graph changes. `test_changes[]` includes changed test helpers, but the PR overview lists only rows where `is_test` and `is_entrypoint` are both true. When a reviewer selects a changed test entrypoint, the frontend derives a temporary test-focused graph from that test node, reachable changed test helpers, and production nodes whose `tests[]` references or test edges match it; selecting a production component restores the normal PR diff graph.
+**Receiver ownership is a semantic edge.** A Go receiver type and its methods are separate `code_nodes`. The owner relation is persisted as `edge_kind = 'owns_method'` with `source_id` pointing at the struct/type/interface node and `destination_id` pointing at the method node. This lets PR graphs pull important receiver context, such as `BlockAPI`, into reviews even when only the methods changed.
+
+**Tests are first-class code nodes, not default graph cards.** Test code is persisted in `code_nodes` with `is_test` / `is_entrypoint`, and test-to-production relationships are represented as `calls` edges. Default repo/PR graph responses filter test nodes out of the visible graph, then attach matching test callers to production nodes as `tests[]`. PR processing also persists changed test functions in `pr_node_changes`; the PR graph endpoint returns them in `test_changes[]` so the PR view can show test-function labels and diffs separately from graph changes. `test_changes[]` includes changed test helpers, but the PR overview lists only rows where `is_test` and `is_entrypoint` are both true. When a reviewer selects a changed test entrypoint, the frontend derives a temporary test-focused graph from that test node, reachable changed test helpers, and production nodes whose `tests[]` references or test edges match it; selecting a production component restores the normal PR diff graph.
 
 ---
 
@@ -419,7 +422,7 @@ The backend is defined around three events. All other logic flows from them.
 3. Filter to supported source files (`.go`, `.ts`, `.tsx`, `.js`, `.jsx`)
 4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse it to extract functions, methods, and types.
 5. Persist production and test nodes in `code_nodes`, setting `is_test` and `is_entrypoint` from parser metadata.
-6. Build call/reference edges by resolving identifiers in function and test bodies against the full node set → insert `code_edges`.
+6. Build semantic edges: resolve function/test calls as `calls` edges, and connect receiver owner types to their methods as `owns_method` edges → insert `code_edges`.
 7. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes.
 8. Do not run AI during repository indexing. Base code-node summaries are intentionally out of scope; AI spend is reserved for PR analysis.
 
@@ -493,7 +496,9 @@ For Go, TypeScript, TSX, JavaScript, and JSX, the parser also captures the conti
 
 **Resolver index:** Repo and PR indexing build a `ResolverIndex` from full source files before inserting call edges. The shared resolver index stores known node names plus language-specific semantic facts. The Go adapter currently records struct field types, receiver bindings, parameter types, simple local variable declarations, import aliases, and repository-relative import directories. This lets the call graph resolve safe receiver and field-chain calls such as `blockAPI.env.EventBus.Unsubscribe(...)` to `types.EventBus.Unsubscribe` when every hop has one known type. Ambiguous or missing field/type hops still produce no edge.
 
-**Test graph extraction:** Test files are parsed into `code_nodes` alongside production code. Test callers are linked to production callees through `code_edges`; the API derives each production node's `tests[]` from those edges. Changed PR test functions can also appear as `test_changes[]`; the frontend only renders them as graph cards in the temporary test-focused graph when the reviewer selects a test entrypoint.
+**Receiver ownership extraction:** Go methods whose full name extends a parsed receiver type full name are linked with `owns_method` edges. For example, `rpc/grpc:coregrpc.BlockAPI` is the source and `rpc/grpc:coregrpc.BlockAPI.Stop` is the destination.
+
+**Test graph extraction:** Test files are parsed into `code_nodes` alongside production code. Test callers are linked to production callees through `calls` edges; the API derives each production node's `tests[]` from those edges. Changed PR test functions can also appear as `test_changes[]`; the frontend only renders them as graph cards in the temporary test-focused graph when the reviewer selects a test entrypoint.
 
 **Build note:** Tree-sitter grammar bindings use CGO. Local and Railway API builds must run with CGO enabled and a working C compiler available.
 
@@ -677,8 +682,9 @@ GITHUB_FEEDBACK_REPO
   ],
   "edges": [
     {
-      "caller_id": "...",
-      "callee_id": "..."
+      "source_id": "...",
+      "destination_id": "...",
+      "edge_kind": "calls"
     }
   ],
   "files": [
@@ -905,7 +911,7 @@ At startup, the API queries `supabase_migrations.schema_migrations` and exits be
 
 1. Implement `GET /repos/{repoID}/prs/{prID}/graph`:
    - Query `pr_node_changes` → changed node IDs
-   - Traverse `code_edges` one hop from changed nodes → caller and callee IDs
+   - Traverse `code_edges` one hop from changed nodes → source, destination, and receiver-owner context IDs
    - Fetch all node records; tag each with computed `node_type`
    - Fetch GitHub PR files and return them as `files[]` for GitHub-equivalent PR overview diffs
    - Cap at 20 nodes: keep all changed nodes, fill remaining slots by proximity

@@ -40,10 +40,10 @@ function InnerRepoGraphCanvas({
 
   const edges: Edge[] = useMemo(() => graph.edges.map((e, idx) => ({
     id: `repo-e${idx}`,
-    source: e.caller_id,
-    target: e.callee_id,
+    source: e.source_id,
+    target: e.destination_id,
     type: "smartBezier",
-    style: { stroke: "#888888", strokeWidth: 1 },
+    style: { stroke: "#888888", strokeWidth: 1, strokeDasharray: e.edge_kind === "owns_method" ? "3 4" : undefined },
     markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color: "#888888" },
   })), [graph.edges]);
 

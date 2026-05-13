@@ -95,12 +95,13 @@ type CodeNode struct {
 }
 
 type CodeEdge struct {
-	ID        string    `json:"id"`
-	RepoID    string    `json:"repo_id"`
-	CommitSHA string    `json:"commit_sha"`
-	CallerID  string    `json:"caller_id"`
-	CalleeID  string    `json:"callee_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	RepoID        string    `json:"repo_id"`
+	CommitSHA     string    `json:"commit_sha"`
+	SourceID      string    `json:"source_id"`
+	DestinationID string    `json:"destination_id"`
+	EdgeKind      string    `json:"edge_kind"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // ── PR delta ──────────────────────────────────────────────────────────────────
@@ -192,8 +193,9 @@ type GraphNodeTest struct {
 }
 
 type GraphEdge struct {
-	CallerID            string            `json:"caller_id"`
-	CalleeID            string            `json:"callee_id"`
+	SourceID            string            `json:"source_id"`
+	DestinationID       string            `json:"destination_id"`
+	EdgeKind            string            `json:"edge_kind"`
 	ChangeType          *string           `json:"change_type,omitempty"`
 	Weight              int               `json:"weight,omitempty"`
 	ChangedWeight       int               `json:"changed_weight,omitempty"`
@@ -202,10 +204,10 @@ type GraphEdge struct {
 }
 
 type GraphEdgeSample struct {
-	CallerID   string `json:"caller_id"`
-	CalleeID   string `json:"callee_id"`
-	CallerName string `json:"caller_name"`
-	CalleeName string `json:"callee_name"`
+	SourceID        string `json:"source_id"`
+	DestinationID   string `json:"destination_id"`
+	SourceName      string `json:"source_name"`
+	DestinationName string `json:"destination_name"`
 }
 
 type GraphResponse struct {

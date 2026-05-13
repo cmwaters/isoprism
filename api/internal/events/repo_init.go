@@ -182,8 +182,8 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 		}
 	}
 
-	// Extract and insert call edges — pass full file content, not per-node snippets.
-	// parser.ParseFile requires a complete Go file; a bare function body won't parse.
+	// Extract and insert semantic edges. Call extraction must use complete file
+	// contents; a bare function body will not parse.
 	if _, err := db.Exec(ctx, `delete from code_edges where repo_id=$1 and commit_sha=$2`, repoID, headSHA); err != nil {
 		fail("clearing stale code edges", err)
 		return
@@ -200,24 +200,39 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	for filePath, content := range fileContents {
 		edges := parser.ExtractCallEdgesWithResolver(content, filePath, resolverIndex)
 		for _, edge := range edges {
-			callerID, ok := nodeIDs[edge.CallerFullName]
+			sourceID, ok := nodeIDs[edge.CallerFullName]
 			if !ok {
 				continue
 			}
-			calleeID, ok := nodeIDs[edge.CalleeFullName]
+			destinationID, ok := nodeIDs[edge.CalleeFullName]
 			if !ok {
 				continue
 			}
 			db.Exec(ctx, `
-				insert into code_edges (repo_id, commit_sha, caller_id, callee_id)
-				values ($1,$2,$3,$4)
+				insert into code_edges (repo_id, commit_sha, source_id, destination_id, edge_kind)
+				values ($1,$2,$3,$4,$5)
 				on conflict do nothing
-			`, repoID, headSHA, callerID, calleeID)
+			`, repoID, headSHA, sourceID, destinationID, edgeKindCalls)
 		}
 		edgeFilesDone++
 		if edgeFilesDone == edgeFilesTotal || edgeFilesDone%50 == 0 {
 			updateIndexJobProgress(ctx, db, repoID, headSHA, "building_edges", "Building call graph edges", len(sourceFiles), len(sourceFiles), len(allNodes), len(allNodes), edgeFilesTotal, edgeFilesDone)
 		}
+	}
+	for _, edge := range receiverOwnershipEdges(allNodes) {
+		sourceID, ok := nodeIDs[edge.SourceFullName]
+		if !ok {
+			continue
+		}
+		destinationID, ok := nodeIDs[edge.DestinationFullName]
+		if !ok || sourceID == destinationID {
+			continue
+		}
+		db.Exec(ctx, `
+			insert into code_edges (repo_id, commit_sha, source_id, destination_id, edge_kind)
+			values ($1,$2,$3,$4,$5)
+			on conflict do nothing
+		`, repoID, headSHA, sourceID, destinationID, edge.Kind)
 	}
 	log.Printf("RepoInit: extracted call edges for %d files", len(fileContents))
 

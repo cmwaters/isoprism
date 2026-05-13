@@ -69,12 +69,12 @@ func TestBaseLookupIdentityIgnoresOldIdentityForNonRenames(t *testing.T) {
 
 func TestAppendTestFocusEdgesKeepsChangedTestHelpersReachable(t *testing.T) {
 	edges := appendTestFocusEdges(
-		[]models.GraphEdge{{CallerID: "prod-a", CalleeID: "prod-b"}},
+		[]models.GraphEdge{{SourceID: "prod-a", DestinationID: "prod-b", EdgeKind: "calls"}},
 		[]graphEdgeRow{
-			{callerID: "test-entry", calleeID: "test-helper"},
-			{callerID: "test-helper", calleeID: "prod-a"},
-			{callerID: "prod-a", calleeID: "test-helper"},
-			{callerID: "test-entry", calleeID: "other-prod"},
+			{sourceID: "test-entry", destinationID: "test-helper", edgeKind: "calls"},
+			{sourceID: "test-helper", destinationID: "prod-a", edgeKind: "calls"},
+			{sourceID: "prod-a", destinationID: "test-helper", edgeKind: "calls"},
+			{sourceID: "test-entry", destinationID: "other-prod", edgeKind: "calls"},
 		},
 		[]models.GraphNode{
 			{ID: "test-entry", IsTest: true, IsEntrypoint: true},
@@ -106,33 +106,54 @@ func TestEdgeChangesOnlyApplyToChangedProductionEndpoints(t *testing.T) {
 	baseOnly := map[string]bool{"base": true}
 
 	gotChanged := markEdgeChangeType(graphEdgeRow{
-		callerName: "rpc/grpc:coregrpc.BlockAPI.Stop",
-		calleeName: "types:types.EventBus.Unsubscribe",
+		sourceName:      "rpc/grpc:coregrpc.BlockAPI.Stop",
+		destinationName: "types:types.EventBus.Unsubscribe",
 	}, baseOnly, changedNames)
 	if gotChanged != "deleted" {
 		t.Fatalf("edge touching changed node = %q, want deleted", gotChanged)
 	}
 
 	gotContext := markEdgeChangeType(graphEdgeRow{
-		callerName: "rpc/client/local:local.Local.Unsubscribe",
-		calleeName: "types:types.EventBus.Unsubscribe",
+		sourceName:      "rpc/client/local:local.Local.Unsubscribe",
+		destinationName: "types:types.EventBus.Unsubscribe",
 	}, baseOnly, changedNames)
 	if gotContext != "unchanged" {
 		t.Fatalf("context edge = %q, want unchanged", gotContext)
 	}
 
 	if relevantProductionEdge(graphEdgeRow{
-		callerName: "rpc/client/local:local.Local.Unsubscribe",
-		calleeName: "types:types.EventBus.Unsubscribe",
-		changeType: "unchanged",
+		sourceName:      "rpc/client/local:local.Local.Unsubscribe",
+		destinationName: "types:types.EventBus.Unsubscribe",
+		edgeKind:        "calls",
+		changeType:      "unchanged",
 	}, changedNames) {
 		t.Fatalf("unchanged context-to-context edge should not expand the PR graph")
 	}
 }
 
-func hasGraphEdge(edges []models.GraphEdge, callerID, calleeID string) bool {
+func TestSelectVisibleGraphIncludesReceiverOwnerEdges(t *testing.T) {
+	selected, edges := selectVisibleGraph(
+		[]string{"stop"},
+		[]graphEdgeRow{
+			{sourceID: "block-api", destinationID: "stop", edgeKind: "owns_method"},
+		},
+		map[string]int{"stop": 4},
+	)
+
+	if _, ok := selected["block-api"]; !ok {
+		t.Fatalf("receiver owner type was not selected: %#v", selected)
+	}
+	if !hasGraphEdge(edges, "block-api", "stop") {
+		t.Fatalf("missing ownership graph edge: %#v", edges)
+	}
+	if edges[0].EdgeKind != "owns_method" {
+		t.Fatalf("edge kind = %q, want owns_method", edges[0].EdgeKind)
+	}
+}
+
+func hasGraphEdge(edges []models.GraphEdge, sourceID, destinationID string) bool {
 	for _, edge := range edges {
-		if edge.CallerID == callerID && edge.CalleeID == calleeID {
+		if edge.SourceID == sourceID && edge.DestinationID == destinationID {
 			return true
 		}
 	}

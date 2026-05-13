@@ -172,6 +172,8 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 
 	var changed []changedNode
 	changedFileContents := map[string][]byte{}
+	var allHeadNodes []parser.Node
+	var allBaseNodes []parser.Node
 
 	for _, file := range changedFiles {
 		headPath := file.Filename
@@ -200,6 +202,7 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 			stats.HeadFilesFetched++
 			changedFileContents[headPath] = content
 			headNodes = parser.Parse(content, headPath)
+			allHeadNodes = append(allHeadNodes, headNodes...)
 			stats.HeadNodesParsed += len(headNodes)
 		}
 		if file.Status != "removed" && parser.IsSupportedFile(headPath) {
@@ -221,6 +224,7 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 			baseNodes, err := loadBaseNodesForPath(ctx, db, repoID, baseCommit, basePath)
 			if err == nil {
 				stats.BaseNodesLoaded += len(baseNodes)
+				allBaseNodes = append(allBaseNodes, baseNodes...)
 				for _, n := range baseNodes {
 					baseNodesByName[n.FullName] = n
 					baseNodesByHash[n.BodyHash] = append(baseNodesByHash[n.BodyHash], n)
@@ -520,26 +524,60 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 		edges := parser.ExtractCallEdgesWithResolver(content, filePath, resolverIndex)
 		stats.CallEdgesExtracted += len(edges)
 		for _, edge := range edges {
-			var callerID, calleeID string
+			var sourceID, destinationID string
 			db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
-				repoID, headSHA, edge.CallerFullName).Scan(&callerID)
+				repoID, headSHA, edge.CallerFullName).Scan(&sourceID)
 			db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
-				repoID, headSHA, edge.CalleeFullName).Scan(&calleeID)
-			if calleeID == "" {
-				calleeID = refNodeIDs[edge.CalleeFullName]
+				repoID, headSHA, edge.CalleeFullName).Scan(&destinationID)
+			if destinationID == "" {
+				destinationID = refNodeIDs[edge.CalleeFullName]
 			}
-			if callerID != "" && calleeID != "" && callerID != calleeID {
+			if sourceID != "" && destinationID != "" && sourceID != destinationID {
 				tag, err := db.Exec(ctx, `
-					insert into code_edges (repo_id, commit_sha, caller_id, callee_id)
-					values ($1,$2,$3,$4)
+					insert into code_edges (repo_id, commit_sha, source_id, destination_id, edge_kind)
+					values ($1,$2,$3,$4,$5)
 					on conflict do nothing
-				`, repoID, headSHA, callerID, calleeID)
+				`, repoID, headSHA, sourceID, destinationID, edgeKindCalls)
 				if err != nil {
 					stats.CallEdgePersistErrors++
 				} else if tag.RowsAffected() > 0 {
 					stats.CallEdgesPersisted++
 				}
 			}
+		}
+	}
+	for _, edge := range receiverOwnershipEdges(allHeadNodes) {
+		var sourceID, destinationID string
+		db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
+			repoID, headSHA, edge.SourceFullName).Scan(&sourceID)
+		db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
+			repoID, headSHA, edge.DestinationFullName).Scan(&destinationID)
+		if sourceID == "" || destinationID == "" || sourceID == destinationID {
+			continue
+		}
+		if _, err := db.Exec(ctx, `
+			insert into code_edges (repo_id, commit_sha, source_id, destination_id, edge_kind)
+			values ($1,$2,$3,$4,$5)
+			on conflict do nothing
+		`, repoID, headSHA, sourceID, destinationID, edge.Kind); err != nil {
+			stats.CallEdgePersistErrors++
+		}
+	}
+	for _, edge := range receiverOwnershipEdges(allBaseNodes) {
+		var sourceID, destinationID string
+		db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
+			repoID, baseCommit, edge.SourceFullName).Scan(&sourceID)
+		db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
+			repoID, baseCommit, edge.DestinationFullName).Scan(&destinationID)
+		if sourceID == "" || destinationID == "" || sourceID == destinationID {
+			continue
+		}
+		if _, err := db.Exec(ctx, `
+			insert into code_edges (repo_id, commit_sha, source_id, destination_id, edge_kind)
+			values ($1,$2,$3,$4,$5)
+			on conflict do nothing
+		`, repoID, baseCommit, sourceID, destinationID, edge.Kind); err != nil {
+			stats.CallEdgePersistErrors++
 		}
 	}
 

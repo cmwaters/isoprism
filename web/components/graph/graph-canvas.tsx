@@ -453,15 +453,15 @@ function collapseRenamedGraphNodes(graph: UnifiedGraph): UnifiedGraph {
     ...graph,
     nodes: graph.nodes.filter((node) => !oldIDToRenamedID.has(node.id)),
     edges: graph.edges.flatMap((edge) => {
-      const callerID = remapID(edge.caller_id);
-      const calleeID = remapID(edge.callee_id);
-      if (callerID === calleeID) return [];
+      const sourceID = remapID(edge.source_id);
+      const destinationID = remapID(edge.destination_id);
+      if (sourceID === destinationID) return [];
 
-      const key = `${callerID}->${calleeID}`;
+      const key = `${sourceID}->${destinationID}`;
       if (seenEdges.has(key)) return [];
       seenEdges.add(key);
 
-      return [{ ...edge, caller_id: callerID, callee_id: calleeID }];
+      return [{ ...edge, source_id: sourceID, destination_id: destinationID }];
     }),
   };
 }
@@ -481,11 +481,11 @@ function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | nul
   for (let head = 0; head < queue.length; head++) {
     const currentID = queue[head];
     for (const edge of graph.edges) {
-      if (edge.caller_id !== currentID || !testChangeByID.has(edge.callee_id) || reachableTestIDs.has(edge.callee_id)) {
+      if (edge.source_id !== currentID || !testChangeByID.has(edge.destination_id) || reachableTestIDs.has(edge.destination_id)) {
         continue;
       }
-      reachableTestIDs.add(edge.callee_id);
-      queue.push(edge.callee_id);
+      reachableTestIDs.add(edge.destination_id);
+      queue.push(edge.destination_id);
     }
   }
 
@@ -501,21 +501,21 @@ function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | nul
   const testContext = graph.test_context ?? [];
   const directTargets = graph.nodes.filter((node) => (node.tests ?? []).some((test) => sameTestEntry(testNode, test)));
   const edgeTargetPool = [...graph.nodes, ...testContext];
-  const edgeTargets = edgeTargetPool.filter((node) => graph.edges.some((edge) => reachableTestNodeIDs.has(edge.caller_id) && edge.callee_id === node.id));
+  const edgeTargets = edgeTargetPool.filter((node) => graph.edges.some((edge) => reachableTestNodeIDs.has(edge.source_id) && edge.destination_id === node.id));
   const targetByID = new Map([...directTargets, ...edgeTargets].map((node) => [node.id, node]));
   const targets = Array.from(targetByID.values());
   const nodeIDs = new Set([...reachableTestNodeIDs, ...targets.map((node) => node.id)]);
   const edges = graph.edges
-    .filter((edge) => nodeIDs.has(edge.caller_id) && nodeIDs.has(edge.callee_id))
+    .filter((edge) => nodeIDs.has(edge.source_id) && nodeIDs.has(edge.destination_id))
     .map((edge) => {
-      const caller = testChangeByID.get(edge.caller_id);
+      const caller = testChangeByID.get(edge.source_id);
       return caller?.change_type === "added" ? { ...edge, change_type: "added" as const } : edge;
     });
 
   const nodes = [
     ...testNodes.map((node) => ({
       ...node,
-      degree: edges.filter((edge) => edge.caller_id === node.id || edge.callee_id === node.id).length,
+      degree: edges.filter((edge) => edge.source_id === node.id || edge.destination_id === node.id).length,
       weight: Math.max(node.weight ?? 0, targets.length),
     })),
     ...targets.map((node) => ({ ...node, graph_depth: 2, boundary: false })),
@@ -589,8 +589,8 @@ function InnerCanvas({
 
   const baseEdges: Edge[] = useMemo(() => visibleGraph.edges.map((e, idx) => ({
     id: `e${idx}`,
-    source: e.caller_id,
-    target: e.callee_id,
+    source: e.source_id,
+    target: e.destination_id,
     type: "smartBezier",
   })), [visibleGraph.edges]);
 
@@ -604,15 +604,16 @@ function InnerCanvas({
     return baseEdges.map((e) => {
       const isConnected = selID && (e.source === selID || e.target === selID);
       const isDimmed = selID && !isConnected;
-      const apiEdge = visibleGraph.edges.find((edge) => edge.caller_id === e.source && edge.callee_id === e.target);
+      const apiEdge = visibleGraph.edges.find((edge) => edge.source_id === e.source && edge.destination_id === e.target);
       const baseColor = apiEdge?.change_type === "added" ? "#16A34A" : apiEdge?.change_type === "deleted" ? "#EF4444" : "#888888";
       const dimmedColor = apiEdge?.change_type === "added" ? "#BBF7D0" : apiEdge?.change_type === "deleted" ? "#FECACA" : "#CCCCCC";
       const color = isConnected ? (apiEdge?.change_type === "added" || apiEdge?.change_type === "deleted" ? baseColor : "#333333") : isDimmed ? dimmedColor : baseColor;
       const weightedWidth = Math.min(5, 1 + Math.log2(1 + (apiEdge?.weight ?? 1)) * 0.6);
       const width = isConnected ? Math.max(2, weightedWidth) : weightedWidth;
+      const dash = apiEdge?.change_type === "deleted" ? "6 5" : apiEdge?.edge_kind === "owns_method" ? "3 4" : undefined;
       return {
         ...e,
-        style: { stroke: color, strokeWidth: width, strokeDasharray: apiEdge?.change_type === "deleted" ? "6 5" : undefined },
+        style: { stroke: color, strokeWidth: width, strokeDasharray: dash },
         markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color },
       };
     });
