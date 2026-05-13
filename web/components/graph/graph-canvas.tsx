@@ -299,6 +299,10 @@ function edgeWeight(edge: Edge): number {
   return Math.min(5, Math.max(1, data?.underlyingEdgeCount ?? data?.weight ?? 1));
 }
 
+function undirectedEdgeKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
 function initialPosition(index: number, total: number, anchor?: Point): Point {
   const radius = Math.max(280, Math.sqrt(Math.max(total, 1)) * 135);
   const angle = (index / Math.max(total, 1)) * Math.PI * 2;
@@ -330,6 +334,7 @@ export function edgeLengthLayout(nodes: Node[], edges: Edge[], options: LayoutOp
   });
 
   const validEdges = edges.filter((edge) => nodeIDs.has(edge.source) && nodeIDs.has(edge.target));
+  const connectedPairs = new Set(validEdges.map((edge) => undirectedEdgeKey(edge.source, edge.target)));
   const previous = options.previousPositions ?? {};
   const iterations = options.iterations ?? (Object.keys(previous).length > 0 ? 90 : 220);
   const pinnedIDs = options.pinnedIDs ?? new Set<string>();
@@ -382,9 +387,12 @@ export function edgeLengthLayout(nodes: Node[], edges: Edge[], options: LayoutOp
         const dx = bx - ax || 0.01;
         const dy = by - ay || 0.01;
         const distance = Math.max(1, Math.hypot(dx, dy));
-        const minDistance = (sa.width + sb.width) / 2 + 80;
+        const radiusA = Math.hypot(sa.width, sa.height) / 2;
+        const radiusB = Math.hypot(sb.width, sb.height) / 2;
+        const minDistance = radiusA + radiusB + 150;
         const overlap = Math.max(0, minDistance - distance);
-        const force = overlap * 0.025 + 180 / (distance * distance);
+        const disconnectedRepulsion = connectedPairs.has(undirectedEdgeKey(a.id, b.id)) ? 0 : 280 / Math.max(distance, 120);
+        const force = overlap * 0.055 + 280 / (distance * distance) + disconnectedRepulsion;
         const fx = (dx / distance) * force;
         const fy = (dy / distance) * force;
         const fa = forces.get(a.id);
@@ -605,7 +613,7 @@ function InnerCanvas({
   repo?: Repository;
   prs?: QueuePR[];
 }) {
-  const { fitView, getNode, setCenter } = useReactFlow();
+  const { fitView, getNode, getZoom, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
   const [prGraphCache, setPRGraphCache] = useState<Record<number, GraphResponse>>({});
   const [loadingPRNumber, setLoadingPRNumber] = useState<number | null>(null);
@@ -625,6 +633,7 @@ function InnerCanvas({
   const [expandingEdgeKey, setExpandingEdgeKey] = useState<string | null>(null);
   const [expandingNodeIDs, setExpandingNodeIDs] = useState<Record<string, boolean>>({});
   const [expandedNodeIDs, setExpandedNodeIDs] = useState<Record<string, boolean>>({});
+  const selectedNodeIDRef = useRef<string | null>(null);
   const baseVisibleGraph = useMemo(() => collapseRenamedGraphNodes(activeGraph), [activeGraph]);
   const activeGraphKey = useMemo(() => graphContextKey(activeGraph), [activeGraph]);
   const activePRTestChanges = useMemo(
@@ -699,6 +708,10 @@ function InnerCanvas({
   const onEdgesChange = useCallback(() => {}, []);
 
   useEffect(() => {
+    selectedNodeIDRef.current = selectedNode?.id ?? null;
+  }, [selectedNode?.id]);
+
+  useEffect(() => {
     setActiveGraph(graph);
     layoutPositionsRef.current = {};
     setLayoutPositions({});
@@ -721,7 +734,8 @@ function InnerCanvas({
       const nextPositions = positionsFromNodes(next);
       layoutPositionsRef.current = nextPositions;
       setLayoutPositions(nextPositions);
-      return next;
+      const selectedID = selectedNodeIDRef.current;
+      return selectedID ? next.map((node) => ({ ...node, selected: node.id === selectedID })) : next;
     });
     if (suppressNextFitViewRef.current) {
       suppressNextFitViewRef.current = false;
@@ -750,10 +764,10 @@ function InnerCanvas({
       if (!node) return;
       const width = node.measured?.width ?? node.width ?? 180;
       const height = node.measured?.height ?? node.height ?? 90;
-      setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: 0.78, duration: 450 });
+      setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: getZoom(), duration: 450 });
     }, 120);
     return () => window.clearTimeout(timeout);
-  }, [getNode, selectedNode?.id, setCenter, setNodes]);
+  }, [getNode, getZoom, selectedNode?.id, setCenter, setNodes]);
 
   useEffect(() => {
     setSelectedNode(null);
