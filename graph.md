@@ -19,7 +19,7 @@ graph_depth
 boundary
 ```
 
-Clustering and interactive boundary expansion are still design targets; the current client marks boundary nodes through metadata and keeps them on the outer hex ring, but it does not yet request incremental expansion from a clicked boundary node.
+Clustering remains a design target. The current client marks boundary nodes through metadata, keeps them on the outer hex ring, and can request incremental expansion from clicked nodes.
 
 The canonical graph remains function-level. Production nodes and call edges are extracted by the API parser with tree-sitter. Call edge resolution is conservative: unresolved external calls, ambiguous names, and selector/member calls with unknown receiver types are omitted instead of guessed.
 
@@ -145,8 +145,12 @@ The client requests missing nodes needed to restore the same depth around the ex
 ### Dynamic Expansion API
 
 The interactive graph expands one hop at a time from the user's selected node.
-Clicking a node always selects it. If the node is marked `boundary: true`, the
-client also requests hidden direct callers and callees:
+Clicking a node always selects it. On the first click for a visible node, the
+client also requests hidden direct callers and callees. This does not rely
+solely on the `boundary` flag because PR graphs can filter initial context
+edges before the expansion endpoint reloads the wider graph. After a node has
+been expanded once, the client requests it again only when the API reports
+`has_more`:
 
 ```http
 POST /api/v1/repos/{repoID}/graph/expand

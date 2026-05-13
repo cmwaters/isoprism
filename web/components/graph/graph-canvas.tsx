@@ -768,7 +768,7 @@ function InnerCanvas({
 
   const expandGraphNode = useCallback(async (nodeID: string) => {
     const node = baseVisibleGraph.nodes.find((n) => n.id === nodeID);
-    if (!node?.boundary || expandingNodeIDs[nodeID] || (expandedNodeIDs[nodeID] && !node.boundary)) return;
+    if (!node || expandingNodeIDs[nodeID] || (expandedNodeIDs[nodeID] && !node.boundary)) return;
 
     const contextKey = graphContextKey(activeGraph);
     setExpandingNodeIDs((current) => ({ ...current, [nodeID]: true }));
