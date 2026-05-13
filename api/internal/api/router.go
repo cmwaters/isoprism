@@ -174,6 +174,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 
 	// Public routes
 	r.Post("/webhooks/github", ghHandler.HandleWebhook)
+	r.Get("/github/callback", ghHandler.HandleInstallationCallback)
 	r.Get("/api/v1/github/callback", ghHandler.HandleInstallationCallback)
 	r.Get("/api/v1/auth/status", repoHandler.GetAuthStatus)
 	r.Get("/api/v1/admin/beta/testers", betaHandler.ListBetaTesters)

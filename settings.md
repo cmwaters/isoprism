@@ -57,12 +57,12 @@ Each row should show repository name, default branch, selected/indexed/unused st
 
 ## 5. Callback Behavior
 
-The GitHub App callback distinguishes first-time setup from settings updates:
+The GitHub App callback is available at `/github/callback`, with `/api/v1/github/callback` retained as a compatibility alias. It re-syncs GitHub authorization and then decides from Isoprism account state:
 
-- `setup_action=install` returns the user to `/onboarding/repos`.
-- `setup_action=update` returns the user to `/settings`.
+- Already setup accounts return to `/settings`, which resolves the signed-in user's `/{user}/settings` route.
+- Accounts that have not selected or indexed a repository yet return to `/onboarding/repos`.
 
-Returning a settings user to `/settings` prevents them from being asked to select a repository again just because they adjusted GitHub App permissions.
+The redirect decision must not rely on GitHub's `setup_action`, because settings edits can arrive with values that look like first-time setup. Existing setup is determined from `users.selected_repo_id`, `pilot_users.selected_repo_id`, or an already ready repository.
 
 ## 6. Out of Scope
 

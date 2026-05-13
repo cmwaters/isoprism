@@ -324,11 +324,44 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 		}
 	}
 
-	if setupAction == "update" {
-		http.Redirect(w, r, redirectBaseURL+"/settings", http.StatusFound)
-	} else {
-		http.Redirect(w, r, redirectBaseURL+"/onboarding/repos", http.StatusFound)
+	http.Redirect(w, r, redirectBaseURL+h.installationCallbackRedirectPath(ctx, userID), http.StatusFound)
+}
+
+func (h *GitHubHandler) installationCallbackRedirectPath(ctx context.Context, userID string) string {
+	if userID == "" {
+		return "/onboarding/repos"
 	}
+
+	var isSetup bool
+	_ = h.DB.QueryRow(ctx, `
+		select exists(
+			select 1
+			from users u
+			left join repositories selected_repo
+			  on selected_repo.id = u.selected_repo_id
+			 and selected_repo.user_id = u.id
+			 and selected_repo.is_active = true
+			left join repositories ready_repo
+			  on ready_repo.user_id = u.id
+			 and ready_repo.is_active = true
+			 and ready_repo.index_status = 'ready'
+			left join pilot_users p
+			  on p.user_id = u.id
+			 and p.selected_repo_id is not null
+			where u.id = $1
+			  and (
+			    u.selected_repo_id is not null
+			    or selected_repo.id is not null
+			    or ready_repo.id is not null
+			    or p.id is not null
+			  )
+		)
+	`, userID).Scan(&isSetup)
+
+	if isSetup {
+		return "/settings"
+	}
+	return "/onboarding/repos"
 }
 
 type installState struct {
