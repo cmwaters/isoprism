@@ -391,8 +391,14 @@ For the beta flow, `state` must preserve both the authenticated user/session ide
 | `setup_action` | Behaviour |
 |---|---|
 | `install` | Creates installation + repository records; redirects to `/onboarding/repos` |
-| `update` | Re-syncs repo list; redirects to `/onboarding/repos` |
+| `update` | Re-syncs repo list; redirects to `/settings` |
 | `request` | User lacks permission; redirects to `/request-sent` |
+
+The callback treats first-time install and settings edits differently. Returning settings edits to `/settings` keeps existing users from being asked to select a repository again after they only changed GitHub App permissions. Re-syncing the repo list applies these repository states:
+
+- Added GitHub repositories are stored as authorized and visible, but not indexed.
+- Removed GitHub repositories are marked revoked immediately, hidden from `GET /api/v1/me/repos`, and scheduled for repository-row deletion after one day.
+- Authorized repositories that already have indexed data keep their index unless the user explicitly uninstalls them or pilot-account selection rules mark them unused.
 
 ### Token Management
 
@@ -423,7 +429,7 @@ The backend is defined around three events. All other logic flows from them.
 4. For each file, fetch content via `GET /repos/{owner}/{repo}/contents/{path}?ref={sha}` and parse it to extract functions, methods, and types.
 5. Persist production and test nodes in `code_nodes`, setting `is_test` and `is_entrypoint` from parser metadata.
 6. Build semantic edges: resolve function/test calls as `calls` edges, and connect receiver owner types to their methods as `owns_method` edges → insert `code_edges`.
-7. Set `repositories.main_commit_sha = HEAD` and `repositories.index_status = 'ready'` so the graph is visible as soon as structural indexing completes.
+7. Set `repositories.main_commit_sha = HEAD`, `repositories.index_status = 'ready'`, and `repositories.indexed_at` so the graph is visible as soon as structural indexing completes.
 8. Do not run AI during repository indexing. Base code-node summaries are intentionally out of scope; AI spend is reserved for PR analysis.
 
 Files are processed concurrently (bounded goroutine pool, max 10 in-flight). The frontend polls `GET /api/v1/repos/{repoID}/status` every 2 seconds until `ready` or `failed`. The status response includes the current indexing job phase, progress percentage, counters, and a rough ETA. `ready` means the structural graph is available; summaries may continue to fill in afterward.
@@ -564,7 +570,9 @@ GET    /api/v1/me/repos                                   list repos for current
 DELETE /api/v1/me
 
 GET    /api/v1/repos/{repoID}                             repo detail + index_status
+POST   /api/v1/repos/{repoID}/select                      select an already indexed repository
 POST   /api/v1/repos/{repoID}/index                       trigger RepoInit
+DELETE /api/v1/repos/{repoID}/index                       uninstall indexed data while keeping authorized repo visible
 GET    /api/v1/repos/{repoID}/status                      {index_status, index_job, index_percent, eta_seconds, pr_count, ready_count}
 GET    /api/v1/repos/{repoID}/queue                       top 5 PRs by urgency
 GET    /api/v1/repos/{repoID}/graph                       function-level repo graph from default branch HEAD
@@ -580,9 +588,13 @@ The PR node code view reconstructs a full component diff from fetched source onl
 
 - A tester can only start from a valid beta invite token.
 - GitHub OAuth must bind the invite to one `users.id`.
-- GitHub App installation may expose several repositories, but Isoprism allows one `selected_repo_id` for the beta invite.
-- `POST /api/v1/repos/{repoID}/index` should reject attempts to index a second repository for the same active beta invite.
-- The trial starts when the tester selects the repository and indexing is triggered.
+- GitHub App installation may expose several repositories, but pilot users can actively use only one indexed repository at a time.
+- `users.selected_repo_id` is the current selected repository for both pilot and regular users; `pilot_users.selected_repo_id` mirrors it for pilot admin/reporting.
+- `POST /api/v1/repos/{repoID}/index` selects the repository and triggers indexing. For pilot users, selecting a different repository marks the previous selected repo as unused and schedules its indexed data for deletion after one day. For regular users, previously indexed repositories remain indexed.
+- `POST /api/v1/repos/{repoID}/select` changes the selected repository only after it is indexed. Only one repository can be selected at a time.
+- `DELETE /api/v1/repos/{repoID}/index` marks indexed data unused and schedules cleanup. It does not remove the repository from the authorized list while GitHub still grants access.
+- Revoked GitHub access marks the repository revoked, removes it from the authorized list immediately, and schedules full repository deletion after one day.
+- The trial starts when the tester selects a repository and indexing is triggered.
 - The trial ends seven calendar days after `trial_starts_at`.
 - Feedback submissions are accepted during the trial and may continue after the questionnaire is due if the product remains accessible.
 - The questionnaire is due once `now() >= trial_ends_at` and should be stored once per invite.

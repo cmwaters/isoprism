@@ -1,16 +1,18 @@
 # Isoprism Settings
 
-> Beta specification | Updated: 2026-04-29
+> Product specification | Updated: 2026-05-13
 
 ## 1. Purpose
 
-Settings should be a single operational page. The pilot user should be able to:
+Settings should be a single operational page. The user should be able to:
 
 - See their GitHub connection
 - Manage the Isoprism GitHub App installation on GitHub
-- See the current repository Isoprism is using
-- Select a different accessible repository
-- Index that different repository and see the same indexing status used during onboarding
+- See every repository currently authorized through GitHub
+- Index an authorized repository
+- Select exactly one indexed repository as the current review workspace
+- Uninstall indexed data without removing the repository while GitHub still authorizes it
+- See the same indexing status used during onboarding
 
 Settings are not a multi-account admin area during beta. There are no tabs, organization settings pages, members, billing, notification preferences, or access-control controls.
 
@@ -22,34 +24,47 @@ The settings route remains:
 /{user}/settings
 ```
 
+The callback-safe `/settings` route is a client redirect that resolves the signed-in user's GitHub login and forwards to `/{user}/settings`.
+
 The page should be user-scoped only. Organization-specific settings pages are out of scope for the beta.
 
 ## 3. Layout
 
-The page should have one content column with three sections:
+The page should have one content column with two sections:
 
 1. GitHub connection
-2. Current repository
-3. Swap repository
+2. Repositories
 
 The GitHub connection section should show the signed-in GitHub user and provide one action to manage the GitHub App. Installation happens during onboarding; settings should not show a separate install action because that makes the connected state ambiguous.
 
-The current repository section should show the single repository currently indexed for the beta and provide a link back to the graph page.
+The repositories section should show a searchable list of repositories available through the GitHub App installation. Added repositories should appear immediately as authorized but not indexed. Revoked repositories should disappear from this list because GitHub no longer authorizes them.
 
-The swap repository section should show a searchable list of repositories available through the GitHub App installation. Selecting a repository and clicking "Index selected repo" should trigger indexing. While indexing runs, the page should show the same `IndexingProgress` experience used during onboarding.
+Each row should show repository name, default branch, selected/indexed/unused state, and the available actions:
 
-## 4. Repository Swapping
+- **Index** starts `POST /api/v1/repos/{repoID}/index`.
+- **Select** starts `POST /api/v1/repos/{repoID}/select` for an already indexed repository.
+- **Open** links to `/{owner}/{repo}` for the selected ready repository.
+- **Uninstall** starts `DELETE /api/v1/repos/{repoID}/index`; it schedules indexed data cleanup but keeps the authorized repository visible while GitHub still grants permission.
 
-Swapping repositories means:
+## 4. Repository Rules
 
-- The user selects one repository from the accessible repository list.
-- Isoprism triggers `POST /api/v1/repos/{repoID}/index`.
-- The UI shows indexing status until the repo is ready or failed.
-- Once ready, the user is sent to `/{owner}/{repo}`.
+- Only one repository can be selected at a time for both pilot and regular users.
+- Pilot users are free-tier users. They can have only one indexed repository in active use. Selecting or indexing a different repository marks the previous selected repository as unused and schedules its indexed data for deletion after one day.
+- Regular users can keep multiple indexed repositories. Selecting a different repository changes the current workspace but does not uninstall previously indexed repositories.
+- If GitHub revokes access to a repository, Isoprism marks it revoked immediately, removes it from the authorized repository list, and deletes the repository row after one day.
+- If GitHub adds access to a repository, Isoprism shows it immediately as authorized but not indexed.
+- While indexing runs, the UI shows concrete job progress: phase, percentage, file/node/edge counters where available, and a rough ETA.
 
-For the beta, only one repository should be considered the active trial repository at a time. The backend should persist that active choice once beta invite tables exist.
+## 5. Callback Behavior
 
-## 5. Out of Scope
+The GitHub App callback distinguishes first-time setup from settings updates:
+
+- `setup_action=install` returns the user to `/onboarding/repos`.
+- `setup_action=update` returns the user to `/settings`.
+
+Returning a settings user to `/settings` prevents them from being asked to select a repository again just because they adjusted GitHub App permissions.
+
+## 6. Out of Scope
 
 - Organization settings pages
 - Settings categories or tabs
@@ -57,4 +72,3 @@ For the beta, only one repository should be considered the active trial reposito
 - Billing
 - Notifications
 - Audit logs
-- Multiple active repositories per pilot user

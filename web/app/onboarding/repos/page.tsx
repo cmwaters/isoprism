@@ -28,6 +28,8 @@ function ReposContent() {
       try {
         const { repos: repoList } = await apiFetch<{ repos: Repository[] }>("/api/v1/me/repos", token);
         setRepos(repoList ?? []);
+        const selectedRepo = (repoList ?? []).find((repo) => repo.is_selected && repo.index_status === "ready");
+        if (selectedRepo) router.push(`/${selectedRepo.full_name}`);
       } catch {
         setError("Failed to load repositories.");
       } finally {
@@ -87,7 +89,7 @@ function ReposContent() {
         <div style={{ maxWidth: 560, width: "100%" }}>
           <h1 style={{ color: "#111111", fontSize: 24, fontWeight: 600, margin: 0 }}>Select a repository</h1>
           <p style={{ color: "#666666", fontSize: 15, marginTop: 8, marginBottom: 24 }}>
-            Isoprism will index this repository&apos;s pull requests.
+            Choose the repository Isoprism should index first. Added repositories can be managed later in settings.
           </p>
 
           {error && <p style={{ color: "#EF4444", fontSize: 14, marginBottom: 16 }}>{error}</p>}
@@ -151,7 +153,7 @@ function ReposContent() {
                       <span style={{ color: isSelected ? "#6366F1" : "#111111", fontSize: 14, fontWeight: 600 }}>{name}</span>
                     </div>
                     <span style={{ background: "#EBE9E9", border: "1px solid #D4D4D4", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#888888" }}>
-                      {repo.default_branch}
+                      {repo.index_status === "ready" ? "indexed" : repo.default_branch}
                     </span>
                   </button>
                 );

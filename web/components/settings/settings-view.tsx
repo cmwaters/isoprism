@@ -3,7 +3,7 @@
 import type React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, GitBranch, Github, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { ArrowUpRight, Check, GitBranch, Github, Loader2, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import IndexingProgress from "@/components/onboarding/indexing-progress";
 import { apiFetch } from "@/lib/api";
@@ -68,7 +68,7 @@ export function SettingsView({
           avatarURL: metadata.avatar_url ?? metadata.picture,
         });
         setRepos(repoList ?? []);
-        setSelectedRepoID((repoList ?? []).find((repo) => repo.index_status === "ready")?.id ?? null);
+        setSelectedRepoID((repoList ?? []).find((repo) => repo.is_selected)?.id ?? null);
       } catch {
         if (!active) return;
         setError("Settings could not be loaded.");
@@ -86,29 +86,74 @@ export function SettingsView({
 
   const manageURL = "https://github.com/settings/installations";
 
-  const readyRepo = repos.find((repo) => repo.index_status === "ready") ?? null;
+  const selectedReadyRepo = repos.find((repo) => repo.is_selected && repo.index_status === "ready") ?? null;
   const indexingRepo = repos.find((repo) => repo.id === indexingRepoID) ?? null;
-  const selectedRepo = repos.find((repo) => repo.id === selectedRepoID) ?? null;
   const filteredRepos = repos.filter((repo) => repo.full_name.toLowerCase().includes(search.toLowerCase()));
 
-  async function indexSelectedRepo() {
-    if (!selectedRepoID) return;
+  async function indexSelectedRepo(repoID = selectedRepoID) {
+    if (!repoID) return;
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
     if (!token) return;
 
-    const repo = repos.find((candidate) => candidate.id === selectedRepoID);
-    setIndexingRepoID(selectedRepoID);
+    const repo = repos.find((candidate) => candidate.id === repoID);
+    setIndexingRepoID(repoID);
     setError("");
 
     try {
-      const result = await apiFetch<{ status: string }>(`/api/v1/repos/${selectedRepoID}/index`, token, { method: "POST" });
+      const result = await apiFetch<{ status: string }>(`/api/v1/repos/${repoID}/index`, token, { method: "POST" });
       if (result.status === "already_indexed" && repo) {
         router.push(`/${repo.full_name}`);
       }
     } catch {
       setError("Repository indexing could not be started.");
       setIndexingRepoID(null);
+    }
+  }
+
+  async function selectRepo(repo: Repository) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return;
+
+    if (repo.index_status !== "ready") {
+      setSelectedRepoID(repo.id);
+      await indexSelectedRepo(repo.id);
+      return;
+    }
+
+    try {
+      await apiFetch<{ status: string }>(`/api/v1/repos/${repo.id}/select`, token, { method: "POST" });
+      setRepos((current) => current.map((candidate) => ({
+        ...candidate,
+        is_selected: candidate.id === repo.id,
+        unused_at: candidate.id === repo.id ? undefined : candidate.unused_at,
+        purge_after: candidate.id === repo.id ? undefined : candidate.purge_after,
+      })));
+      setSelectedRepoID(repo.id);
+    } catch {
+      setError("Repository could not be selected.");
+    }
+  }
+
+  async function uninstallRepo(repo: Repository) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return;
+
+    try {
+      await apiFetch<{ status: string }>(`/api/v1/repos/${repo.id}/index`, token, { method: "DELETE" });
+      setRepos((current) => current.map((candidate) => candidate.id === repo.id
+        ? {
+            ...candidate,
+            is_selected: false,
+            unused_at: new Date().toISOString(),
+            purge_after: candidate.purge_after ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          }
+        : candidate));
+      if (selectedRepoID === repo.id) setSelectedRepoID(null);
+    } catch {
+      setError("Repository index could not be uninstalled.");
     }
   }
 
@@ -145,14 +190,14 @@ export function SettingsView({
         <header style={headerStyle}>
           <div>
             <div style={eyebrowStyle}>Settings</div>
-            <h1 style={titleStyle}>GitHub and repository</h1>
+            <h1 style={titleStyle}>GitHub and repositories</h1>
             <p style={copyStyle}>
-              Manage your GitHub connection and choose the single repository Isoprism should index for the beta.
+              Manage GitHub access, indexing, and the repository selected for review.
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {readyRepo && !embedded && (
-              <Link href={`/${readyRepo.full_name}`} style={secondaryActionStyle}>
+            {selectedReadyRepo && !embedded && (
+              <Link href={`/${selectedReadyRepo.full_name}`} style={secondaryActionStyle}>
                 Exit settings
               </Link>
             )}
@@ -192,37 +237,14 @@ export function SettingsView({
         <section style={sectionStyle}>
           <div style={sectionHeaderStyle}>
             <div>
-              <h2 style={sectionTitleStyle}>Current repository</h2>
-              <p style={copyStyle}>
-                Choose a different repository to swap the beta workspace. The new repository will be indexed before it opens.
-              </p>
+              <h2 style={sectionTitleStyle}>Repositories</h2>
+              <p style={copyStyle}>Authorized repositories appear here. Added repositories are visible before they are indexed.</p>
             </div>
-            {readyRepo && (
-              <Link href={`/${readyRepo.full_name}`} style={secondaryActionStyle}>
-                Open current repo
+            {selectedReadyRepo && (
+              <Link href={`/${selectedReadyRepo.full_name}`} style={secondaryActionStyle}>
+                Open selected repo
               </Link>
             )}
-          </div>
-
-          {readyRepo ? (
-            <div style={currentRepoStyle}>
-              <GitBranch size={18} color="#555555" />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={rowTitleStyle}>{readyRepo.full_name}</div>
-                <div style={rowMetaStyle}>{readyRepo.default_branch} · indexed</div>
-              </div>
-            </div>
-          ) : (
-            <Notice tone="neutral">No repository is indexed yet. Select one below to start.</Notice>
-          )}
-        </section>
-
-        <section style={sectionStyle}>
-          <div style={sectionHeaderStyle}>
-            <div>
-              <h2 style={sectionTitleStyle}>Swap repository</h2>
-              <p style={copyStyle}>Select one repository, then index it. Isoprism will show indexing progress before opening it.</p>
-            </div>
           </div>
 
           <label style={searchBoxStyle}>
@@ -240,34 +262,46 @@ export function SettingsView({
               <div style={emptyStyle}>No repositories match. Update GitHub App access if a repository is missing.</div>
             ) : (
               filteredRepos.map((repo) => {
-                const selected = repo.id === selectedRepoID;
+                const selected = Boolean(repo.is_selected);
+                const status = repoStatusLabel(repo);
+                const canOpen = selected && repo.index_status === "ready" && !repo.unused_at;
                 return (
-                  <button
+                  <div
                     key={repo.id}
                     style={repoButtonStyle(selected)}
-                    onClick={() => setSelectedRepoID(repo.id)}
                   >
                     <GitBranch size={18} color={selected ? "#111111" : "#666666"} />
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={rowTitleStyle}>{repo.full_name}</div>
-                      <div style={rowMetaStyle}>{repo.default_branch} · {repo.index_status}</div>
+                      <div style={rowMetaStyle}>{repo.default_branch} · {status}</div>
                     </div>
-                    <StatusChip>{repo.index_status === "ready" ? "Indexed" : repo.index_status}</StatusChip>
-                  </button>
+                    <StatusChip>{selected ? "Selected" : status}</StatusChip>
+                    <div style={repoActionsStyle}>
+                      {canOpen && (
+                        <Link href={`/${repo.full_name}`} style={secondaryActionStyle}>
+                          Open
+                        </Link>
+                      )}
+                      {!selected && repo.index_status === "ready" && !repo.unused_at && (
+                        <button onClick={() => selectRepo(repo)} style={iconActionStyle} aria-label={`Select ${repo.full_name}`}>
+                          <Check size={15} />
+                        </button>
+                      )}
+                      {repo.index_status !== "ready" && !repo.unused_at && (
+                        <button onClick={() => indexSelectedRepo(repo.id)} style={iconActionStyle} aria-label={`Index ${repo.full_name}`}>
+                          <RefreshCw size={15} />
+                        </button>
+                      )}
+                      {repo.index_status === "ready" && !repo.unused_at && (
+                        <button onClick={() => uninstallRepo(repo)} style={iconActionStyle} aria-label={`Uninstall index for ${repo.full_name}`}>
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 );
               })
             )}
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
-            <button
-              onClick={indexSelectedRepo}
-              disabled={!selectedRepo || indexingRepoID === selectedRepoID}
-              style={indexButtonStyle(Boolean(selectedRepo))}
-            >
-              {indexingRepoID === selectedRepoID ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-              {selectedRepo?.index_status === "ready" ? "Reindex selected repo" : "Index selected repo"}
-            </button>
           </div>
         </section>
       </main>
@@ -315,6 +349,13 @@ function StatusChip({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   );
+}
+
+function repoStatusLabel(repo: Repository) {
+  if (repo.unused_at) return "Unused";
+  if (repo.index_status === "ready") return "Indexed";
+  if (repo.index_status === "running" || repo.index_status === "pending") return "Not indexed";
+  return "Failed";
 }
 
 const mainStyle: React.CSSProperties = {
@@ -458,17 +499,6 @@ const secondaryActionStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-const currentRepoStyle: React.CSSProperties = {
-  minHeight: 58,
-  border: "1px solid #E0E0E0",
-  borderRadius: 8,
-  background: "#FAFAFA",
-  padding: "10px 12px",
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-};
-
 const searchBoxStyle: React.CSSProperties = {
   height: 40,
   display: "flex",
@@ -509,6 +539,27 @@ const repoButtonStyle = (selected: boolean): React.CSSProperties => ({
   textAlign: "left",
 });
 
+const repoActionsStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+};
+
+const iconActionStyle: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 6,
+  border: "1px solid #D4D4D4",
+  background: "#FFFFFF",
+  color: "#333333",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+};
+
 const rowTitleStyle: React.CSSProperties = {
   color: "#111111",
   fontSize: 14,
@@ -524,23 +575,6 @@ const rowMetaStyle: React.CSSProperties = {
   lineHeight: 1.45,
   marginTop: 2,
 };
-
-const indexButtonStyle = (enabled: boolean): React.CSSProperties => ({
-  height: 40,
-  borderRadius: 6,
-  border: "none",
-  background: "#111111",
-  color: "#FFFFFF",
-  padding: "0 14px",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  cursor: enabled ? "pointer" : "not-allowed",
-  opacity: enabled ? 1 : 0.45,
-  fontSize: 13,
-  fontWeight: 650,
-});
 
 const emptyStyle: React.CSSProperties = {
   border: "1px dashed #D4D4D4",

@@ -132,7 +132,14 @@ func (h *GitHubHandler) handleInstallationEvent(ctx context.Context, body []byte
 		return
 	}
 	if payload.Action == "deleted" {
-		_, _ = h.DB.Exec(ctx, `delete from github_installations where installation_id=$1`, payload.Installation.ID)
+		_, _ = h.DB.Exec(ctx, `
+			update repositories
+			set is_active=false,
+			    github_access_status='revoked',
+			    revoked_at=coalesce(revoked_at, now()),
+			    purge_after=coalesce(purge_after, now() + interval '1 day')
+			where installation_id in (select id from github_installations where installation_id=$1)
+		`, payload.Installation.ID)
 	}
 }
 
@@ -183,16 +190,31 @@ func (h *GitHubHandler) handleInstallationReposEvent(ctx context.Context, body [
 			continue
 		}
 		_, _ = h.DB.Exec(ctx, `
-			insert into repositories (user_id, installation_id, github_repo_id, full_name, default_branch, is_active)
-			values ($1,$2,$3,$4,$5,true)
+			insert into repositories (user_id, installation_id, github_repo_id, full_name, default_branch, is_active, github_access_status, authorized_at)
+			values ($1,$2,$3,$4,$5,true,'authorized',now())
 			on conflict (user_id, github_repo_id) do update set
 				full_name      = excluded.full_name,
 				default_branch = excluded.default_branch,
-				is_active      = true
+				is_active      = true,
+				github_access_status = 'authorized',
+				authorized_at  = now(),
+				revoked_at     = null,
+				main_commit_sha = case when repositories.github_access_status = 'revoked' then null else repositories.main_commit_sha end,
+				index_status   = case when repositories.github_access_status = 'revoked' then 'pending' else repositories.index_status end,
+				indexed_at     = case when repositories.github_access_status = 'revoked' then null else repositories.indexed_at end,
+				unused_at      = case when repositories.github_access_status = 'revoked' then null else repositories.unused_at end,
+				purge_after    = case when repositories.github_access_status = 'revoked' then null when repositories.unused_at is null then null else repositories.purge_after end
 		`, userID, dbInstallationID, repo.ID, repo.FullName, defaultBranch)
 	}
 	for _, repo := range payload.RepositoriesRemoved {
-		_, _ = h.DB.Exec(ctx, `update repositories set is_active=false where installation_id=$1 and github_repo_id=$2`, dbInstallationID, repo.ID)
+		_, _ = h.DB.Exec(ctx, `
+			update repositories
+			set is_active=false,
+			    github_access_status='revoked',
+			    revoked_at=coalesce(revoked_at, now()),
+			    purge_after=coalesce(purge_after, now() + interval '1 day')
+			where installation_id=$1 and github_repo_id=$2
+		`, dbInstallationID, repo.ID)
 	}
 }
 
@@ -256,23 +278,54 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 		if err != nil {
 			log.Printf("callback: list repos: %v", err)
 		} else {
+			activeRepoIDs := make([]int64, 0, len(repos))
 			for _, repo := range repos {
+				activeRepoIDs = append(activeRepoIDs, repo.ID)
 				if userID != "" {
 					_, _ = h.DB.Exec(ctx, `
-						insert into repositories (user_id, installation_id, github_repo_id, full_name, default_branch, is_active)
-						values ($1,$2,$3,$4,$5,true)
+						insert into repositories (user_id, installation_id, github_repo_id, full_name, default_branch, is_active, github_access_status, authorized_at)
+						values ($1,$2,$3,$4,$5,true,'authorized',now())
 						on conflict (user_id, github_repo_id) do update set
 							full_name      = excluded.full_name,
 							default_branch = excluded.default_branch,
-							is_active      = true
+							is_active      = true,
+							github_access_status = 'authorized',
+							authorized_at  = now(),
+							revoked_at     = null,
+							main_commit_sha = case when repositories.github_access_status = 'revoked' then null else repositories.main_commit_sha end,
+							index_status   = case when repositories.github_access_status = 'revoked' then 'pending' else repositories.index_status end,
+							indexed_at     = case when repositories.github_access_status = 'revoked' then null else repositories.indexed_at end,
+							unused_at      = case when repositories.github_access_status = 'revoked' then null else repositories.unused_at end,
+							purge_after    = case when repositories.github_access_status = 'revoked' then null when repositories.unused_at is null then null else repositories.purge_after end
 					`, userID, dbInstallationID, repo.ID, repo.FullName, repo.DefaultBranch)
+				}
+			}
+			if userID != "" {
+				if len(activeRepoIDs) == 0 {
+					_, _ = h.DB.Exec(ctx, `
+						update repositories
+						set is_active=false,
+						    github_access_status='revoked',
+						    revoked_at=coalesce(revoked_at, now()),
+						    purge_after=coalesce(purge_after, now() + interval '1 day')
+						where user_id=$1 and installation_id=$2
+					`, userID, dbInstallationID)
+				} else {
+					_, _ = h.DB.Exec(ctx, `
+						update repositories
+						set is_active=false,
+						    github_access_status='revoked',
+						    revoked_at=coalesce(revoked_at, now()),
+						    purge_after=coalesce(purge_after, now() + interval '1 day')
+						where user_id=$1 and installation_id=$2 and not (github_repo_id = any($3::bigint[]))
+					`, userID, dbInstallationID, activeRepoIDs)
 				}
 			}
 		}
 	}
 
 	if setupAction == "update" {
-		http.Redirect(w, r, redirectBaseURL+"/onboarding/repos", http.StatusFound)
+		http.Redirect(w, r, redirectBaseURL+"/settings", http.StatusFound)
 	} else {
 		http.Redirect(w, r, redirectBaseURL+"/onboarding/repos", http.StatusFound)
 	}
