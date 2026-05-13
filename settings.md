@@ -57,7 +57,7 @@ Each row should show repository name, default branch, selected/indexed/unused st
 
 ## 5. Callback Behavior
 
-The GitHub App callback is available at `/github/callback`, with `/api/v1/github/callback` retained as a compatibility alias. It re-syncs GitHub authorization and then decides from Isoprism account state:
+The GitHub App callback is available at `/api/v1/github/callback`. It re-syncs GitHub authorization and then decides from Isoprism account state:
 
 - Already setup accounts return to `/settings`, which resolves the signed-in user's `/{user}/settings` route.
 - Accounts that have not selected or indexed a repository yet return to `/onboarding/repos`.

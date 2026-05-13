@@ -384,7 +384,7 @@ All webhooks verified with `X-Hub-Signature-256` HMAC before processing.
 
 ### Installation Flow
 
-`GET /github/callback` receives `installation_id`, `setup_action`, and `state` (user's Supabase UUID). `GET /api/v1/github/callback` is kept as a compatibility alias for existing GitHub App configuration.
+`GET /api/v1/github/callback` receives `installation_id`, `setup_action`, and `state` (user's Supabase UUID).
 
 For the beta flow, `state` must preserve both the authenticated user/session identity and the active beta invite context. After GitHub App install or settings update, the callback re-syncs repository authorization and then decides from Isoprism account state where the user should land.
 
@@ -549,7 +549,6 @@ api/
 **Public**
 ```
 POST /webhooks/github
-GET  /github/callback
 GET  /api/v1/github/callback
 GET  /api/v1/auth/status
 POST /api/v1/pilot/register
