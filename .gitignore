@@ -8,6 +8,7 @@ web/out/
 .env.local
 .env*.local
 api/.env
+.worktree.env
 
 # Go
 api/bin/
@@ -25,3 +26,6 @@ Thumbs.db
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Codex worktrees
+.codex/worktrees/

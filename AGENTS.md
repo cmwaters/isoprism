@@ -7,6 +7,7 @@ This is a single-person prototype. Use `main` for all development and production
 - Push `main` when changes are verified; Vercel deploys the web app and Railway deploys API changes
 - Keep `preview` only as a synced mirror of `main` while any external tooling still expects it
 - Never create new branches or open pull requests
+- For parallel local ideas, short-lived local-only worktree branches are allowed because Git requires each worktree to have a distinct checked-out branch. Merge verified work back into `main`, push `main`, then delete the local branch/worktree.
 - Don't worry about backwards compatibility or legacy code
 
 # Development flow
@@ -19,6 +20,39 @@ This is a single-person prototype. Use `main` for all development and production
 - For API work, run the API locally when needed from `api/` with `go run ./cmd/api` (defaults to `http://localhost:8080`), then push the API change to `main`
 - After local verification passes, commit and push changes to `main`
 - Use the hosted deployment at https://isoprism.com for final verification after `main` deploys
+
+## Codex worktrees
+
+Use the repo scripts when running multiple ideas in parallel:
+
+```
+scripts/codex-worktree-setup.sh
+scripts/codex-worktree-setup.sh graph-context 3001
+scripts/codex-worktree-setup.sh onboarding-polish 3002
+```
+
+In Codex Desktop, use `scripts/codex-worktree-setup.sh` as the project setup script. Codex provides `CODEX_SOURCE_TREE_PATH` and `CODEX_WORKTREE_PATH`; the script configures that worktree, copies local env files when present, installs `web/` dependencies, and writes `.worktree.env` with `NEXT_PUBLIC_API_URL=https://api.isoprism.com`.
+
+When run manually without `CODEX_WORKTREE_PATH`, the setup script creates a local Git worktree under `$HOME/.codex/worktrees/<thread-and-idea>/isoprism`.
+
+Supported overrides:
+
+```
+CODEX_SOURCE_TREE_PATH=/Users/callum/Developer/isoprism
+CODEX_WORKTREE_PATH=/Users/callum/.codex/worktrees/example/isoprism
+CODEX_WORKTREE_PARENT=/Users/callum/.codex/worktrees
+CODEX_WORKTREE_SLUG=my-session
+CODEX_WORKTREE_BRANCH=idea/my-idea
+CODEX_WEB_PORT=3003
+CODEX_API_URL=https://api.isoprism.com
+```
+
+After a worktree branch has been merged into `main`, clean it up with:
+
+```
+scripts/codex-worktree-cleanup.sh
+scripts/codex-worktree-cleanup.sh graph-context
+```
 
 # Debug tooling
 
