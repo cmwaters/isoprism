@@ -346,9 +346,9 @@ const repoPRBadgeStyle: CSSProperties = {
 
 const middlePanelTitleStyle: CSSProperties = {
   color: "#111111",
-  fontSize: 22,
+  fontSize: 15,
   fontWeight: 600,
-  lineHeight: 1.35,
+  lineHeight: 1.4,
   margin: "0 0 12px 0",
 };
 
