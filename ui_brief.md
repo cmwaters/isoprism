@@ -327,12 +327,14 @@ The admin console is for managing pilot users and submitted forms. It is protect
 **Pilot Users:**
 - Tester name
 - Email
-- Registration form link/id
+- Registration Form and Review Form buttons. Review Form is disabled until the tester submits the end-of-pilot review.
 - Invite state: registered / invited / active / completed
-- Selected repository
+- Selected repository, shown without the `https://github.com/` prefix and linked to the admin repo viewer when available
 - Trial start/end dates
 - Issue and feature submission counts
 - Questionnaire status
+- Copyable invite link
+- Review form link
 - Send invite email
 - Send review email
 - Add or delete users manually

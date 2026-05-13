@@ -13,6 +13,7 @@ type PilotUser = {
   token?: string | null;
   user_id?: string | null;
   accepted_at?: string | null;
+  selected_repo_id?: string | null;
   selected_repo_full_name?: string | null;
   trial_starts_at?: string | null;
   trial_ends_at?: string | null;
@@ -277,6 +278,10 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
         const open = expanded === user.id;
         const linkedForms = forms.get(user.id) ?? [];
         const registrationFormID = linkedForms.find((form) => form.form_type === "registration")?.id;
+        const reviewFormID = linkedForms.find((form) => form.form_type === "review")?.id;
+        const repoLabel = repoDisplayName(user.selected_repo_full_name ?? user.public_repo_url);
+        const repoHref = user.selected_repo_id && user.user_id ? `/admin/repos/${encodeURIComponent(user.selected_repo_id)}?user=${encodeURIComponent(user.user_id)}` : undefined;
+        const reviewLink = user.token ? `/pilot/review/${encodeURIComponent(user.token)}` : undefined;
         const canSendReviewEmail = Boolean(user.email && user.token && user.user_id);
         const reviewDisabledReason = !user.email
           ? "A review email needs an email address."
@@ -287,28 +292,41 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
               : undefined;
         return (
           <div key={user.id} style={userCardStyle}>
-            <button style={userButtonStyle} onClick={() => setExpanded(open ? "" : user.id)}>
+            <div style={userButtonStyle}>
               <div>
-                <strong>{user.name}</strong>
-                <div style={mutedStyle}>{user.email ?? "No email"}</div>
+                <button style={rowToggleButtonStyle} onClick={() => setExpanded(open ? "" : user.id)}>
+                  <strong>{user.name}</strong>
+                  <div style={mutedStyle}>{user.email ?? "No email"}</div>
+                </button>
               </div>
-              <div>{user.selected_repo_full_name ?? user.public_repo_url ?? "No repo yet"}</div>
+              <div>
+                {repoHref ? (
+                  <a style={inlineLinkStyle} href={repoHref}>
+                    {repoLabel}
+                  </a>
+                ) : repoLabel}
+              </div>
               <div>{user.issue_count} issues / {user.feature_count} features</div>
               <div>{user.questionnaire_submitted_at ? "Review done" : user.review_sent_at ? "Review sent" : user.status}</div>
-            </button>
+            </div>
             {open && (
               <div style={expandedStyle}>
                 <Info label="Started" value={user.trial_starts_at ? formatDate(user.trial_starts_at) : "Not started"} />
-                <Info label="Invite link" value={user.link || "Not generated"} />
-                <Info label="Languages" value={user.pilot_languages ?? "None"} />
-                <Info
-                  label="Registration form"
-                  value={registrationFormID ? (
-                    <button style={linkButtonStyle} onClick={() => onSelectForm(registrationFormID)}>
-                      {registrationFormID}
-                    </button>
-                  ) : "None"}
-                />
+                <Info label="Invite link" value={user.link ? <CopyButton value={user.link} /> : "Not generated"} />
+                <Info label="Review link" value={reviewLink ? <a style={inlineLinkStyle} href={reviewLink}>Open review form</a> : "Not generated"} />
+                <div style={formButtonGroupStyle}>
+                  <button style={registrationFormID ? secondaryButtonStyle : disabledButtonStyle} disabled={!registrationFormID} onClick={() => registrationFormID && onSelectForm(registrationFormID)}>
+                    Registration Form
+                  </button>
+                  <button
+                    style={reviewFormID ? secondaryButtonStyle : disabledButtonStyle}
+                    title={reviewFormID ? undefined : "This pilot user has not submitted the review form yet."}
+                    disabled={!reviewFormID}
+                    onClick={() => reviewFormID && onSelectForm(reviewFormID)}
+                  >
+                    Review Form
+                  </button>
+                </div>
                 <div style={actionsRowStyle}>
                   <button style={secondaryButtonStyle} disabled={!user.email || busy === `invite:${user.id}`} onClick={() => onAction(user, "invite")}>{busy === `invite:${user.id}` ? "Sending..." : "Send invite"}</button>
                   <button
@@ -327,6 +345,26 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
         );
       })}
     </section>
+  );
+}
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <button style={linkButtonStyle} onClick={copy} title={value}>
+      {copied ? "Copied" : value}
+    </button>
   );
 }
 
@@ -354,6 +392,14 @@ function titleCase(value: string) {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
+function repoDisplayName(value?: string | null) {
+  if (!value) return "No repo yet";
+  return value
+    .replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/^github\.com\//i, "")
+    .replace(/\/$/, "");
+}
+
 const mainStyle: React.CSSProperties = { width: "min(1180px, 100%)", margin: "0 auto", padding: "42px 24px" };
 const loginStyle: React.CSSProperties = { width: "min(420px, 100%)", margin: "0 auto", padding: "120px 24px 48px" };
 const stackStyle: React.CSSProperties = { display: "grid", gap: 14 };
@@ -375,12 +421,15 @@ const dangerButtonStyle: React.CSSProperties = { ...secondaryButtonStyle, border
 const buttonRowStyle: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
 const actionsRowStyle: React.CSSProperties = { gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "nowrap" };
 const linkButtonStyle: React.CSSProperties = { border: 0, padding: 0, background: "transparent", color: "#111", cursor: "pointer", textDecoration: "underline", font: "inherit", textAlign: "left", overflowWrap: "anywhere" };
+const inlineLinkStyle: React.CSSProperties = { color: "#111", textDecoration: "underline", overflowWrap: "anywhere" };
+const formButtonGroupStyle: React.CSSProperties = { display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" };
 const tableHeaderStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", padding: "0 8px 8px" };
 const detailCardStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: "10px 8px" };
 const summaryStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, cursor: "pointer", fontSize: 13 };
 const preStyle: React.CSSProperties = { margin: "12px 0 0", padding: 12, borderRadius: 6, background: "#F7F7F7", overflow: "auto", fontSize: 12 };
 const userCardStyle: React.CSSProperties = { border: "1px solid #E0E0E0", borderRadius: 8, overflow: "hidden", marginTop: 8, background: "#F7F7F7" };
-const userButtonStyle: React.CSSProperties = { width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 0.7fr", gap: 12, border: 0, background: "transparent", padding: 12, cursor: "pointer", textAlign: "left", alignItems: "center" };
+const userButtonStyle: React.CSSProperties = { width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 0.7fr", gap: 12, border: 0, background: "transparent", padding: 12, textAlign: "left", alignItems: "center", fontSize: 13 };
+const rowToggleButtonStyle: React.CSSProperties = { border: 0, background: "transparent", padding: 0, cursor: "pointer", textAlign: "left", font: "inherit", color: "inherit" };
 const expandedStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 };
 const mutedStyle: React.CSSProperties = { color: "#777", fontSize: 12, marginTop: 2 };
 const smallLabelStyle: React.CSSProperties = { color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 4 };
