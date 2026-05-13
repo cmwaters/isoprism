@@ -27,5 +27,5 @@ Thumbs.db
 # Claude Code worktrees
 .claude/worktrees/
 
-# Codex worktrees
-.codex/worktrees/
+# Codex local state
+.codex/
