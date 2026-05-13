@@ -81,6 +81,44 @@ type User struct{}
 	}
 }
 
+func TestGoStructFieldsAreExtracted(t *testing.T) {
+	src := []byte(`package coregrpc
+
+import core "github.com/cometbft/cometbft/rpc/core"
+
+type BlockAPI struct {
+	env *core.Environment
+	heightListeners map[int64]chan string
+	done chan struct{}
+}
+`)
+
+	nodes := Parse(src, "rpc/grpc/api.go")
+	var blockAPI *Node
+	for i := range nodes {
+		if nodes[i].FullName == "rpc/grpc:coregrpc.BlockAPI" {
+			blockAPI = &nodes[i]
+			break
+		}
+	}
+	if blockAPI == nil {
+		t.Fatalf("BlockAPI struct node missing: %#v", nodes)
+	}
+	want := map[string]string{
+		"env":             "*core.Environment",
+		"heightListeners": "map[int64]chan string",
+		"done":            "chan struct{}",
+	}
+	if len(blockAPI.Fields) != len(want) {
+		t.Fatalf("fields = %#v, want %d fields", blockAPI.Fields, len(want))
+	}
+	for _, field := range blockAPI.Fields {
+		if want[field.Name] != field.Type {
+			t.Fatalf("unexpected field %#v in %#v", field, blockAPI.Fields)
+		}
+	}
+}
+
 func TestGoFieldChainResolvesThroughImportedStructFields(t *testing.T) {
 	files := map[string][]byte{
 		"rpc/grpc/api.go": []byte(`package coregrpc

@@ -112,7 +112,7 @@ export interface GraphNodeTest {
 export interface GraphEdge {
   source_id: string;
   destination_id: string;
-  edge_kind: "calls" | "owns_method";
+  edge_kind: "calls" | "owns_method" | "uses_type";
   change_type?: "added" | "deleted";
   weight?: number;
   changed_weight?: number;

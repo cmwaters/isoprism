@@ -1719,7 +1719,13 @@ function TypeContentsSection({
     if (target?.id === node.id) return [];
     return [{ ref, target }];
   });
-  const hasContents = methodRows.length > 0 || refRows.length > 0;
+  const typeUsageRows = outgoingTypeUsageEdges(node.id, edges).flatMap((edge) => {
+    const target = allNodes.find((candidate) => candidate.id === edge.destination_id);
+    if (!target || target.id === node.id || seen.has(target.id)) return [];
+    seen.add(target.id);
+    return [target];
+  });
+  const hasContents = methodRows.length > 0 || typeUsageRows.length > 0 || refRows.length > 0;
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -1758,6 +1764,33 @@ function TypeContentsSection({
                       {pkg && <span style={{ fontSize: 11, color: "#EF5DA8", display: "block" }}>{pkg}</span>}
                       <span style={{ display: "block", fontSize: 13 }}>{symbolTitle(target)}</span>
                     </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {typeUsageRows.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <p style={{ color: "#AAAAAA", fontSize: 11, letterSpacing: "0.08em", margin: "0 0 2px", textTransform: "uppercase" }}>Used Types</p>
+              {typeUsageRows.map((target) => {
+                const pkg = target ? pkgLabel(target) : undefined;
+                return (
+                  <button
+                    key={target.id}
+                    type="button"
+                    onClick={() => onSelectNode(target.id)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#222222",
+                      cursor: "pointer",
+                      padding: "4px 0",
+                      textAlign: "left",
+                      width: "100%",
+                    }}
+                  >
+                    {pkg && <span style={{ fontSize: 11, color: "#EF5DA8", display: "block" }}>{pkg}</span>}
+                    <span style={{ display: "block", fontSize: 13 }}>{symbolTitle(target)}</span>
                   </button>
                 );
               })}
@@ -2148,6 +2181,10 @@ function incomingCallEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
 
 function outgoingOwnershipEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
   return edges.filter((e) => e.edge_kind === "owns_method" && e.source_id === nodeID);
+}
+
+function outgoingTypeUsageEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
+  return edges.filter((e) => e.edge_kind === "uses_type" && e.source_id === nodeID);
 }
 
 function incomingOwnershipEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {

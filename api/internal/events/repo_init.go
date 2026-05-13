@@ -219,7 +219,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 			updateIndexJobProgress(ctx, db, repoID, headSHA, "building_edges", "Building call graph edges", len(sourceFiles), len(sourceFiles), len(allNodes), len(allNodes), edgeFilesTotal, edgeFilesDone)
 		}
 	}
-	for _, edge := range receiverOwnershipEdges(allNodes) {
+	for _, edge := range semanticTypeEdges(allNodes) {
 		sourceID, ok := nodeIDs[edge.SourceFullName]
 		if !ok {
 			continue

@@ -86,7 +86,7 @@ create table code_edges (
   source_id   uuid not null references code_nodes(id) on delete cascade,
   destination_id uuid not null references code_nodes(id) on delete cascade,
   edge_kind   text not null default 'calls'
-              check (edge_kind in ('calls', 'owns_method')),
+              check (edge_kind in ('calls', 'owns_method', 'uses_type')),
   created_at  timestamptz not null default now(),
   unique (repo_id, commit_sha, source_id, destination_id, edge_kind)
 );

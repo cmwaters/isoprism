@@ -23,6 +23,7 @@ type Node struct {
 	LineEnd      int
 	Inputs       []Param
 	Outputs      []Param
+	Fields       []Param
 	Language     string
 	Kind         string
 	BodyHash     string
@@ -169,16 +170,20 @@ func parseGoTree(src []byte, filePath string, root *sitter.Node) []Node {
 					return
 				}
 				kind := "type"
+				var fields []Param
 				if typeNode := spec.ChildByFieldName("type"); typeNode != nil {
 					switch typeNode.Kind() {
 					case "struct_type":
 						kind = "struct"
+						fields = goStructFields(src, typeNode)
 					case "interface_type":
 						kind = "interface"
 					}
 				}
 				name := text(src, nameNode)
-				nodes = append(nodes, makeBaseNode(src, filePath, spec, name, prefix+"."+name, "go", kind, isTestFile || isTestPackage, false))
+				node := makeBaseNode(src, filePath, spec, name, prefix+"."+name, "go", kind, isTestFile || isTestPackage, false)
+				node.Fields = fields
+				nodes = append(nodes, node)
 			})
 			return false
 		}
@@ -297,6 +302,29 @@ func goOutputs(src []byte, result *sitter.Node) []Param {
 		return []Param{{Type: text(src, result)}}
 	}
 	return goParams(src, result)
+}
+
+func goStructFields(src []byte, structNode *sitter.Node) []Param {
+	if structNode == nil {
+		return nil
+	}
+	var out []Param
+	forEachDescendant(structNode, "field_declaration", func(n *sitter.Node) {
+		typeNode := n.ChildByFieldName("type")
+		if typeNode == nil {
+			return
+		}
+		typ := text(src, typeNode)
+		names := goFieldNames(src, n, typeNode)
+		if len(names) == 0 {
+			out = append(out, Param{Type: typ})
+			return
+		}
+		for _, name := range names {
+			out = append(out, Param{Name: name, Type: typ})
+		}
+	})
+	return out
 }
 
 func parseScriptTree(src []byte, filePath, lang string, root *sitter.Node) []Node {

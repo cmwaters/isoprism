@@ -115,13 +115,13 @@ Large PRs can skip per-function AI summaries so the graph and changed-node overl
 
 Each PR stores the latest processing snapshot on `pull_requests`: `processor_commit_sha`, `processed_at`, `processing_error`, and `processing_stats`. The stats JSON records file counts, supported-file counts, parsed node counts, detected semantic changes, persisted `pr_node_changes`, and call-edge persistence counters so empty PR views can be debugged without guessing which deployed API revision processed them.
 
-Graph responses are function-level. The API returns canonical `full_name` values, but the UI splits them into a pink package/receiver label and a black title that contains only the function or method name. Nodes expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records.
+Graph responses are function-level plus type nodes. The API returns canonical `full_name` values, but the UI splits them into a pink package/receiver label and a black title that contains only the function or method name. Function and method nodes expose `inputs[]`/`outputs[]` as structured `{name?, type, node_id?}` records. Struct field type relationships are represented as `uses_type` graph edges from the struct node to the indexed type node so they participate in expansion and boundary behavior.
 
 PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail. Dynamic expansion uses `POST /api/v1/repos/{repoID}/graph/expand` with PR graph context; edge clicks issue that expansion for both edge endpoints and merge the returned `nodes` and `edges`.
 
 Graph nodes can be expanded from the canvas. Clicking a function or method selects it and, on the first click for that visible node, calls `POST /api/v1/repos/{repoID}/graph/expand` with the selected node ID, current visible node IDs, and either repo context or PR context (`{ mode: "pr", pr_id }`). The API returns hidden direct callers/callees plus visible edges for the expanded set. The client merges nodes by `id`, merges edges by `source_id|destination_id|edge_kind`, keeps existing node positions stable, preserves the selected-node highlight across the node rebuild, places newly loaded nodes near the expanded node before the edge-length relaxation pass, and preserves the current camera viewport instead of refitting. Selecting another node animates to that component at the current zoom level.
 
-Type/class nodes use the same expansion endpoint but initially keep the result in panel-only detail state. The side panel shows a `Contents` tab for type nodes instead of source code. Contents lists methods from `owns_method` edges first, then any type references resolved from structured `inputs[]` and `outputs[]`; clicking a row materializes that component in the current graph session and wires it to already visible edges where available. Owned methods are not drawn on the canvas until the reviewer clicks a method row.
+Type/class nodes use the same expansion endpoint but initially keep the result in panel-only detail state. The side panel shows a `Contents` tab for type nodes instead of source code. Contents lists methods from `owns_method` edges first, used field types from `uses_type` edges next, then any type references resolved from structured `inputs[]` and `outputs[]`; clicking a row materializes that component in the current graph session and wires it to already visible edges where available. Owned methods and used types are not drawn on the canvas until the reviewer clicks a row.
 
 PR review does not have a separate route or page.
 
@@ -139,7 +139,7 @@ The side panel has two modes:
 
 - `Overview`: repo, PR, or node summary, calls, callers, and tests. PR context shows GitHub-equivalent file diffs from the PR files API, including test files, plus a separate semantic graph-change list when graph nodes are available.
 - `Code`: a lazy-loaded source viewer for the selected function or method. PR changed nodes automatically show the full component with changed lines highlighted. Repo nodes and unchanged context nodes show plain source.
-- `Contents`: shown for type/class nodes instead of `Code`. It lists other types referenced by that type and lets the reviewer add a referenced type to the current graph on demand.
+- `Contents`: shown for type/class nodes instead of `Code`. It lists owned methods, used field types, and other type references, and lets the reviewer add a resolved referenced type to the current graph on demand.
 
 The overview/code/contents icon controls switch the side panel mode without changing the selected graph node.
 

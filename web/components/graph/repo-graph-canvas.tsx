@@ -43,7 +43,7 @@ function InnerRepoGraphCanvas({
     source: e.source_id,
     target: e.destination_id,
     type: "smartBezier",
-    style: { stroke: "#888888", strokeWidth: 1, strokeDasharray: e.edge_kind === "owns_method" ? "3 4" : undefined },
+    style: { stroke: "#888888", strokeWidth: 1, strokeDasharray: e.edge_kind && e.edge_kind !== "calls" ? "3 4" : undefined },
     markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color: "#888888" },
   })), [graph.edges]);
 

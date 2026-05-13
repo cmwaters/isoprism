@@ -461,6 +461,8 @@ function mergeGraphNode(existing: APIGraphNode, incoming: APIGraphNode): APIGrap
   }
   return {
     ...existing,
+    inputs: existing.inputs?.length ? existing.inputs : incoming.inputs,
+    outputs: existing.outputs?.length ? existing.outputs : incoming.outputs,
     boundary: incoming.boundary,
     degree: Math.max(existing.degree ?? 0, incoming.degree ?? 0),
     tests: existing.tests?.length ? existing.tests : incoming.tests,
@@ -751,7 +753,7 @@ function InnerCanvas({
       const color = isConnected ? (apiEdge?.change_type === "added" || apiEdge?.change_type === "deleted" ? baseColor : "#333333") : isDimmed ? dimmedColor : baseColor;
       const weightedWidth = Math.min(5, 1 + Math.log2(1 + (apiEdge?.weight ?? 1)) * 0.6);
       const width = isConnected ? Math.max(2, weightedWidth) : weightedWidth;
-      const dash = apiEdge?.change_type === "deleted" ? "6 5" : apiEdge?.edge_kind === "owns_method" ? "3 4" : undefined;
+      const dash = apiEdge?.change_type === "deleted" ? "6 5" : apiEdge && apiEdge.edge_kind !== "calls" ? "3 4" : undefined;
       return {
         ...e,
         style: { stroke: color, strokeWidth: width, strokeDasharray: dash },

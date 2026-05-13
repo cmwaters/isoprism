@@ -430,6 +430,7 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 	}
 	// Include all known nodes at this SHA for cross-file resolution
 	refNodeIDs := make(map[string]string)
+	knownTypeNodes := []parser.Node{}
 	knownRows, _ := db.Query(ctx, `select full_name from code_nodes where repo_id=$1 and commit_sha=$2`, repoID, headSHA)
 	if knownRows != nil {
 		for knownRows.Next() {
@@ -440,18 +441,21 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 		knownRows.Close()
 	}
 	refRows, _ := db.Query(ctx, `
-		select full_name, id from code_nodes
+		select full_name, id, kind from code_nodes
 		where repo_id=$1 and commit_sha in ($2, $3)
 		order by case when commit_sha=$2 then 0 else 1 end
 	`, repoID, headSHA, baseCommit)
 	if refRows != nil {
 		for refRows.Next() {
-			var fn, id string
-			refRows.Scan(&fn, &id)
+			var fn, id, kind string
+			refRows.Scan(&fn, &id, &kind)
 			if _, exists := refNodeIDs[fn]; !exists {
 				refNodeIDs[fn] = id
 			}
 			nodeByName[fn] = true
+			if kind == "struct" || kind == "type" || kind == "interface" {
+				knownTypeNodes = append(knownTypeNodes, parser.Node{FullName: fn, Kind: kind})
+			}
 		}
 		refRows.Close()
 	}
@@ -546,7 +550,7 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 			}
 		}
 	}
-	for _, edge := range receiverOwnershipEdges(allHeadNodes) {
+	for _, edge := range semanticTypeEdgesWithKnownTypes(allHeadNodes, append(allHeadNodes, knownTypeNodes...)) {
 		var sourceID, destinationID string
 		db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
 			repoID, headSHA, edge.SourceFullName).Scan(&sourceID)
@@ -563,7 +567,7 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 			stats.CallEdgePersistErrors++
 		}
 	}
-	for _, edge := range receiverOwnershipEdges(allBaseNodes) {
+	for _, edge := range semanticTypeEdgesWithKnownTypes(allBaseNodes, append(allBaseNodes, knownTypeNodes...)) {
 		var sourceID, destinationID string
 		db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
 			repoID, baseCommit, edge.SourceFullName).Scan(&sourceID)

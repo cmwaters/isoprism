@@ -15,7 +15,7 @@ alter table code_edges
 
 alter table code_edges
   add constraint code_edges_edge_kind_check
-  check (edge_kind in ('calls', 'owns_method'));
+  check (edge_kind in ('calls', 'owns_method', 'uses_type'));
 
 alter table code_edges
   add constraint code_edges_repo_commit_source_destination_kind_key
