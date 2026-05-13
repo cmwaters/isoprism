@@ -26,6 +26,7 @@ import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import { SettingsView } from "@/components/settings/settings-view";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel, { ComponentChangePanel, type SelectedPRChange } from "./node-detail-panel";
+import { expansionOptionsForVisibleSelection, isTypeNode } from "./graph-selection";
 
 export const nodeTypes = { graphNode: GraphNodeComponent };
 export const edgeTypes = { smartBezier: SmartBezierEdge };
@@ -578,11 +579,6 @@ function sameTestEntry(test: APIGraphNode, ref: { full_name: string; file_path: 
   return test.full_name === ref.full_name && test.file_path === ref.file_path;
 }
 
-function isTypeNode(node: APIGraphNode | null | undefined): boolean {
-  if (!node) return false;
-  return ["class", "interface", "struct", "type"].includes(node.kind);
-}
-
 function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | null, extraNodeIDs: Set<string> = new Set()): UnifiedGraph {
   if (!isPRGraph(graph) || !testNode) return graph;
 
@@ -922,7 +918,7 @@ function InnerCanvas({
     }
     if (node && baseVisibleGraph.nodes.some((candidate) => candidate.id === id)) {
       selectGraphNode(id);
-      void expandGraphNode(id, { detailOnlyForTypes: isTypeNode(node) });
+      void expandGraphNode(id, expansionOptionsForVisibleSelection(node));
       return;
     }
 
