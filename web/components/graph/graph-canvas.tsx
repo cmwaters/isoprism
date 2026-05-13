@@ -20,7 +20,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphEdge, GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
+import { GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import { SettingsView } from "@/components/settings/settings-view";
@@ -42,7 +42,6 @@ type MeasuredNode = {
   data?: { node?: APIGraphNode };
 };
 export type PanelMode = "overview" | "code";
-type CollapseMode = "function" | "class" | "package";
 
 const DIFF_PILLS_HEIGHT = 28;
 const CARD_CORNER_MARGIN = 20;
@@ -531,170 +530,6 @@ function collapseRenamedGraphNodes(graph: UnifiedGraph): UnifiedGraph {
   };
 }
 
-function nodePackagePath(node: APIGraphNode): string {
-  if (node.package_path) return node.package_path;
-  const path = node.file_path.replaceAll("\\", "/");
-  const slash = path.lastIndexOf("/");
-  return slash >= 0 ? path.slice(0, slash) : ".";
-}
-
-function nodeGroupLabel(node: APIGraphNode, mode: CollapseMode, ownedBy: Map<string, APIGraphNode>): string {
-  if (mode === "package") return nodePackagePath(node);
-  if (mode === "class") {
-    const owner = ownedBy.get(node.id);
-    if (owner) return owner.full_name;
-    if (node.kind === "struct" || node.kind === "type" || node.kind === "interface") return node.full_name;
-  }
-  return node.full_name;
-}
-
-function ownerMapForGraph(graph: UnifiedGraph): Map<string, APIGraphNode> {
-  const nodeByID = new Map(graph.nodes.map((node) => [node.id, node]));
-  const ownedBy = new Map<string, APIGraphNode>();
-  graph.edges.forEach((edge) => {
-    if (edge.edge_kind !== "owns_method") return;
-    const owner = nodeByID.get(edge.source_id);
-    if (owner) ownedBy.set(edge.destination_id, owner);
-  });
-  return ownedBy;
-}
-
-function visualIDForNode(node: APIGraphNode, mode: CollapseMode, ownedBy: Map<string, APIGraphNode>): string {
-  return mode === "function" ? node.id : `${mode}:${nodeGroupLabel(node, mode, ownedBy)}`;
-}
-
-function nodeTypeRank(nodeType: APIGraphNode["node_type"]): number {
-  switch (nodeType) {
-    case "changed": return 0;
-    case "entrypoint": return 1;
-    case "caller": return 2;
-    case "callee": return 3;
-    default: return 4;
-  }
-}
-
-function collapseGraph(graph: UnifiedGraph, mode: CollapseMode): UnifiedGraph {
-  if (mode === "function") return graph;
-
-  const ownedBy = ownerMapForGraph(graph);
-
-  const groupKeyByNodeID = new Map<string, string>();
-  const grouped = new Map<string, APIGraphNode[]>();
-  graph.nodes.forEach((node) => {
-    const key = visualIDForNode(node, mode, ownedBy);
-    groupKeyByNodeID.set(node.id, key);
-    grouped.set(key, [...(grouped.get(key) ?? []), node]);
-  });
-
-  const nodes: APIGraphNode[] = [];
-  grouped.forEach((children, key) => {
-    const first = children[0];
-    const title = key.slice(mode.length + 1);
-    const bestType = children.reduce((best, child) => nodeTypeRank(child.node_type) < nodeTypeRank(best) ? child.node_type : best, "context" as APIGraphNode["node_type"]);
-    nodes.push({
-      ...first,
-      id: key,
-      full_name: mode === "package" ? title : title,
-      file_path: mode === "package" ? title : first.file_path,
-      package_path: mode === "package" ? title : nodePackagePath(first),
-      line_start: Math.min(...children.map((node) => node.line_start || 0)),
-      line_end: Math.max(...children.map((node) => node.line_end || 0)),
-      inputs: [],
-      outputs: [],
-      kind: mode,
-      node_type: bestType,
-      summary: `${children.length} ${mode === "package" ? "components" : "members"}`,
-      change_summary: children.filter((node) => node.change_type).length > 0
-        ? `${children.filter((node) => node.change_type).length} changed components`
-        : undefined,
-      diff_hunk: undefined,
-      change_type: children.some((node) => node.change_type) ? "modified" : undefined,
-      lines_added: children.reduce((sum, node) => sum + (node.lines_added ?? 0), 0),
-      lines_removed: children.reduce((sum, node) => sum + (node.lines_removed ?? 0), 0),
-      weight: children.length,
-      degree: 0,
-      graph_depth: 0,
-      boundary: false,
-      tests: children.flatMap((node) => node.tests ?? []),
-    });
-  });
-
-  const edgeMap = new Map<string, GraphEdge>();
-  graph.edges.forEach((edge) => {
-    const source = groupKeyByNodeID.get(edge.source_id);
-    const target = groupKeyByNodeID.get(edge.destination_id);
-    if (!source || !target || source === target) return;
-    const key = `${source}|${target}|${edge.edge_kind}`;
-    const existing = edgeMap.get(key);
-    if (existing) {
-      existing.weight = (existing.weight ?? 1) + (edge.weight ?? 1);
-      existing.underlying_edge_count = (existing.underlying_edge_count ?? 1) + (edge.underlying_edge_count ?? 1);
-      return;
-    }
-    edgeMap.set(key, {
-      source_id: source,
-      destination_id: target,
-      edge_kind: edge.edge_kind,
-      change_type: edge.change_type,
-      weight: edge.weight ?? 1,
-      underlying_edge_count: edge.underlying_edge_count ?? 1,
-      sample_edges: edge.sample_edges,
-    });
-  });
-
-  const degree = new Map<string, number>();
-  edgeMap.forEach((edge) => {
-    degree.set(edge.source_id, (degree.get(edge.source_id) ?? 0) + 1);
-    degree.set(edge.destination_id, (degree.get(edge.destination_id) ?? 0) + 1);
-  });
-
-  return {
-    ...graph,
-    nodes: nodes.map((node) => ({ ...node, degree: degree.get(node.id) ?? 0 })),
-    edges: [...edgeMap.values()],
-  };
-}
-
-function seedPositionsForCollapseMode(
-  graph: UnifiedGraph,
-  fromMode: CollapseMode,
-  toMode: CollapseMode,
-  currentPositions: Record<string, Point>
-): Record<string, Point> {
-  const fromOwners = ownerMapForGraph(graph);
-  const toOwners = fromOwners;
-  const grouped = new Map<string, APIGraphNode[]>();
-  graph.nodes.forEach((node) => {
-    const key = visualIDForNode(node, toMode, toOwners);
-    grouped.set(key, [...(grouped.get(key) ?? []), node]);
-  });
-
-  const seeded: Record<string, Point> = {};
-  grouped.forEach((children, targetID) => {
-    const sourcePositions = children
-      .map((child) => currentPositions[visualIDForNode(child, fromMode, fromOwners)] ?? currentPositions[child.id])
-      .filter((position): position is Point => Boolean(position));
-    if (sourcePositions.length === 0) return;
-    const center = sourcePositions.reduce((sum, position) => ({
-      x: sum.x + position.x / sourcePositions.length,
-      y: sum.y + position.y / sourcePositions.length,
-    }), { x: 0, y: 0 });
-    if (toMode !== "function") {
-      seeded[targetID] = center;
-      return;
-    }
-    children.forEach((child, index) => {
-      const angle = (index / Math.max(children.length, 1)) * Math.PI * 2;
-      const radius = children.length > 1 ? 95 : 0;
-      seeded[child.id] = {
-        x: center.x + Math.cos(angle) * radius,
-        y: center.y + Math.sin(angle) * radius,
-      };
-    });
-  });
-  return seeded;
-}
-
 function sameTestEntry(test: APIGraphNode, ref: { full_name: string; file_path: string }): boolean {
   return test.full_name === ref.full_name && test.file_path === ref.file_path;
 }
@@ -785,7 +620,6 @@ function InnerCanvas({
   const layoutPositionsRef = useRef<Record<string, Point>>({});
   const pendingLayoutAnchorRef = useRef<Point | undefined>(undefined);
   const pendingPinnedIDsRef = useRef<Set<string>>(new Set());
-  const [collapseMode, setCollapseMode] = useState<CollapseMode>("function");
   const [expandedEdgeKeys, setExpandedEdgeKeys] = useState<Set<string>>(() => new Set());
   const [expandingEdgeKey, setExpandingEdgeKey] = useState<string | null>(null);
   const [expandingNodeIDs, setExpandingNodeIDs] = useState<Record<string, boolean>>({});
@@ -799,13 +633,9 @@ function InnerCanvas({
   const selectedTestNode = selectedPRChange?.type === "node"
     ? activePRTestChanges.find((node) => node.id === selectedPRChange.nodeID) ?? null
     : null;
-  const functionVisibleGraph = useMemo(
+  const visibleGraph = useMemo(
     () => buildTestFocusedGraph(baseVisibleGraph, selectedTestNode),
     [baseVisibleGraph, selectedTestNode]
-  );
-  const visibleGraph = useMemo(
-    () => collapseGraph(functionVisibleGraph, collapseMode),
-    [collapseMode, functionVisibleGraph]
   );
 
   const selectGraphNode = useCallback((id: string) => {
@@ -818,7 +648,7 @@ function InnerCanvas({
       setSelectedPRChange(null);
       return;
     }
-    if (isPRGraph(baseVisibleGraph) && apiNode && !apiNode.id.startsWith("class:") && !apiNode.id.startsWith("package:")) {
+    if (isPRGraph(baseVisibleGraph) && apiNode) {
       setSelectedPRChange({ type: "node", nodeID: apiNode.id });
     } else {
       setSelectedPRChange(null);
@@ -872,7 +702,6 @@ function InnerCanvas({
     layoutPositionsRef.current = {};
     setLayoutPositions({});
     setExpandedEdgeKeys(new Set());
-    setCollapseMode("function");
   }, [graph]);
 
   useEffect(() => {
@@ -973,7 +802,7 @@ function InnerCanvas({
   );
 
   const onEdgeClick: EdgeMouseHandler = useCallback(async (_, edge) => {
-    if (!isPRGraph(activeGraph) || edge.source.startsWith("class:") || edge.source.startsWith("package:") || edge.target.startsWith("class:") || edge.target.startsWith("package:")) {
+    if (!isPRGraph(activeGraph)) {
       return;
     }
     const apiEdge = visibleGraph.edges.find((candidate) => candidate.source_id === edge.source && candidate.destination_id === edge.target);
@@ -1048,7 +877,6 @@ function InnerCanvas({
     setExpandedEdgeKeys(new Set());
     layoutPositionsRef.current = {};
     setLayoutPositions({});
-    setCollapseMode("function");
     const cached = prGraphCache[prNumber];
     if (cached) {
       setActiveGraph(cached);
@@ -1071,22 +899,8 @@ function InnerCanvas({
     setExpandedEdgeKeys(new Set());
     layoutPositionsRef.current = {};
     setLayoutPositions({});
-    setCollapseMode("function");
     setActiveGraph(graph);
   }, [graph]);
-
-  const onChangeCollapseMode = useCallback((mode: CollapseMode) => {
-    if (mode === collapseMode) return;
-    const seeded = seedPositionsForCollapseMode(functionVisibleGraph, collapseMode, mode, layoutPositionsRef.current);
-    if (Object.keys(seeded).length > 0) {
-      layoutPositionsRef.current = seeded;
-      setLayoutPositions(seeded);
-    }
-    setSelectedNode(null);
-    setSelectedPRChange(null);
-    setPanelMode("overview");
-    setCollapseMode(mode);
-  }, [collapseMode, functionVisibleGraph]);
 
   const totalNodes = visibleGraph.nodes.length;
   const maxNodes = 20;
@@ -1202,41 +1016,6 @@ function InnerCanvas({
           >
             <Background color="#D8D6D6" gap={20} size={1} />
           </ReactFlow>
-
-
-          <div style={{
-            position: "absolute",
-            top: 20,
-            right: 24,
-            display: "flex",
-            background: "#FFFFFF",
-            border: "1px solid #D8D6D6",
-            borderRadius: 6,
-            overflow: "hidden",
-            zIndex: 10,
-          }}>
-            {(["function", "class", "package"] as CollapseMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => onChangeCollapseMode(mode)}
-                style={{
-                  border: 0,
-                  borderLeft: mode === "function" ? 0 : "1px solid #E4E4E4",
-                  background: collapseMode === mode ? "#111111" : "#FFFFFF",
-                  color: collapseMode === mode ? "#FFFFFF" : "#444444",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  height: 32,
-                  padding: "0 12px",
-                  textTransform: "capitalize",
-                }}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
 
           <div style={{
             position: "absolute",

@@ -103,8 +103,8 @@ The repo route renders one persistent `GraphCanvas` and side panel:
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
 - PR graphs initially show changed production nodes plus exactly one hop of production callers/callees in either direction. Context-to-context nodes beyond that first hop are not included until the reviewer expands the graph.
 - Clicking a visible PR graph edge requests one additional one-hop production neighborhood around that edge's endpoints and merges the returned nodes/edges into the current graph session.
-- Graph placement uses a deterministic edge-length relaxation layout. Visible edges pull connected nodes together, collision/repulsion keep cards readable, and existing node positions are preserved during expansion/collapse so the map does not reshuffle abruptly.
-- The graph canvas has function, class, and package collapse modes. Class/package views are client-derived from the loaded graph, aggregate inter-group edge weights, hide intra-group edges, and seed expanded child positions around the collapsed group position.
+- Graph placement uses a deterministic edge-length relaxation layout. Visible edges pull connected nodes together, collision/repulsion keep cards readable, and existing node positions are preserved during expansion so the map does not reshuffle abruptly.
+- Global function/class/package collapse controls are not part of the current graph UI. Future collapse should be per-component so a reviewer can collapse or expand a specific component cluster without changing the whole map.
 
 During beta, the PR queue only includes open, non-draft PRs targeting the repository's indexed default branch whose `base_commit_sha` exactly matches the repository's indexed `main_commit_sha`. PRs from other base branches, or PRs whose base SHA is out of sync with the indexed default-branch graph, are hidden rather than shown with approximate graph data.
 
