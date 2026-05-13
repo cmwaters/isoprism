@@ -117,13 +117,14 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 		return fmt.Errorf("%s", reason)
 	}
 
+	existingChangeSummaries := loadExistingPRChangeSummaries(ctx, db, prID)
+
 	// Mark running
 	if _, err := db.Exec(ctx, `delete from pr_node_changes where pull_request_id=$1`, prID); err != nil {
 		log.Printf("OpenPR: failed to clear stale node changes for pr %s: %v", prID, err)
 		markPRProcessing(ctx, db, prID, "failed", stats, "failed to clear stale node changes: "+err.Error())
 		return err
 	}
-	clearPRAIFields(ctx, db, prID)
 
 	// Fetch changed files
 	changedFiles, err := ghClient.ListPullRequestFiles(ctx, owner, repo, prNumber)
@@ -372,6 +373,10 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 			continue
 		}
 
+		var summary *string
+		if s, ok := existingChangeSummaries[nodeID]; ok {
+			summary = &s
+		}
 		diffHunk := c.diffHunk
 
 		tag, err := db.Exec(ctx, `
@@ -383,7 +388,7 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 				diff_hunk      = excluded.diff_hunk,
 				old_full_name  = excluded.old_full_name,
 				old_file_path  = excluded.old_file_path
-		`, prID, nodeID, c.changeType, nil, nullIfEmpty(diffHunk), c.oldFullName, c.oldFilePath)
+		`, prID, nodeID, c.changeType, summary, nullIfEmpty(diffHunk), c.oldFullName, c.oldFilePath)
 		if err != nil {
 			log.Printf("OpenPR: failed to persist node change %s for pr %s: %v", c.node.FullName, prID, err)
 			stats.NodeChangePersistErrors++
@@ -403,20 +408,10 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 	}
 
 	if _, err := db.Exec(ctx, `
-		insert into pr_analyses (
-			pull_request_id, summary, nodes_changed, risk_score, risk_label,
-			ai_model, generated_at, analysis_payload, prompt_version
-		)
-		values ($1,null,$2,null,null,null,null,null,null)
+		insert into pr_analyses (pull_request_id, nodes_changed)
+		values ($1,$2)
 		on conflict (pull_request_id) do update set
-			nodes_changed = excluded.nodes_changed,
-			summary = null,
-			risk_score = null,
-			risk_label = null,
-			ai_model = null,
-			generated_at = null,
-			analysis_payload = null,
-			prompt_version = null
+			nodes_changed = excluded.nodes_changed
 	`, prID, nodesChanged); err != nil {
 		log.Printf("OpenPR: failed to persist PR analysis for pr %s: %v", prID, err)
 		stats.AnalysisPersistErrors++
@@ -658,6 +653,34 @@ func ReprocessPRAI(ctx context.Context, db *pgxpool.Pool, appClient *github.AppC
 	return nil
 }
 
+func loadExistingPRChangeSummaries(ctx context.Context, db *pgxpool.Pool, prID string) map[string]string {
+	summaries := map[string]string{}
+	rows, err := db.Query(ctx, `
+		select node_id, change_summary
+		from pr_node_changes
+		where pull_request_id = $1
+		  and change_summary is not null
+		  and change_summary <> ''
+	`, prID)
+	if err != nil {
+		log.Printf("OpenPR: failed to load existing change summaries for pr %s: %v", prID, err)
+		return summaries
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var nodeID, summary string
+		if err := rows.Scan(&nodeID, &summary); err != nil {
+			continue
+		}
+		summaries[nodeID] = summary
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("OpenPR: failed reading existing change summaries for pr %s: %v", prID, err)
+	}
+	return summaries
+}
+
 func buildPRAnalysisInput(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, prID string) (ai.PRAnalysisInput, map[string][]string, map[string][]string, error) {
 	var repoID, fullName string
 	var installationID int64
@@ -769,21 +792,6 @@ func persistUnavailablePRAnalysis(ctx context.Context, db *pgxpool.Pool, prID st
 			prompt_version = null
 	`, prID)
 	return err
-}
-
-func clearPRAIFields(ctx context.Context, db *pgxpool.Pool, prID string) {
-	_, _ = db.Exec(ctx, `update pr_node_changes set change_summary=null where pull_request_id=$1`, prID)
-	_, _ = db.Exec(ctx, `
-		update pr_analyses
-		set summary=null,
-		    risk_score=null,
-		    risk_label=null,
-		    ai_model=null,
-		    generated_at=null,
-		    analysis_payload=null,
-		    prompt_version=null
-		where pull_request_id=$1
-	`, prID)
 }
 
 func nullIfEmpty(s string) interface{} {

@@ -157,7 +157,7 @@ The product should keep model selection simple. The only default AI task is PR a
 | GitHub PR reopened | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.reopened`. |
 | GitHub PR marked ready for review | `OpenPR` | `EnrichPRChanges` | Triggered by `pull_request.ready_for_review`. |
 | Developer fully reprocesses a PR | `OpenPR` | `EnrichPRChanges` | Called by `POST /debug/prs/{prID}/reprocess`; rebuilds graph data first, then reruns AI. |
-| Developer reprocesses only PR graph data | `ReprocessPRGraph` | none | Called by `POST /debug/prs/{prID}/reprocess/graph`; rebuilds `pr_node_changes`, PR call edges, changed test nodes, and processing metadata, then clears stale AI fields. |
+| Developer reprocesses only PR graph data | `ReprocessPRGraph` | none | Called by `POST /debug/prs/{prID}/reprocess/graph`; rebuilds `pr_node_changes`, PR call edges, changed test nodes, and processing metadata while preserving existing AI summaries for unchanged node IDs. Use full `/debug/prs/{prID}/reprocess` when graph data and AI output should both be refreshed. |
 | Developer reprocesses only PR AI output | `ReprocessPRAI` | `EnrichPRChanges` | Called by `POST /debug/prs/{prID}/reprocess/ai`; requires existing `pr_node_changes` and updates only AI summaries, PR summary, risk score, model, payload, and prompt version. |
 | GitHub PR merged | `MergePR` | none | Advances repository state; no AI call. |
 
