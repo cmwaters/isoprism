@@ -272,13 +272,20 @@ function RepoSummaryPanel({
                 )}
                 <span style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                   {pr.author_login && (
-                    <span style={repoPRBadgeStyle}>
+                    <span style={prAuthorPillStyle}>
                       {pr.author_login}
                     </span>
                   )}
-                  <span style={repoPRBadgeStyle}>
-                    {formatPRDiff(pr)}
-                  </span>
+                  {pr.additions > 0 && (
+                    <span style={additionPillStyle}>
+                      +{pr.additions}
+                    </span>
+                  )}
+                  {pr.deletions > 0 && (
+                    <span style={deletionPillStyle}>
+                      -{pr.deletions}
+                    </span>
+                  )}
                   <span style={repoPRBadgeStyle}>
                     {openTimeLabels.get(pr.id) || "open"}
                   </span>
@@ -329,10 +336,6 @@ function formatOpenTime(openedAt: string, nowMs = Date.now()): string {
   return `${Math.floor(daysOpen / 7)}w`;
 }
 
-function formatPRDiff(pr: Pick<QueuePR, "additions" | "deletions">): string {
-  return `+${pr.additions || 0} -${pr.deletions || 0}`;
-}
-
 const repoPRBadgeStyle: CSSProperties = {
   background: "#F0F0F0",
   border: "1px solid #D4D4D4",
@@ -342,6 +345,33 @@ const repoPRBadgeStyle: CSSProperties = {
   fontSize: 11,
   lineHeight: 1.3,
   padding: "2px 6px",
+};
+
+const prAuthorPillStyle: CSSProperties = {
+  background: "#F0F0F0",
+  border: "1px solid #D4D4D4",
+  borderRadius: 12,
+  color: "#555555",
+  fontSize: 11,
+  padding: "2px 10px",
+};
+
+const additionPillStyle: CSSProperties = {
+  background: "#DCFCE7",
+  borderRadius: 12,
+  color: "#16A34A",
+  fontSize: 11,
+  fontWeight: 500,
+  padding: "2px 8px",
+};
+
+const deletionPillStyle: CSSProperties = {
+  background: "#FEE2E2",
+  borderRadius: 12,
+  color: "#EF4444",
+  fontSize: 11,
+  fontWeight: 500,
+  padding: "2px 8px",
 };
 
 const middlePanelTitleStyle: CSSProperties = {
@@ -473,20 +503,17 @@ function PRSummaryPanel({
       {/* Author + diff stats */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         {pr.author_login && (
-          <span style={{
-            background: "#F0F0F0", border: "1px solid #D4D4D4",
-            borderRadius: 12, padding: "2px 10px", fontSize: 11, color: "#555555",
-          }}>
+          <span style={prAuthorPillStyle}>
             {pr.author_login}
           </span>
         )}
         {totalAdded > 0 && (
-          <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>
+          <span style={additionPillStyle}>
             +{totalAdded}
           </span>
         )}
         {totalRemoved > 0 && (
-          <span style={{ background: "#FEE2E2", color: "#EF4444", borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 500 }}>
+          <span style={deletionPillStyle}>
             -{totalRemoved}
           </span>
         )}

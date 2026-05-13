@@ -95,7 +95,7 @@ The primary review route mirrors the GitHub repository path:
 The repo route renders one persistent `GraphCanvas` and side panel:
 
 - A repo graph for the whole indexed system at function-level detail.
-- A ranked PR list in the repo overview panel. Each PR card shows the PR number in the graph accent pink, title, PR diff totals, a risk label derived from numeric `risk_score` where used, and a client-updated compact open-time badge (`5h`, `3d`, `1w`).
+- A ranked PR list in the repo overview panel. Each PR card shows the PR number in the graph accent pink, title, author pill, colored addition/deletion pills, a risk label derived from numeric `risk_score` where used, and a client-updated compact open-time badge (`5h`, `3d`, `1w`).
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
