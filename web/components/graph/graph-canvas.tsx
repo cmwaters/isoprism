@@ -620,6 +620,7 @@ function InnerCanvas({
   const layoutPositionsRef = useRef<Record<string, Point>>({});
   const pendingLayoutAnchorRef = useRef<Point | undefined>(undefined);
   const pendingPinnedIDsRef = useRef<Set<string>>(new Set());
+  const suppressNextFitViewRef = useRef(false);
   const [expandedEdgeKeys, setExpandedEdgeKeys] = useState<Set<string>>(() => new Set());
   const [expandingEdgeKey, setExpandingEdgeKey] = useState<string | null>(null);
   const [expandingNodeIDs, setExpandingNodeIDs] = useState<Record<string, boolean>>({});
@@ -722,7 +723,12 @@ function InnerCanvas({
       setLayoutPositions(nextPositions);
       return next;
     });
-    setTimeout(() => fitView({ padding: 0.15 }), 50);
+    if (suppressNextFitViewRef.current) {
+      suppressNextFitViewRef.current = false;
+      return;
+    }
+    const timeout = window.setTimeout(() => fitView({ padding: 0.15 }), 50);
+    return () => window.clearTimeout(timeout);
   }, [visibleGraph, baseEdges, fitView, initialNodes, setNodes]);
 
   useEffect(() => {
@@ -778,6 +784,7 @@ function InnerCanvas({
         }),
       });
       setExpandedNodeIDs((current) => ({ ...current, [nodeID]: true }));
+      suppressNextFitViewRef.current = true;
       setActiveGraph((current) => {
         if (graphContextKey(current) !== contextKey) return current;
         return mergeExpansionGraph(current, response);
@@ -838,6 +845,7 @@ function InnerCanvas({
       setExpandedEdgeKeys((current) => new Set([...current, key]));
       setExpandedNodeIDs((current) => ({ ...current, [edge.source]: true, [edge.target]: true }));
       const contextKey = graphContextKey(activeGraph);
+      suppressNextFitViewRef.current = true;
       setActiveGraph((current) => {
         if (graphContextKey(current) !== contextKey) return current;
         return mergeExpansionGraph(mergeExpansionGraph(current, sourceExpansion), targetExpansion);
