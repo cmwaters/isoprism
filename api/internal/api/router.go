@@ -204,6 +204,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient
 			r.Get("/status", repoHandler.GetRepoStatus)
 			r.Get("/queue", queueHandler.GetQueue)
 			r.Get("/graph", graphHandler.GetRepoGraph)
+			r.Post("/graph/expand", graphHandler.ExpandGraph)
 			r.Get("/nodes/{nodeID}/code", graphHandler.GetRepoNodeCode)
 			r.Get("/prs/{prID}/graph", graphHandler.GetGraph)
 			r.Get("/prs/number/{number}/graph", graphHandler.GetGraphByNumber)

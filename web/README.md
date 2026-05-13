@@ -114,6 +114,8 @@ Graph responses are function-level. The API returns canonical `full_name` values
 
 PR graph responses still use `file_path + full_name` as the semantic identity for function-level visible nodes. If the same function exists as both an indexed-main node and a PR-head node, the API collapses them into one visual node and prefers the changed PR-head metadata. Edges are rewritten after this collapse, and test nodes are filtered from the visible graph; tests remain available through each production node's `tests[]` detail.
 
+Boundary nodes can be expanded from the canvas. Clicking any node selects it; if the node has `boundary: true`, the client also calls `POST /api/v1/repos/{repoID}/graph/expand` with the selected node ID, current visible node IDs, and either repo context or PR context (`{ mode: "pr", pr_id }`). The API returns hidden direct callers/callees plus visible edges for the expanded set. The client merges nodes by `id`, merges edges by `caller_id|callee_id`, keeps existing node positions stable, and places newly loaded callers above/left and callees below/right of the clicked node so reviewers can continue traversing without losing their mental map.
+
 PR review does not have a separate route or page.
 
 During the beta, this repository is the tester's selected trial repository. Feedback controls for bug reports and feature requests should be available from this review workspace and should capture current context such as repository, PR number, selected node, and browser path.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useEffect, useMemo } from "react";
+import { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Node,
@@ -19,7 +19,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
+import { GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import { SettingsView } from "@/components/settings/settings-view";
@@ -413,6 +413,99 @@ export function hexGridLayout(nodes: Node[], edges: Edge[], graphNodes: APIGraph
   }));
 }
 
+type PendingExpansionLayout = {
+  expandedID: string;
+  newNodeIDs: string[];
+};
+
+function graphContextKey(graph: UnifiedGraph): string {
+  return isPRGraph(graph) ? `pr:${graph.pr.id}` : "repo";
+}
+
+function edgeKey(edge: { source_id: string; destination_id: string; edge_kind?: string }): string {
+  return `${edge.source_id}|${edge.destination_id}|${edge.edge_kind ?? "calls"}`;
+}
+
+function mergeExpansionGraph(graph: UnifiedGraph, response: GraphExpansionResponse): UnifiedGraph {
+  const incomingNodeIDs = new Set(response.nodes.map((node) => node.id));
+  const nodeByID = new Map<string, APIGraphNode>();
+
+  for (const node of graph.nodes) {
+    if (node.id === response.expanded_node_id) {
+      nodeByID.set(node.id, { ...node, boundary: response.has_more });
+    } else {
+      nodeByID.set(node.id, incomingNodeIDs.has(node.id) ? { ...node, boundary: false } : node);
+    }
+  }
+  for (const node of response.nodes) {
+    nodeByID.set(node.id, node);
+  }
+
+  const edgeByKey = new Map<string, UnifiedGraph["edges"][number]>();
+  for (const edge of graph.edges) {
+    edgeByKey.set(edgeKey(edge), edge);
+  }
+  for (const edge of response.edges) {
+    edgeByKey.set(edgeKey(edge), edge);
+  }
+
+  return {
+    ...graph,
+    nodes: Array.from(nodeByID.values()),
+    edges: Array.from(edgeByKey.values()),
+  };
+}
+
+function positionExpandedNodes(
+  currentNodes: Node[],
+  nextNodes: Node[],
+  edges: Edge[],
+  pending: PendingExpansionLayout
+): Node[] {
+  const currentByID = new Map(currentNodes.map((node) => [node.id, node]));
+  const anchor = currentByID.get(pending.expandedID);
+  if (!anchor) return nextNodes;
+
+  const newNodeIDSet = new Set(pending.newNodeIDs);
+  const placed = new Map<string, number>();
+  const nodeIndex = (_nodeID: string, bucket: string) => {
+    const count = placed.get(bucket) ?? 0;
+    placed.set(bucket, count + 1);
+    return count;
+  };
+  const relationBucket = (nodeID: string) => {
+    const callsExpanded = edges.some((edge) => edge.source === nodeID && edge.target === pending.expandedID);
+    const calledByExpanded = edges.some((edge) => edge.source === pending.expandedID && edge.target === nodeID);
+    if (callsExpanded && !calledByExpanded) return "caller";
+    if (calledByExpanded && !callsExpanded) return "callee";
+    return "context";
+  };
+  const offsetFor = (nodeID: string) => {
+    const bucket = relationBucket(nodeID);
+    const index = nodeIndex(nodeID, bucket);
+    const spread = (index - 1) * 120;
+    if (bucket === "caller") return { x: -HEX_X + spread, y: -HEX_Y };
+    if (bucket === "callee") return { x: HEX_X + spread, y: HEX_Y };
+    return { x: HEX_X, y: (index - 1) * 160 };
+  };
+
+  return nextNodes.map((node) => {
+    const existing = currentByID.get(node.id);
+    if (existing) {
+      return { ...node, position: existing.position, selected: existing.selected };
+    }
+    if (!newNodeIDSet.has(node.id)) {
+      return node;
+    }
+    const offset = offsetFor(node.id);
+    const position = {
+      x: anchor.position.x + offset.x,
+      y: anchor.position.y + offset.y,
+    };
+    return { ...node, position };
+  });
+}
+
 // ── Inner canvas ──────────────────────────────────────────────────────────────
 type UnifiedGraph = GraphResponse | RepoGraphResponse;
 
@@ -552,7 +645,11 @@ function InnerCanvas({
   const [componentPanelWidth, setComponentPanelWidth] = useState(COMPONENT_PANEL_DEFAULT_WIDTH);
   const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandingNodeIDs, setExpandingNodeIDs] = useState<Record<string, boolean>>({});
+  const [expandedNodeIDs, setExpandedNodeIDs] = useState<Record<string, boolean>>({});
+  const pendingExpansionLayout = useRef<PendingExpansionLayout | null>(null);
   const baseVisibleGraph = useMemo(() => collapseRenamedGraphNodes(activeGraph), [activeGraph]);
+  const activeGraphKey = useMemo(() => graphContextKey(activeGraph), [activeGraph]);
   const activePRTestChanges = useMemo(
     () => isPRGraph(activeGraph) ? activeGraph.test_changes ?? [] : [],
     [activeGraph]
@@ -626,6 +723,12 @@ function InnerCanvas({
   }, [graph]);
 
   useEffect(() => {
+    const pending = pendingExpansionLayout.current;
+    if (pending) {
+      setNodes((current) => positionExpandedNodes(current, initialNodes, baseEdges, pending));
+      pendingExpansionLayout.current = null;
+      return;
+    }
     setNodes(hexGridLayout(initialNodes, baseEdges, visibleGraph.nodes));
     setTimeout(() => fitView({ padding: 0.15 }), 50);
   }, [visibleGraph, baseEdges, fitView, initialNodes, setNodes]);
@@ -658,13 +761,54 @@ function InnerCanvas({
     setSelectedNode(null);
     setSelectedPRChange(null);
     setPanelMode("overview");
-  }, [activeGraph]);
+    setExpandingNodeIDs({});
+    setExpandedNodeIDs({});
+    pendingExpansionLayout.current = null;
+  }, [activeGraphKey]);
+
+  const expandGraphNode = useCallback(async (nodeID: string) => {
+    const node = baseVisibleGraph.nodes.find((n) => n.id === nodeID);
+    if (!node?.boundary || expandingNodeIDs[nodeID] || (expandedNodeIDs[nodeID] && !node.boundary)) return;
+
+    const contextKey = graphContextKey(activeGraph);
+    setExpandingNodeIDs((current) => ({ ...current, [nodeID]: true }));
+    try {
+      const response = await apiFetch<GraphExpansionResponse>(`/api/v1/repos/${repoID}/graph/expand`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          node_id: nodeID,
+          visible_node_ids: baseVisibleGraph.nodes.map((n) => n.id),
+          graph_context: isPRGraph(activeGraph)
+            ? { mode: "pr", pr_id: activeGraph.pr.id }
+            : { mode: "repo" },
+        }),
+      });
+      pendingExpansionLayout.current = {
+        expandedID: response.expanded_node_id,
+        newNodeIDs: response.nodes.map((n) => n.id),
+      };
+      setExpandedNodeIDs((current) => ({ ...current, [nodeID]: true }));
+      setActiveGraph((current) => {
+        if (graphContextKey(current) !== contextKey) return current;
+        return mergeExpansionGraph(current, response);
+      });
+    } catch (error) {
+      console.error("Graph expansion failed", error);
+    } finally {
+      setExpandingNodeIDs((current) => {
+        const next = { ...current };
+        delete next[nodeID];
+        return next;
+      });
+    }
+  }, [activeGraph, baseVisibleGraph.nodes, expandedNodeIDs, expandingNodeIDs, repoID, token]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
       selectGraphNode(node.id);
+      void expandGraphNode(node.id);
     },
-    [selectGraphNode]
+    [expandGraphNode, selectGraphNode]
   );
 
   const onPaneClick = useCallback(() => {

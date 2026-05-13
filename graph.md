@@ -142,6 +142,58 @@ new_seed_set = previous_seed_set + boundary_node
 
 The client requests missing nodes needed to restore the same depth around the expanded seed set.
 
+### Dynamic Expansion API
+
+The interactive graph expands one hop at a time from the user's selected node.
+Clicking a node always selects it. If the node is marked `boundary: true`, the
+client also requests hidden direct callers and callees:
+
+```http
+POST /api/v1/repos/{repoID}/graph/expand
+```
+
+```json
+{
+  "node_id": "expanded-node-id",
+  "visible_node_ids": ["already-visible-id"],
+  "graph_context": { "mode": "repo" }
+}
+```
+
+For PR graphs, the context is:
+
+```json
+{
+  "graph_context": { "mode": "pr", "pr_id": "pull-request-id" }
+}
+```
+
+The response returns only newly loaded nodes, plus all visible edges whose
+endpoints are in the previous visible set or the newly returned set:
+
+```ts
+interface GraphExpansionResponse {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  expanded_node_id: string;
+  has_more: boolean;
+  hidden_neighbor_count: number;
+}
+```
+
+Neighbor ranking is deterministic:
+
+1. Changed PR nodes.
+2. Entrypoints.
+3. Higher-degree nodes.
+4. Nodes in the same file or package as the expanded node.
+5. File path, line number, and ID.
+
+The expansion endpoint caps each click at `graphExpansionMaxNodes`. If more
+hidden neighbors remain, `has_more` stays true and the clicked node remains a
+boundary node. The client may request the same node again; because it sends the
+updated visible node IDs, the API returns the next hidden neighbors.
+
 ## Visible Graph Budget
 
 The layout should not render every node as a full card.
