@@ -12,7 +12,7 @@ import { renamedFromTitle, symbolContextLabel, symbolTitle } from "./symbol-form
 export type SelectedPRChange =
   | { type: "node"; nodeID: string }
   | { type: "file"; fileKey: string }
-  | { type: "pr-description"; title: string; body: string }
+  | { type: "pr-description"; body: string; htmlURL: string }
   | { type: "issue"; issue: GitHubIssueReference };
 
 interface Props {
@@ -33,6 +33,8 @@ interface Props {
   token: string;
   nodeCodeCache: Record<string, NodeCodeResponse>;
   onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
+  issueDescriptionCache?: Record<string, GitHubIssueDescription>;
+  onCacheIssueDescription?: (key: string, issue: GitHubIssueDescription) => void;
   width: number;
   minWidth: number;
   maxWidth: number;
@@ -389,6 +391,10 @@ function findIssueReference(body: string, repoFullName: string): GitHubIssueRefe
   return null;
 }
 
+export function issueReferenceKey(issue: GitHubIssueReference): string {
+  return `${issue.owner}/${issue.repo}#${issue.number}`;
+}
+
 function PRSummaryPanel({
   pr,
   repo,
@@ -469,19 +475,19 @@ function PRSummaryPanel({
             </ReactMarkdown>
           </div>
           {hasAISummary && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10, marginBottom: 18 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10, marginBottom: 18, width: "100%" }}>
               <button
                 type="button"
-                onClick={() => onSelectPRChange?.({ type: "pr-description", title: pr.title, body: pr.body })}
+                onClick={() => onSelectPRChange?.({ type: "pr-description", body: pr.body, htmlURL: pr.html_url })}
                 style={inlinePanelLinkStyle}
               >
-                Full PR Description
+                View PR Description
               </button>
               {issue && (
                 <button
                   type="button"
                   onClick={() => onSelectPRChange?.({ type: "issue", issue })}
-                  style={inlinePanelLinkStyle}
+                  style={{ ...inlinePanelLinkStyle, marginLeft: "auto" }}
                 >
                   View Issue
                 </button>
@@ -659,6 +665,8 @@ export function ComponentChangePanel({
   token,
   nodeCodeCache,
   onCacheNodeCode,
+  issueDescriptionCache,
+  onCacheIssueDescription,
   onSelectNode,
   onClose,
   width,
@@ -675,6 +683,8 @@ export function ComponentChangePanel({
   token: string;
   nodeCodeCache: Record<string, NodeCodeResponse>;
   onCacheNodeCode: (nodeID: string, code: NodeCodeResponse) => void;
+  issueDescriptionCache?: Record<string, GitHubIssueDescription>;
+  onCacheIssueDescription?: (key: string, issue: GitHubIssueDescription) => void;
   onSelectNode: (id: string) => void;
   onClose: () => void;
   width: number;
@@ -735,9 +745,8 @@ export function ComponentChangePanel({
         <FileDiffPanel file={file} onClose={onClose} />
       ) : selectedChange.type === "pr-description" ? (
         <MarkdownDocumentPanel
-          eyebrow="Full PR Description"
-          title={selectedChange.title}
           body={selectedChange.body}
+          htmlURL={selectedChange.htmlURL}
           emptyText="No PR description."
           onClose={onClose}
         />
@@ -747,6 +756,8 @@ export function ComponentChangePanel({
           prID={prID}
           token={token}
           issue={selectedChange.issue}
+          cachedIssue={issueDescriptionCache?.[issueReferenceKey(selectedChange.issue)]}
+          onCacheIssue={onCacheIssueDescription}
           onClose={onClose}
         />
       ) : (
@@ -1013,24 +1024,21 @@ function FileDiffPanel({ file, onClose }: { file: PRFileDiff; onClose: () => voi
 }
 
 function MarkdownDocumentPanel({
-  eyebrow,
-  title,
   body,
+  htmlURL,
   emptyText,
   onClose,
 }: {
-  eyebrow: string;
-  title: string;
   body: string;
+  htmlURL: string;
   emptyText: string;
   onClose: () => void;
 }) {
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
       <PanelCloseButton onClose={onClose} />
-      <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 8 }}>{eyebrow}</p>
       <h2 style={{ color: "#111111", fontSize: 17, fontWeight: 600, lineHeight: 1.35, margin: "0 0 14px" }}>
-        {title}
+        PR Description
       </h2>
       {body.trim() ? (
         <div className="pr-description-markdown">
@@ -1043,6 +1051,16 @@ function MarkdownDocumentPanel({
           {emptyText}
         </div>
       )}
+      {htmlURL && (
+        <a
+          href={htmlURL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 13, color: "#6366F1", marginTop: 16, textDecoration: "none" }}
+        >
+          Open on GitHub →
+        </a>
+      )}
     </div>
   );
 }
@@ -1052,22 +1070,26 @@ function IssueDescriptionPanel({
   prID,
   token,
   issue,
+  cachedIssue,
+  onCacheIssue,
   onClose,
 }: {
   repoID: string;
   prID?: string;
   token: string;
   issue: GitHubIssueReference;
+  cachedIssue?: GitHubIssueDescription;
+  onCacheIssue?: (key: string, issue: GitHubIssueDescription) => void;
   onClose: () => void;
 }) {
-  const issueKey = `${issue.owner}/${issue.repo}#${issue.number}`;
-  const [data, setData] = useState<GitHubIssueDescription | null>(null);
+  const issueKey = issueReferenceKey(issue);
+  const [data, setData] = useState<GitHubIssueDescription | null>(cachedIssue ?? null);
   const [error, setError] = useState<{ key: string; message: string } | null>(() => (
     prID ? null : { key: issueKey, message: "Issue unavailable without a pull request." }
   ));
 
   useEffect(() => {
-    if (!prID) {
+    if (!prID || cachedIssue) {
       return;
     }
 
@@ -1081,7 +1103,10 @@ function IssueDescriptionPanel({
 
     apiFetch<GitHubIssueDescription>(`/api/v1/repos/${repoID}/prs/${prID}/issue?${params.toString()}`, token)
       .then((response) => {
-        if (!cancelled) setData(response);
+        if (!cancelled) {
+          setData(response);
+          onCacheIssue?.(issueKey, response);
+        }
       })
       .catch((err: Error) => {
         if (!cancelled) setError({ key: issueKey, message: err.message });
@@ -1090,9 +1115,10 @@ function IssueDescriptionPanel({
     return () => {
       cancelled = true;
     };
-  }, [issue.number, issue.owner, issue.repo, issueKey, prID, repoID, token]);
+  }, [cachedIssue, issue.number, issue.owner, issue.repo, issueKey, onCacheIssue, prID, repoID, token]);
 
-  const matchingData = data?.owner === issue.owner && data.repo === issue.repo && data.number === issue.number ? data : null;
+  const matchingData = cachedIssue
+    ?? (data?.owner === issue.owner && data.repo === issue.repo && data.number === issue.number ? data : null);
   const errorMessage = error?.key === issueKey ? error.message : null;
 
   if (errorMessage) {

@@ -20,7 +20,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphEdge, GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
+import { GitHubIssueDescription, GraphEdge, GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import { SettingsView } from "@/components/settings/settings-view";
@@ -670,6 +670,7 @@ function InnerCanvas({
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const [componentPanelWidth, setComponentPanelWidth] = useState(COMPONENT_PANEL_DEFAULT_WIDTH);
   const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
+  const [issueDescriptionCache, setIssueDescriptionCache] = useState<Record<string, GitHubIssueDescription>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [layoutPositions, setLayoutPositions] = useState<Record<string, Point>>({});
   const layoutPositionsRef = useRef<Record<string, Point>>({});
@@ -1013,6 +1014,10 @@ function InnerCanvas({
     setNodeCodeCache((current) => current[nodeID] ? current : { ...current, [nodeID]: code });
   }, []);
 
+  const onCacheIssueDescription = useCallback((key: string, issue: GitHubIssueDescription) => {
+    setIssueDescriptionCache((current) => current[key] ? current : { ...current, [key]: issue });
+  }, []);
+
   const onSelectPR = useCallback(async (prNumber: number) => {
     setSettingsOpen(false);
     setSelectedPRChange(null);
@@ -1128,6 +1133,8 @@ function InnerCanvas({
           token={token}
           nodeCodeCache={nodeCodeCache}
           onCacheNodeCode={onCacheNodeCode}
+          issueDescriptionCache={issueDescriptionCache}
+          onCacheIssueDescription={onCacheIssueDescription}
           onSelectNode={(id) => {
             selectAndPopulateGraphNode(id);
             setSelectedPRChange({ type: "node", nodeID: id });
