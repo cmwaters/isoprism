@@ -922,9 +922,7 @@ function InnerCanvas({
     }
     if (node && baseVisibleGraph.nodes.some((candidate) => candidate.id === id)) {
       selectGraphNode(id);
-      if (!isTypeNode(node)) {
-        void expandGraphNode(id);
-      }
+      void expandGraphNode(id, { detailOnlyForTypes: isTypeNode(node) });
       return;
     }
 
