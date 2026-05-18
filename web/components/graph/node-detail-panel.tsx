@@ -48,18 +48,18 @@ interface Props {
 const settingsButtonStyle: CSSProperties = {
   width: "100%",
   height: 38,
-  borderRadius: 999,
-  border: "1px solid #E4E4E4",
-  background: "rgba(255,255,255,0.92)",
+  borderRadius: 6,
+  border: "none",
+  background: "transparent",
   color: "#111111",
   display: "inline-flex",
   alignItems: "center",
-  justifyContent: "center",
+  justifyContent: "flex-start",
   gap: 8,
   cursor: "pointer",
   fontSize: 13,
   fontWeight: 650,
-  backdropFilter: "blur(10px)",
+  padding: "0 8px",
 };
 
 export default function NodeDetailPanel({

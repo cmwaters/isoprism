@@ -35,6 +35,8 @@ The page should have one content column with two sections:
 1. GitHub connection
 2. Repositories
 
+The page header should be plain and compact: the title is `Settings`, followed by a short description of GitHub access, indexing, and the selected review repository. The header should not show the signed-in user's avatar.
+
 The GitHub connection section should show the signed-in GitHub user and provide one action to manage the GitHub App. Installation happens during onboarding; settings should not show a separate install action because that makes the connected state ambiguous.
 
 The repositories section should show a searchable list of repositories available through the GitHub App installation. Added repositories should appear immediately as authorized but not indexed. Revoked repositories should disappear from this list because GitHub no longer authorizes them.

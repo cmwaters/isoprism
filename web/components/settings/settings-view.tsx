@@ -13,7 +13,6 @@ import { Repository } from "@/lib/types";
 type GitHubUser = {
   login: string;
   name: string;
-  avatarURL?: string;
 };
 
 export function SettingsView({
@@ -65,7 +64,6 @@ export function SettingsView({
         setCurrentUser({
           login,
           name: metadata.full_name ?? metadata.name ?? login,
-          avatarURL: metadata.avatar_url ?? metadata.picture,
         });
         setRepos(repoList ?? []);
         setSelectedRepoID((repoList ?? []).find((repo) => repo.is_selected)?.id ?? null);
@@ -189,8 +187,7 @@ export function SettingsView({
 
         <header style={headerStyle}>
           <div>
-            <div style={eyebrowStyle}>Settings</div>
-            <h1 style={titleStyle}>GitHub and repositories</h1>
+            <h1 style={titleStyle}>Settings</h1>
             <p style={copyStyle}>
               Manage GitHub access, indexing, and the repository selected for review.
             </p>
@@ -200,15 +197,6 @@ export function SettingsView({
               <Link href={`/${selectedReadyRepo.full_name}`} style={secondaryActionStyle}>
                 Exit settings
               </Link>
-            )}
-            {currentUser?.avatarURL && (
-              <div
-                aria-hidden="true"
-                style={{
-                  ...avatarStyle,
-                  background: `url(${currentUser.avatarURL}) center / cover`,
-                }}
-              />
             )}
           </div>
         </header>
@@ -407,14 +395,6 @@ const headerStyle: React.CSSProperties = {
   marginBottom: 24,
 };
 
-const eyebrowStyle: React.CSSProperties = {
-  color: "#777777",
-  fontSize: 12,
-  fontWeight: 700,
-  marginBottom: 7,
-  textTransform: "uppercase",
-};
-
 const titleStyle: React.CSSProperties = {
   margin: 0,
   color: "#111111",
@@ -428,13 +408,6 @@ const copyStyle: React.CSSProperties = {
   fontSize: 13,
   lineHeight: 1.5,
   margin: "6px 0 0",
-};
-
-const avatarStyle: React.CSSProperties = {
-  width: 44,
-  height: 44,
-  borderRadius: "50%",
-  flex: "0 0 44px",
 };
 
 const sectionStyle: React.CSSProperties = {

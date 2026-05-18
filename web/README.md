@@ -34,7 +34,7 @@ The GitHub OAuth login requests `read:user`, `user:email`, and `read:org`. The o
 
 ## Settings
 
-Authenticated views render a fixed account pill in the top-right corner. The pill shows the signed-in user's GitHub avatar and display name, and links to `/{user}/settings`.
+Authenticated views link to `/{user}/settings` from the graph side panel. The settings entry is a left-aligned button without a pill background.
 
 Settings are intentionally simple during beta. `/{user}/settings` is a single page where the tester can:
 
