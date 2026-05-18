@@ -42,11 +42,11 @@ function WorkInProgressPage() {
       <section style={contentStyle}>
         <div style={brandStyle}>Isoprism</div>
         <p style={eyebrowStyle}>Work in progress</p>
-        <h1 style={titleStyle}>Isoprism is currently open to invited pilot users.</h1>
+        <h1 style={titleStyle}>We&apos;re working on the tools for the future</h1>
         <p style={copyStyle}>
           We are still shaping the prototype with a small group of engineers before opening it
-          more broadly. If you are interested in trying the pilot, register your interest and
-          we will follow up with next steps.
+          more broadly. If you are interested in trying the pilot, answer a few questions and
+          register your interest and we will follow up with next steps.
         </p>
         <Link href="/pilot/register" style={buttonStyle}>
           Register for the pilot
