@@ -274,7 +274,7 @@ export function SettingsView({
           <div style={sectionHeaderStyle}>
             <div>
               <h2 style={sectionTitleStyle}>Repositories</h2>
-              <p style={copyStyle}>Authorized repositories appear here. Added repositories are visible before they are indexed.</p>
+              <p style={copyStyle}>Authorized repositories appear here. Added repositories are visible before they are indexed. With Pilot, only one repository can be active at a time.</p>
             </div>
           </div>
 
