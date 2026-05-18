@@ -43,13 +43,13 @@ Settings are intentionally simple during beta. `/{user}/settings` is a dedicated
 - See their GitHub connection
 - Install or manage the Isoprism GitHub App on GitHub
 - See the current indexed repository
-- Select a different accessible repository
-- Trigger indexing for the selected repository
+- Select a different accessible repository, which automatically starts indexing when needed
+- Open the selected repository once indexing is ready
 
-When a different repository is indexed from settings, the page shows the same `IndexingProgress` component used during onboarding.
+When a different repository is selected from settings and needs indexing, the selected row shows the same progress bar, status message, counters, and ETA copy used during onboarding.
 
 - `GET /api/v1/me/repos` supplies repositories currently available to Isoprism.
-- `POST /api/v1/repos/{repoID}/index` starts or retries indexing from the repositories settings category.
+- `POST /api/v1/repos/{repoID}/index` selects the repository and starts or retries indexing from the repositories settings category.
 
 GitHub App install and permission changes still happen on GitHub.
 

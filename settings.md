@@ -9,9 +9,8 @@ Settings should be a single operational page. The user should be able to:
 - See their GitHub connection
 - Manage the Isoprism GitHub App installation on GitHub
 - See every repository currently authorized through GitHub
-- Index an authorized repository
-- Select exactly one indexed repository as the current review workspace
-- Uninstall indexed data without removing the repository while GitHub still authorizes it
+- Select an authorized repository as the current review workspace
+- Automatically start indexing when the selected repository is not ready
 - See the same indexing status used during onboarding
 
 Settings are not a multi-account admin area during beta. There are no tabs, organization settings pages, members, billing, notification preferences, or access-control controls.
@@ -48,12 +47,11 @@ The GitHub connection section should show the signed-in GitHub user and provide 
 
 The repositories section should show a searchable list of repositories available through the GitHub App installation. Added repositories should appear immediately as authorized but not indexed. Revoked repositories should disappear from this list because GitHub no longer authorizes them.
 
-Each row should show repository name, default branch, indexed/not indexed state, and the available actions. Status appears once in the branch metadata line. Repositories marked for deletion are treated as `Not indexed` in the UI even if indexed data still exists until cleanup runs.
+Each row should show repository name, default branch, indexed/not indexed state, and the available action. Status appears once in the branch metadata line. Repositories marked for deletion are treated as `Not indexed` in the UI even if indexed data still exists until cleanup runs.
 
-- **Index** starts `POST /api/v1/repos/{repoID}/index`.
-- **Select** starts `POST /api/v1/repos/{repoID}/select` for an already indexed repository.
-- **Open** links to `/{owner}/{repo}` for the selected ready repository.
-- **Uninstall** starts `DELETE /api/v1/repos/{repoID}/index`; it schedules indexed data cleanup but keeps the authorized repository visible while GitHub still grants permission.
+- **Select** starts `POST /api/v1/repos/{repoID}/index`; the backend selects the repository immediately and starts indexing when the selected repository is not ready.
+- While the selected repository is indexing, the selected row shows the same progress bar, status message, counters, and ETA copy as first-time onboarding.
+- **Open** appears only for the selected ready repository and links to `/{owner}/{repo}`.
 
 ## 4. Repository Rules
 

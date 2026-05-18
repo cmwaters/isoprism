@@ -3,18 +3,40 @@
 import type React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowUpRight, Check, GitBranch, Github, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import IndexingProgress from "@/components/onboarding/indexing-progress";
+import { ArrowLeft, ArrowUpRight, GitBranch, Github, Loader2, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { getCachedSettingsRepos, warmSettingsRepos } from "@/lib/settings-cache";
 import { createClient } from "@/lib/supabase/client";
-import { Repository } from "@/lib/types";
+import { RepoStatus, Repository } from "@/lib/types";
 
 type GitHubUser = {
   login: string;
   name: string;
   avatarURL?: string;
+};
+
+type IndexingStatus = RepoStatus & {
+  index_phase?: string;
+  index_message?: string;
+  index_percent?: number;
+  eta_seconds?: number;
+  index_job?: {
+    commit_sha: string;
+    status: "pending" | "running" | "ready" | "failed";
+    phase: string;
+    message: string;
+    percent: number;
+    files_total: number;
+    files_done: number;
+    nodes_total: number;
+    nodes_done: number;
+    edges_total: number;
+    edges_done: number;
+    eta_seconds?: number;
+    updated_at: string;
+    error?: string;
+  };
 };
 
 export function SettingsView({
@@ -29,6 +51,7 @@ export function SettingsView({
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepoID, setSelectedRepoID] = useState<string | null>(null);
   const [indexingRepoID, setIndexingRepoID] = useState<string | null>(null);
+  const [token, setToken] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -47,6 +70,7 @@ export function SettingsView({
         router.push("/login");
         return;
       }
+      setToken(token);
 
       const metadata = session.user.user_metadata ?? {};
       const login =
@@ -65,7 +89,9 @@ export function SettingsView({
             avatarURL: metadata.avatar_url ?? metadata.picture,
           });
           setRepos(cachedRepos);
-          setSelectedRepoID(cachedRepos.find((repo) => repo.is_selected)?.id ?? null);
+          const selectedRepo = cachedRepos.find((repo) => repo.is_selected) ?? null;
+          setSelectedRepoID(selectedRepo?.id ?? null);
+          setIndexingRepoID(selectedRepo && (selectedRepo.index_status !== "ready" || selectedRepo.unused_at) ? selectedRepo.id : null);
           setLoading(false);
         }
 
@@ -81,7 +107,9 @@ export function SettingsView({
           avatarURL: metadata.avatar_url ?? metadata.picture,
         });
         setRepos(repoList);
-        setSelectedRepoID(repoList.find((repo) => repo.is_selected)?.id ?? null);
+        const selectedRepo = repoList.find((repo) => repo.is_selected) ?? null;
+        setSelectedRepoID(selectedRepo?.id ?? null);
+        setIndexingRepoID(selectedRepo && (selectedRepo.index_status !== "ready" || selectedRepo.unused_at) ? selectedRepo.id : null);
       } catch {
         if (!active) return;
         setError("Settings could not be loaded.");
@@ -104,75 +132,59 @@ export function SettingsView({
   const indexingRepo = repos.find((repo) => repo.id === indexingRepoID) ?? null;
   const filteredRepos = repos.filter((repo) => repo.full_name.toLowerCase().includes(search.toLowerCase()));
 
-  async function indexSelectedRepo(repoID = selectedRepoID) {
-    if (!repoID) return;
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
-    if (!token) return;
-
-    const repo = repos.find((candidate) => candidate.id === repoID);
-    setIndexingRepoID(repoID);
-    setError("");
-
-    try {
-      const result = await apiFetch<{ status: string }>(`/api/v1/repos/${repoID}/index`, token, { method: "POST" });
-      if (result.status === "already_indexed" && repo) {
-        router.push(`/${repo.full_name}`);
-      }
-    } catch {
-      setError("Repository indexing could not be started.");
-      setIndexingRepoID(null);
-    }
-  }
-
   async function selectRepo(repo: Repository) {
     const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
-    if (!token) return;
+    const nextToken = sessionData.session?.access_token;
+    if (!nextToken) return;
 
-    if (repo.index_status !== "ready") {
-      setSelectedRepoID(repo.id);
-      await indexSelectedRepo(repo.id);
-      return;
-    }
+    const previousSelectedRepoID = selectedRepoID;
+    setToken(nextToken);
+    setError("");
+    setSelectedRepoID(repo.id);
+    setRepos((current) => current.map((candidate) => ({
+      ...candidate,
+      is_selected: candidate.id === repo.id,
+      unused_at: candidate.id === repo.id ? undefined : candidate.unused_at,
+      purge_after: candidate.id === repo.id ? undefined : candidate.purge_after,
+    })));
 
     try {
-      await apiFetch<{ status: string }>(`/api/v1/repos/${repo.id}/select`, token, { method: "POST" });
-      setRepos((current) => current.map((candidate) => ({
-        ...candidate,
-        is_selected: candidate.id === repo.id,
-        unused_at: candidate.id === repo.id ? undefined : candidate.unused_at,
-        purge_after: candidate.id === repo.id ? undefined : candidate.purge_after,
-      })));
-      setSelectedRepoID(repo.id);
+      const result = await apiFetch<{ status: string }>(`/api/v1/repos/${repo.id}/index`, nextToken, { method: "POST" });
+      if (result.status === "already_indexed") {
+        setRepos((current) => current.map((candidate) => candidate.id === repo.id
+          ? { ...candidate, index_status: "ready", is_selected: true, unused_at: undefined, purge_after: undefined }
+          : { ...candidate, is_selected: false }));
+        setIndexingRepoID(null);
+        return;
+      }
+      setRepos((current) => current.map((candidate) => candidate.id === repo.id
+        ? { ...candidate, index_status: candidate.index_status === "ready" ? "ready" : "pending", is_selected: true, unused_at: undefined, purge_after: undefined }
+        : { ...candidate, is_selected: false }));
+      setIndexingRepoID(repo.id);
     } catch {
       setError("Repository could not be selected.");
+      setIndexingRepoID(null);
+      setSelectedRepoID(previousSelectedRepoID);
+      setRepos((current) => current.map((candidate) => ({
+        ...candidate,
+        is_selected: candidate.id === previousSelectedRepoID,
+      })));
     }
   }
 
-  async function uninstallRepo(repo: Repository) {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
-    if (!token) return;
+  function markRepoReady(repoID: string) {
+    setRepos((current) => current.map((candidate) => candidate.id === repoID
+      ? { ...candidate, index_status: "ready", is_selected: true, unused_at: undefined, purge_after: undefined }
+      : { ...candidate, is_selected: false }));
+    setSelectedRepoID(repoID);
+    setIndexingRepoID(null);
+  }
 
-    try {
-      await apiFetch<{ status: string }>(`/api/v1/repos/${repo.id}/index`, token, { method: "DELETE" });
-      setRepos((current) => current.map((candidate) => candidate.id === repo.id
-        ? {
-            ...candidate,
-            is_selected: false,
-            unused_at: new Date().toISOString(),
-            purge_after: candidate.purge_after ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-          }
+  function markRepoFailed(repoID: string) {
+    setRepos((current) => current.map((candidate) => candidate.id === repoID
+      ? { ...candidate, index_status: "failed" }
         : candidate));
-      if (selectedRepoID === repo.id) setSelectedRepoID(null);
-    } catch {
-      setError("Repository index could not be uninstalled.");
-    }
-  }
-
-  if (indexingRepoID && indexingRepo) {
-    return <IndexingProgress repoID={indexingRepoID} repoName={indexingRepo.full_name} />;
+    setIndexingRepoID(null);
   }
 
   if (loading) {
@@ -254,11 +266,6 @@ export function SettingsView({
               <h2 style={sectionTitleStyle}>Repositories</h2>
               <p style={copyStyle}>Authorized repositories appear here. Added repositories are visible before they are indexed.</p>
             </div>
-            {selectedReadyRepo && (
-              <Link href={`/${selectedReadyRepo.full_name}`} style={secondaryActionStyle}>
-                Open selected repo
-              </Link>
-            )}
           </div>
 
           <label style={searchBoxStyle}>
@@ -279,16 +286,24 @@ export function SettingsView({
                 const selected = Boolean(repo.is_selected);
                 const status = repoStatusLabel(repo);
                 const canOpen = selected && repo.index_status === "ready" && !repo.unused_at;
-                const canIndex = (repo.index_status !== "ready" || Boolean(repo.unused_at)) && !repo.revoked_at;
+                const isIndexing = indexingRepo?.id === repo.id;
                 return (
                   <div
                     key={repo.id}
                     style={repoButtonStyle(selected)}
                   >
-                    <GitBranch size={18} color={selected ? "#111111" : "#666666"} />
+                    <GitBranch size={18} color={selected ? "#111111" : "#666666"} style={{ marginTop: 2 }} />
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={rowTitleStyle}>{repo.full_name}</div>
                       <div style={rowMetaStyle}>{repo.default_branch} · {status}</div>
+                      {isIndexing && (
+                        <InlineIndexingProgress
+                          repoID={repo.id}
+                          token={token}
+                          onReady={() => markRepoReady(repo.id)}
+                          onFailed={() => markRepoFailed(repo.id)}
+                        />
+                      )}
                     </div>
                     <div style={repoActionsStyle}>
                       {canOpen && (
@@ -296,19 +311,9 @@ export function SettingsView({
                           Open
                         </Link>
                       )}
-                      {!selected && repo.index_status === "ready" && !repo.unused_at && (
-                        <button onClick={() => selectRepo(repo)} style={iconActionStyle} aria-label={`Select ${repo.full_name}`}>
-                          <Check size={15} />
-                        </button>
-                      )}
-                      {canIndex && (
-                        <button onClick={() => indexSelectedRepo(repo.id)} style={iconActionStyle} aria-label={`Index ${repo.full_name}`}>
-                          <RefreshCw size={15} />
-                        </button>
-                      )}
-                      {repo.index_status === "ready" && !repo.unused_at && (
-                        <button onClick={() => uninstallRepo(repo)} style={iconActionStyle} aria-label={`Uninstall index for ${repo.full_name}`}>
-                          <Trash2 size={15} />
+                      {!canOpen && !isIndexing && (
+                        <button onClick={() => selectRepo(repo)} style={selectButtonStyle} aria-label={`Select ${repo.full_name}`}>
+                          Select
                         </button>
                       )}
                     </div>
@@ -351,6 +356,122 @@ function Notice({ children, tone }: { children: React.ReactNode; tone: "error" |
 function repoStatusLabel(repo: Repository) {
   if (repo.index_status === "ready" && !repo.unused_at) return "Indexed";
   return "Not indexed";
+}
+
+function InlineIndexingProgress({
+  repoID,
+  token,
+  onReady,
+  onFailed,
+}: {
+  repoID: string;
+  token: string;
+  onReady: () => void;
+  onFailed: () => void;
+}) {
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<IndexingStatus | null>(null);
+  const [failed, setFailed] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+
+    let active = true;
+    let p = 0;
+    const progInterval = setInterval(() => {
+      p += 1;
+      if (active) setProgress((current) => Math.max(current, Math.min(p, 20)));
+    }, 240);
+
+    intervalRef.current = setInterval(async () => {
+      try {
+        const nextStatus = await apiFetch<IndexingStatus>(`/api/v1/repos/${repoID}/status`, token);
+        if (!active) return;
+        setStatus(nextStatus);
+        if (typeof nextStatus.index_percent === "number") {
+          setProgress(nextStatus.index_percent);
+        } else if (nextStatus.index_job?.percent) {
+          setProgress(nextStatus.index_job.percent);
+        }
+
+        if (nextStatus.index_status === "ready") {
+          setProgress(100);
+          clearInterval(progInterval);
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          window.setTimeout(onReady, 400);
+        } else if (nextStatus.index_status === "failed") {
+          setFailed(true);
+          clearInterval(progInterval);
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          onFailed();
+        }
+      } catch {
+        // Keep polling. The indexer may have just started and status can lag briefly.
+      }
+    }, 2000);
+
+    return () => {
+      active = false;
+      clearInterval(progInterval);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [onFailed, onReady, repoID, token]);
+
+  const message = status?.index_message || status?.index_job?.message || "Preparing repository index";
+  const counter = stageCounter(status);
+  const eta = formatETA(status?.eta_seconds ?? status?.index_job?.eta_seconds);
+
+  if (failed) {
+    return <div style={inlineErrorStyle}>Indexing failed. Try selecting this repository again.</div>;
+  }
+
+  return (
+    <div style={inlineProgressStyle}>
+      <div style={progressTrackStyle}>
+        <div
+          style={{
+            ...progressFillStyle,
+            width: `${progress}%`,
+          }}
+        />
+      </div>
+      <div style={progressTextRowStyle}>
+        <p style={progressMessageStyle}>{message}</p>
+        <span style={progressPercentStyle}>{Math.round(progress)}%</span>
+      </div>
+      <div style={progressMetaRowStyle}>
+        <p style={progressMetaStyle}>{counter}</p>
+        <p style={progressMetaStyle}>{eta}</p>
+      </div>
+    </div>
+  );
+}
+
+function stageCounter(status: IndexingStatus | null) {
+  const job = status?.index_job;
+  if (!job) return "Starting";
+
+  if (job.phase === "fetching_files" && job.files_total > 0) {
+    return `${job.files_done.toLocaleString()} / ${job.files_total.toLocaleString()} files`;
+  }
+  if (job.phase === "writing_nodes" && job.nodes_total > 0) {
+    return `${job.nodes_done.toLocaleString()} / ${job.nodes_total.toLocaleString()} nodes`;
+  }
+  if (job.phase === "building_edges" && job.edges_total > 0) {
+    return `${job.edges_done.toLocaleString()} / ${job.edges_total.toLocaleString()} files analysed`;
+  }
+  if (job.phase === "extracting_tests") {
+    return "Linking tests";
+  }
+  return "Resolving default branch";
+}
+
+function formatETA(seconds?: number) {
+  if (!seconds || seconds < 20) return "Estimating time remaining";
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes === 1) return "About 1 minute remaining";
+  return `About ${minutes} minutes remaining`;
 }
 
 const shellStyle: React.CSSProperties = {
@@ -543,7 +664,7 @@ const repoButtonStyle = (selected: boolean): React.CSSProperties => ({
   background: selected ? "#F1F1F1" : "#FAFAFA",
   padding: "10px 12px",
   display: "flex",
-  alignItems: "center",
+  alignItems: "flex-start",
   gap: 12,
   cursor: "pointer",
   textAlign: "left",
@@ -557,9 +678,9 @@ const repoActionsStyle: React.CSSProperties = {
   justifyContent: "flex-end",
 };
 
-const iconActionStyle: React.CSSProperties = {
-  width: 34,
-  height: 34,
+const selectButtonStyle: React.CSSProperties = {
+  minHeight: 34,
+  padding: "0 11px",
   borderRadius: 6,
   border: "1px solid #D4D4D4",
   background: "#FFFFFF",
@@ -568,6 +689,8 @@ const iconActionStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   cursor: "pointer",
+  fontSize: 12,
+  fontWeight: 650,
 };
 
 const rowTitleStyle: React.CSSProperties = {
@@ -584,6 +707,66 @@ const rowMetaStyle: React.CSSProperties = {
   fontSize: 12,
   lineHeight: 1.45,
   marginTop: 2,
+};
+
+const inlineProgressStyle: React.CSSProperties = {
+  marginTop: 12,
+  maxWidth: 460,
+};
+
+const progressTrackStyle: React.CSSProperties = {
+  width: "100%",
+  height: 3,
+  background: "#D4D4D4",
+  borderRadius: 2,
+  overflow: "hidden",
+  marginBottom: 10,
+};
+
+const progressFillStyle: React.CSSProperties = {
+  height: "100%",
+  background: "#6366F1",
+  transition: "width 80ms linear",
+  borderRadius: 2,
+};
+
+const progressTextRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  justifyContent: "space-between",
+  gap: 16,
+};
+
+const progressMessageStyle: React.CSSProperties = {
+  color: "#111111",
+  fontSize: 13,
+  fontWeight: 500,
+  margin: 0,
+};
+
+const progressPercentStyle: React.CSSProperties = {
+  color: "#666666",
+  fontSize: 12,
+};
+
+const progressMetaRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 16,
+  marginTop: 6,
+};
+
+const progressMetaStyle: React.CSSProperties = {
+  color: "#666666",
+  fontSize: 12,
+  margin: 0,
+};
+
+const inlineErrorStyle: React.CSSProperties = {
+  color: "#EF4444",
+  fontSize: 13,
+  marginTop: 10,
 };
 
 const emptyStyle: React.CSSProperties = {
