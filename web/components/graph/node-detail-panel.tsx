@@ -300,7 +300,7 @@ function RepoSummaryPanel({
 
       {prs.length === 0 && allNodes.length === 0 && (
         <div style={{ color: "#888888", fontSize: 13, textAlign: "center", padding: "48px 0" }}>
-          No graph data yet.
+          There are no open pull requests.
         </div>
       )}
     </div>

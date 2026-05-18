@@ -114,6 +114,7 @@ If the beta token is invalid, expired, or already completed, replace the GitHub 
    - 12px gap between cards
    - Hover state: `#F5F5F5` background, cursor pointer
    - **Left edge accent bar** (4px wide, full height): `#6366F1` for the highest urgency PR, `#C7D2FE` for the rest
+7. Empty queue text: "There are no open pull requests."
    
    **Card layout (16px internal padding):**
    - Row 1: PR number `#AAAAAA · #42` and title `#111111` 15px semibold, inline
