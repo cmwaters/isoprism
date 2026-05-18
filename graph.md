@@ -29,11 +29,11 @@ The API serves the canonical function-level graph directly.
 
 ### Repo View
 
-The repo page does not load the repo-wide graph by default. It opens with the PR queue and an empty graph canvas so large repositories do not pay the base-graph query/render cost before the user chooses a PR.
+The repo page does not load the repo-wide graph by default. It opens with the PR queue, a lightweight list of repo programs, and an empty graph canvas so large repositories do not pay the base-graph query/render cost before the user chooses a PR or program.
 
-The repo graph API still supports repo-wide graph responses for future exploration surfaces.
+Programs are entrypoint nodes from the indexed repository. The initial implementation treats production nodes marked `is_entrypoint`, Go `main`, and names ending in `.main` as programs, with a first production node fallback when no explicit entrypoint is available.
 
-Repo-wide graph seed nodes are entrypoint functions.
+Clicking a program loads `GET /api/v1/repos/{repoID}/programs/{nodeID}/graph`, which returns a bounded depth-2 graph centered on that single program. Degree 0 is the selected program, degree 1 is direct callers/callees, and degree 2 is the next caller/callee ring. Boundary nodes indicate hidden continuation and can be expanded with the same graph expansion endpoint used elsewhere.
 
 For Go, the first entrypoint signal is `main`.
 
@@ -366,15 +366,16 @@ This means the PR view is centered on the largest and most connected changes, no
 
 ## Repo View Behavior
 
-Given a repo graph:
+Given a selected repo program:
 
-1. Find entrypoint seeds.
+1. Find entrypoint programs.
 2. For Go, use `main`.
-3. Load depth-2 neighborhood from entrypoints.
-4. Place entrypoints near center.
-5. Place direct callees in ring 1.
-6. Place second-degree callees/callers in ring 2.
-7. Show boundary nodes for unexplored graph regions.
+3. List programs underneath the pull requests on the repo page.
+4. When a program is selected, load a depth-2 neighborhood from that single entrypoint.
+5. Place the selected entrypoint near center.
+6. Place direct callees/callers in ring 1.
+7. Place second-degree callees/callers in ring 2.
+8. Show boundary nodes for unexplored graph regions.
 
 ## Incremental Layout
 

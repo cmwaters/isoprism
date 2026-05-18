@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { GitHubIssueDescription, GitHubIssueReference, GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, PRFileDiff, QueuePR, Repository } from "@/lib/types";
+import { GitHubIssueDescription, GitHubIssueReference, GraphEdge, GraphNode, GraphPR, GraphProgram, NodeCodeResponse, NodeCodeSegment, PRFileDiff, QueuePR, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import type { PanelMode } from "./graph-canvas";
 import { ArrowLeft, BookOpenText, Code2, ListTree, Settings, X } from "lucide-react";
@@ -28,8 +28,11 @@ interface Props {
   prFiles?: PRFileDiff[];
   testChanges?: GraphNode[];
   prs?: QueuePR[];
+  programs?: GraphProgram[];
   loadingPRNumber?: number | null;
+  loadingProgramID?: string | null;
   onSelectPR: (prNumber: number) => void;
+  onSelectProgram: (programID: string) => void;
   onBackToRepo: () => void;
   token: string;
   nodeCodeCache: Record<string, NodeCodeResponse>;
@@ -76,8 +79,11 @@ export default function NodeDetailPanel({
   prFiles,
   testChanges,
   prs,
+  programs,
   loadingPRNumber,
+  loadingProgramID,
   onSelectPR,
+  onSelectProgram,
   onBackToRepo,
   token,
   nodeCodeCache,
@@ -139,9 +145,12 @@ export default function NodeDetailPanel({
             <RepoSummaryPanel
               repo={repo}
               prs={prs ?? []}
+              programs={programs ?? []}
               allNodes={allNodes}
               loadingPRNumber={loadingPRNumber}
+              loadingProgramID={loadingProgramID}
               onSelectPR={onSelectPR}
+              onSelectProgram={onSelectProgram}
             />
           )
         ) : mode === "code" ? (
@@ -218,18 +227,25 @@ export default function NodeDetailPanel({
 function RepoSummaryPanel({
   repo,
   prs,
+  programs,
   allNodes,
   loadingPRNumber,
+  loadingProgramID,
   onSelectPR,
+  onSelectProgram,
 }: {
   repo: Repository;
   prs: QueuePR[];
+  programs: GraphProgram[];
   allNodes: GraphNode[];
   loadingPRNumber?: number | null;
+  loadingProgramID?: string | null;
   onSelectPR: (prNumber: number) => void;
+  onSelectProgram: (programID: string) => void;
 }) {
   const { owner, name } = splitRepoFullName(repo.full_name);
   const openTimeLabels = useOpenTimeLabels(prs.map((pr) => [pr.id, pr.opened_at]));
+  const hasVisibleGraph = allNodes.length > 0;
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
@@ -298,9 +314,59 @@ function RepoSummaryPanel({
         </>
       )}
 
-      {prs.length === 0 && allNodes.length === 0 && (
+      {programs.length > 0 && (
+        <>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, marginTop: prs.length > 0 ? 0 : 20 }}>
+            Programs
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+            {programs.map((program) => (
+              <button
+                key={program.id}
+                type="button"
+                onClick={() => onSelectProgram(program.id)}
+                disabled={loadingProgramID === program.id}
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid #D4D4D4",
+                  borderRadius: 6,
+                  color: "#111111",
+                  cursor: loadingProgramID === program.id ? "wait" : "pointer",
+                  display: "block",
+                  fontFamily: "inherit",
+                  padding: 12,
+                  textAlign: "left",
+                  width: "100%",
+                }}
+              >
+                <span style={{ color: "#111111", display: "block", fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>
+                  {programTitle(program)}
+                </span>
+                <span style={{ color: "#888888", display: "block", fontSize: 12, lineHeight: 1.4, marginTop: 4, overflowWrap: "anywhere" }}>
+                  {programContextLabel(program)}
+                </span>
+                {loadingProgramID === program.id && (
+                  <span style={{ color: "#888888", display: "block", fontSize: 12, marginTop: 6 }}>
+                    Loading graph...
+                  </span>
+                )}
+                <span style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  <span style={repoPRBadgeStyle}>
+                    {program.kind || "program"}
+                  </span>
+                  <span style={repoPRBadgeStyle}>
+                    {program.file_path}:{program.line_start}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {prs.length === 0 && programs.length === 0 && !hasVisibleGraph && (
         <div style={{ color: "#888888", fontSize: 13, textAlign: "center", padding: "48px 0" }}>
-          There are no open pull requests.
+          There are no open pull requests or indexed programs yet.
         </div>
       )}
     </div>
@@ -310,6 +376,20 @@ function RepoSummaryPanel({
 function splitRepoFullName(fullName: string): { owner: string; name: string } {
   const [owner, name] = fullName.split("/");
   return { owner: owner || fullName, name: name || fullName };
+}
+
+function programTitle(program: GraphProgram): string {
+  const name = program.full_name.includes(":")
+    ? program.full_name.slice(program.full_name.lastIndexOf(":") + 1)
+    : program.full_name;
+  const parts = name.split(".").filter(Boolean);
+  return parts[parts.length - 1] || program.full_name;
+}
+
+function programContextLabel(program: GraphProgram): string {
+  const packagePath = program.package_path || program.file_path.split("/").slice(0, -1).join("/");
+  const packageParts = packagePath.split("/").filter(Boolean);
+  return packageParts[packageParts.length - 1] || program.file_path;
 }
 
 function useOpenTimeLabels(prs: Array<[string, string]>): Map<string, string> {

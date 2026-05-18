@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import GraphCanvas from "@/components/graph/graph-canvas";
 import { API_URL } from "@/lib/api";
-import type { QueueResponse, RepoGraphResponse, Repository } from "@/lib/types";
+import type { QueueResponse, RepoGraphResponse, RepoProgramsResponse, Repository } from "@/lib/types";
 
 type PilotUser = {
   id: string;
@@ -55,11 +55,14 @@ export default function AdminRepoPage() {
         const user = testers.find((tester) => tester.user_id === userID && tester.selected_repo_id === repoID);
         if (!user) throw new Error("This repo is not attached to a pilot user visible to the admin console.");
 
-        const [repoResponse, queueResponse] = await Promise.all([
+        const [repoResponse, queueResponse, programsResponse] = await Promise.all([
           fetch(`${API_URL}/api/v1/repos/${encodeURIComponent(repoID)}`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
           fetch(`${API_URL}/api/v1/repos/${encodeURIComponent(repoID)}/queue`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_URL}/api/v1/repos/${encodeURIComponent(repoID)}/programs`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ]);
@@ -67,10 +70,11 @@ export default function AdminRepoPage() {
 
         const repoResult = await repoResponse.json() as Repository;
         const queueResult = queueResponse.ok ? await queueResponse.json() as QueueResponse : { prs: [] };
+        const programsResult = programsResponse.ok ? await programsResponse.json() as RepoProgramsResponse : { repo: repoResult, programs: [] };
 
         if (!cancelled) {
           setRepo(repoResult);
-          setGraph({ repo: repoResult, nodes: [], edges: [] });
+          setGraph({ repo: repoResult, programs: programsResult.programs ?? [], nodes: [], edges: [] });
           setPRs(queueResult.prs ?? []);
           setMessage("");
         }

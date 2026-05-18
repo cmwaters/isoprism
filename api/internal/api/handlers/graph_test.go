@@ -205,6 +205,44 @@ func TestSelectVisibleGraphIncludesChangedNodeCallersAndCallees(t *testing.T) {
 	}
 }
 
+func TestSelectRankedVisibleGraphLoadsTwoHopProgramNeighborhood(t *testing.T) {
+	selected, edges := selectRankedVisibleGraph(
+		[]string{"program"},
+		[]graphEdgeRow{
+			{sourceID: "program", destinationID: "direct-callee", edgeKind: "calls"},
+			{sourceID: "direct-callee", destinationID: "second-callee", edgeKind: "calls"},
+			{sourceID: "second-callee", destinationID: "third-callee", edgeKind: "calls"},
+			{sourceID: "direct-caller", destinationID: "program", edgeKind: "calls"},
+			{sourceID: "second-caller", destinationID: "direct-caller", edgeKind: "calls"},
+		},
+		map[string]int{},
+	)
+
+	for _, id := range []string{"program", "direct-callee", "second-callee", "direct-caller", "second-caller"} {
+		if _, ok := selected[id]; !ok {
+			t.Fatalf("expected %s in depth-2 program graph: %#v", id, selected)
+		}
+	}
+	if _, ok := selected["third-callee"]; ok {
+		t.Fatalf("third-hop node should not be selected: %#v", selected)
+	}
+	if !hasGraphEdge(edges, "program", "direct-callee") {
+		t.Fatalf("missing program -> direct callee edge: %#v", edges)
+	}
+	if !hasGraphEdge(edges, "direct-callee", "second-callee") {
+		t.Fatalf("missing second-degree callee edge: %#v", edges)
+	}
+	if !hasGraphEdge(edges, "second-caller", "direct-caller") {
+		t.Fatalf("missing second-degree caller edge: %#v", edges)
+	}
+	if hasGraphEdge(edges, "second-callee", "third-callee") {
+		t.Fatalf("third-hop edge should not be visible: %#v", edges)
+	}
+	if selected["program"].depth != 0 || selected["direct-callee"].depth != 1 || selected["second-callee"].depth != 2 {
+		t.Fatalf("unexpected depths: %#v", selected)
+	}
+}
+
 func TestSelectExpansionNeighborsSkipsVisibleAndRanksChangedNodes(t *testing.T) {
 	changeType := "modified"
 	nodeMap := map[string]models.GraphNode{

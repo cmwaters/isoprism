@@ -766,7 +766,7 @@ Computed at query time from `pr_analyses`. PRs with `graph_status != 'ready'` ar
 ### Graph Rendering
 
 React Flow (`@xyflow/react`) with a weighted hex-grid layout:
-- The API returns a bounded depth-2 neighborhood around weighted seed sets. Repo graphs seed from entrypoint functions such as `main`; PR graphs seed from changed nodes.
+- The API returns bounded neighborhoods around weighted seed sets. Program graphs seed from a single repo entrypoint such as Go `main` and load depth 2; PR graphs seed from changed nodes.
 - Node `weight` is `lines_added + lines_removed + caller_count + callee_count`; high-weight seeds are prioritized near the center.
 - The API caps initial graph responses at 150 visible nodes and marks nodes as `boundary=true` when more connected context exists outside the visible set.
 - The client places one node per hex cell, keeps boundary nodes near the outer ring, and runs small local swaps to shorten visible edges.
@@ -777,7 +777,7 @@ React Flow (`@xyflow/react`) with a weighted hex-grid layout:
 ### Data Fetching
 
 - **PR Queue page**: Server Component; fetches queue from Go API on every request. Manual refresh via `router.refresh()`.
-- **Repo/PR Graph page**: The GitHub-shaped repo URL resolves to the internal repo ID, fetches the PR queue, and mounts `GraphCanvas` with an empty repo graph shell so the repo-wide graph is not loaded by default. Clicking a PR fetches `/prs/number/{number}/graph` in place and caches it for quick switching while the browser URL remains `/{owner}/{repo}`.
+- **Repo/PR Graph page**: The GitHub-shaped repo URL resolves to the internal repo ID, fetches the PR queue and lightweight repo program list, and mounts `GraphCanvas` with an empty repo graph shell so graph data is not loaded by default. Clicking a PR fetches `/prs/number/{number}/graph`; clicking a program fetches `/programs/{nodeID}/graph`. Both load in place and are cached for quick switching while the browser URL remains `/{owner}/{repo}`.
 - **Lazy code loading**: The side panel fetches repo source from `/nodes/{nodeID}/code` or PR source/diff data from `/prs/{prID}/nodes/{nodeID}/code` only when the user opens code mode, then caches each node response in the mounted graph view.
 - **PR description markdown**: `NodeDetailPanel` renders `GraphPR.body` with `react-markdown` and `remark-gfm`; HTML is not enabled, and links open in a new tab.
 - **PR change buckets**: After the rendered PR description, the PR overview groups rows into Graph changes, Test changes, Documentation changes, and Other changes. Graph/test rows come from component metadata (`nodes[]` and `test_changes[]`); documentation/other rows come from GitHub `files[]`.

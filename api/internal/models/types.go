@@ -231,9 +231,28 @@ type GraphResponse struct {
 }
 
 type RepoGraphResponse struct {
-	Repo  Repository  `json:"repo"`
-	Nodes []GraphNode `json:"nodes"`
-	Edges []GraphEdge `json:"edges"`
+	Repo     Repository     `json:"repo"`
+	Programs []GraphProgram `json:"programs,omitempty"`
+	Nodes    []GraphNode    `json:"nodes"`
+	Edges    []GraphEdge    `json:"edges"`
+}
+
+type RepoProgramsResponse struct {
+	Repo     Repository     `json:"repo"`
+	Programs []GraphProgram `json:"programs"`
+}
+
+type GraphProgram struct {
+	ID           string  `json:"id"`
+	FullName     string  `json:"full_name"`
+	FilePath     string  `json:"file_path"`
+	PackagePath  string  `json:"package_path,omitempty"`
+	LineStart    int     `json:"line_start"`
+	LineEnd      int     `json:"line_end"`
+	Language     string  `json:"language"`
+	Kind         string  `json:"kind"`
+	IsEntrypoint bool    `json:"is_entrypoint"`
+	Summary      *string `json:"summary,omitempty"`
 }
 
 type GraphExpansionContext struct {

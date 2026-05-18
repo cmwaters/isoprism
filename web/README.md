@@ -92,18 +92,19 @@ The Railway API must have `ADMIN_PASSWORD` set before this page can unlock. Send
 
 The primary review route mirrors the GitHub repository path:
 
-- `/{owner}/{repo}` fetches `GET /api/v1/repos/{repoID}/graph` plus `GET /api/v1/repos/{repoID}/queue`.
+- `/{owner}/{repo}` fetches `GET /api/v1/repos/{repoID}/programs` plus `GET /api/v1/repos/{repoID}/queue`.
 
 The repo route renders one persistent `GraphCanvas` and side panel:
 
-- A repo graph for the whole indexed system at function-level detail.
 - A ranked PR list in the repo overview panel. Each PR card shows the PR number in the graph accent pink, title, author pill, colored addition/deletion pills, a risk label derived from numeric `risk_score` where used, and a client-updated compact open-time badge (`5h`, `3d`, `1w`).
+- A Programs section underneath the pull requests. Programs are repo entrypoint nodes such as Go `main`; clicking one fetches `/api/v1/repos/{repoID}/programs/{nodeID}/graph` and renders a depth-2 graph centered on that single program.
 - In-place PR graph loading when a reviewer clicks a PR card. The URL stays `/{owner}/{repo}`.
+- In-place program graph loading when a reviewer clicks a program card. The URL stays `/{owner}/{repo}`.
 - A small client-side cache so previously opened PR graphs reappear without another fetch.
 - A side panel that reviewers can resize between bounded minimum and maximum widths.
 - Node cards with package/type labels, function or method titles, structured inputs/outputs, and added/removed/deleted pills.
 - Production nodes only; test code is indexed separately and shown as tests attached to the production nodes it exercises.
-- PR graphs initially show changed production nodes plus exactly one hop of production callers/callees in either direction. Context-to-context nodes beyond that first hop are not included until the reviewer expands the graph.
+- Program graphs initially show the selected entrypoint plus two degrees of production callers/callees in either direction. PR graphs initially show changed production nodes plus exactly one hop of production callers/callees in either direction. Context-to-context nodes beyond the initial graph are not included until the reviewer expands the graph.
 - Clicking a visible PR graph edge requests one additional one-hop production neighborhood around that edge's endpoints and merges the returned nodes/edges into the current graph session.
 - Clicking a function or method node expands that component into the visible graph. Clicking a type/class node loads its methods and referenced type contents into the detail panel only; those methods or referenced types are added to the graph only when the reviewer clicks them from the panel.
 - Graph placement uses a deterministic edge-length relaxation layout. Visible edges pull connected nodes together, larger collision padding keeps cards readable, unconnected nodes repel each other, and existing node positions are preserved during expansion so the map does not reshuffle abruptly.

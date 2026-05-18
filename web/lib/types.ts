@@ -177,8 +177,27 @@ export interface GraphResponse {
 
 export interface RepoGraphResponse {
   repo: Repository;
+  programs?: GraphProgram[];
   nodes: GraphNode[];
   edges: GraphEdge[];
+}
+
+export interface RepoProgramsResponse {
+  repo: Repository;
+  programs: GraphProgram[];
+}
+
+export interface GraphProgram {
+  id: string;
+  full_name: string;
+  file_path: string;
+  package_path?: string;
+  line_start: number;
+  line_end: number;
+  language: string;
+  kind: string;
+  is_entrypoint: boolean;
+  summary?: string;
 }
 
 export interface GraphExpansionContext {

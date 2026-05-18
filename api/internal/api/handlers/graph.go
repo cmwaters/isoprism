@@ -821,6 +821,110 @@ func graphEdgesForVisibleSet(edges []graphEdgeRow, visible map[string]bool) []mo
 	return result
 }
 
+func repoProgramFromNode(node models.GraphNode) models.GraphProgram {
+	return models.GraphProgram{
+		ID:           node.ID,
+		FullName:     node.FullName,
+		FilePath:     node.FilePath,
+		PackagePath:  packagePathForNode(node),
+		LineStart:    node.LineStart,
+		LineEnd:      node.LineEnd,
+		Language:     node.Language,
+		Kind:         node.Kind,
+		IsEntrypoint: node.IsEntrypoint,
+		Summary:      node.Summary,
+	}
+}
+
+func isRepoProgramNode(node models.GraphNode) bool {
+	return node.IsEntrypoint || node.FullName == "main" || strings.HasSuffix(node.FullName, ".main")
+}
+
+func sortRepoPrograms(programs []models.GraphProgram) {
+	sort.SliceStable(programs, func(i, j int) bool {
+		a, b := programs[i], programs[j]
+		if a.FilePath != b.FilePath {
+			return a.FilePath < b.FilePath
+		}
+		if a.LineStart != b.LineStart {
+			return a.LineStart < b.LineStart
+		}
+		if a.FullName != b.FullName {
+			return a.FullName < b.FullName
+		}
+		return a.ID < b.ID
+	})
+}
+
+func (h *GraphHandler) loadRepo(ctx context.Context, repoID, userID string) (models.Repository, error) {
+	var repo models.Repository
+	err := h.DB.QueryRow(ctx, `
+		select id, user_id, installation_id, github_repo_id, full_name,
+		       default_branch, main_commit_sha, index_status, is_active, created_at
+		from repositories
+		where id=$1 and user_id=$2
+	`, repoID, userID).Scan(
+		&repo.ID, &repo.UserID, &repo.InstallationID, &repo.GitHubRepoID,
+		&repo.FullName, &repo.DefaultBranch, &repo.MainCommitSHA,
+		&repo.IndexStatus, &repo.IsActive, &repo.CreatedAt,
+	)
+	return repo, err
+}
+
+func (h *GraphHandler) loadRepoPrograms(ctx context.Context, repoID, commitSHA string) ([]models.GraphProgram, error) {
+	rows, err := h.DB.Query(ctx, `
+		select id, full_name, file_path, line_start, line_end,
+		       language, kind, is_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
+		from code_nodes
+		where repo_id=$1
+		  and commit_sha=$2
+		  and is_test=false
+		  and (is_entrypoint=true or full_name='main' or full_name like '%.main')
+		order by file_path, line_start, full_name
+	`, repoID, commitSHA)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	programs := make([]models.GraphProgram, 0)
+	for rows.Next() {
+		var n models.GraphNode
+		var docComment, summary string
+		if err := rows.Scan(
+			&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+			&n.Language, &n.Kind, &n.IsEntrypoint, &docComment, &summary,
+		); err != nil {
+			continue
+		}
+		applyNodeSummary(&n, docComment, summary)
+		programs = append(programs, repoProgramFromNode(n))
+	}
+	if len(programs) > 0 {
+		sortRepoPrograms(programs)
+		return programs, nil
+	}
+
+	var n models.GraphNode
+	var docComment, summary string
+	err = h.DB.QueryRow(ctx, `
+		select id, full_name, file_path, line_start, line_end,
+		       language, kind, is_entrypoint, coalesce(doc_comment,''), coalesce(summary,'')
+		from code_nodes
+		where repo_id=$1 and commit_sha=$2 and is_test=false
+		order by file_path, line_start, full_name
+		limit 1
+	`, repoID, commitSHA).Scan(
+		&n.ID, &n.FullName, &n.FilePath, &n.LineStart, &n.LineEnd,
+		&n.Language, &n.Kind, &n.IsEntrypoint, &docComment, &summary,
+	)
+	if err != nil {
+		return programs, nil
+	}
+	applyNodeSummary(&n, docComment, summary)
+	return []models.GraphProgram{repoProgramFromNode(n)}, nil
+}
+
 func (h *GraphHandler) loadRepoExpansionData(ctx context.Context, repoID, commitSHA string) (map[string]models.GraphNode, []graphEdgeRow, error) {
 	nodeRows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
@@ -1198,6 +1302,133 @@ func (h *GraphHandler) ExpandGraph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GET /api/v1/repos/{repoID}/programs
+func (h *GraphHandler) GetRepoPrograms(w http.ResponseWriter, r *http.Request) {
+	repoID := chi.URLParam(r, "repoID")
+	userID := r.Header.Get("X-User-ID")
+	ctx := r.Context()
+
+	repo, err := h.loadRepo(ctx, repoID, userID)
+	if err != nil {
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+	programs := []models.GraphProgram{}
+	if repo.MainCommitSHA != nil && *repo.MainCommitSHA != "" {
+		programs, err = h.loadRepoPrograms(ctx, repoID, *repo.MainCommitSHA)
+		if err != nil {
+			log.Printf("GetRepoPrograms: programs query: %v", err)
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models.RepoProgramsResponse{
+		Repo:     repo,
+		Programs: programs,
+	})
+}
+
+// GET /api/v1/repos/{repoID}/programs/{nodeID}/graph
+func (h *GraphHandler) GetRepoProgramGraph(w http.ResponseWriter, r *http.Request) {
+	repoID := chi.URLParam(r, "repoID")
+	nodeID := strings.TrimSpace(chi.URLParam(r, "nodeID"))
+	userID := r.Header.Get("X-User-ID")
+	ctx := r.Context()
+
+	if nodeID == "" {
+		http.Error(w, "node id is required", http.StatusBadRequest)
+		return
+	}
+
+	repo, err := h.loadRepo(ctx, repoID, userID)
+	if err != nil {
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+	if repo.MainCommitSHA == nil || *repo.MainCommitSHA == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(models.RepoGraphResponse{
+			Repo:     repo,
+			Programs: []models.GraphProgram{},
+			Nodes:    []models.GraphNode{},
+			Edges:    []models.GraphEdge{},
+		})
+		return
+	}
+
+	programs, err := h.loadRepoPrograms(ctx, repoID, *repo.MainCommitSHA)
+	if err != nil {
+		log.Printf("GetRepoProgramGraph: programs query: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	isProgram := false
+	for _, program := range programs {
+		if program.ID == nodeID {
+			isProgram = true
+			break
+		}
+	}
+	if !isProgram {
+		http.Error(w, "program not found", http.StatusNotFound)
+		return
+	}
+
+	nodeMap, allEdges, err := h.loadRepoExpansionData(ctx, repoID, *repo.MainCommitSHA)
+	if err != nil {
+		log.Printf("GetRepoProgramGraph: graph data query: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	if _, ok := nodeMap[nodeID]; !ok {
+		http.Error(w, "program not found", http.StatusNotFound)
+		return
+	}
+
+	selected, edges := selectRankedVisibleGraph([]string{nodeID}, allEdges, map[string]int{})
+	nodes := make([]models.GraphNode, 0, len(selected))
+	nodeIDs := make([]string, 0, len(selected))
+	for id, meta := range selected {
+		n, ok := nodeMap[id]
+		if !ok {
+			continue
+		}
+		if id == nodeID {
+			n.NodeType = "entrypoint"
+		} else {
+			n.NodeType = "context"
+		}
+		n.Weight = meta.weight
+		n.Degree = meta.degree
+		n.GraphDepth = meta.depth
+		n.Boundary = meta.boundary
+		n.PackagePath = packagePathForNode(n)
+		nodes = append(nodes, n)
+		nodeIDs = append(nodeIDs, id)
+	}
+	resolveGraphTypeRefs(nodeMap)
+	for i := range nodes {
+		if resolved, ok := nodeMap[nodes[i].ID]; ok {
+			nodes[i].Inputs = resolved.Inputs
+			nodes[i].Outputs = resolved.Outputs
+		}
+	}
+	sortGraphNodes(nodes)
+	if len(nodeIDs) > 0 {
+		h.attachTestsFromEdges(ctx, repoID, nodeIDs, []string{*repo.MainCommitSHA}, func(id string) string { return id }, nodes)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models.RepoGraphResponse{
+		Repo:     repo,
+		Programs: programs,
+		Nodes:    nodes,
+		Edges:    edges,
+	})
+}
+
 // GET /api/v1/repos/{repoID}/graph
 func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	repoID := chi.URLParam(r, "repoID")
@@ -1222,10 +1453,17 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 	if repo.MainCommitSHA == nil || *repo.MainCommitSHA == "" {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(models.RepoGraphResponse{
-			Repo:  repo,
-			Nodes: []models.GraphNode{},
-			Edges: []models.GraphEdge{},
+			Repo:     repo,
+			Programs: []models.GraphProgram{},
+			Nodes:    []models.GraphNode{},
+			Edges:    []models.GraphEdge{},
 		})
+		return
+	}
+	programs, err := h.loadRepoPrograms(ctx, repoID, *repo.MainCommitSHA)
+	if err != nil {
+		log.Printf("GetRepoGraph: programs query: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
 
@@ -1267,7 +1505,7 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 		if fallbackSeed == "" {
 			fallbackSeed = n.ID
 		}
-		if n.FullName == "main" || strings.HasSuffix(n.FullName, ".main") {
+		if isRepoProgramNode(n) {
 			seedIDs = append(seedIDs, n.ID)
 		}
 	}
@@ -1354,9 +1592,10 @@ func (h *GraphHandler) GetRepoGraph(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.RepoGraphResponse{
-		Repo:  repo,
-		Nodes: nodes,
-		Edges: edges,
+		Repo:     repo,
+		Programs: programs,
+		Nodes:    nodes,
+		Edges:    edges,
 	})
 }
 

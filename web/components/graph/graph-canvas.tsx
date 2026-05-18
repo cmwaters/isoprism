@@ -20,7 +20,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GitHubIssueDescription, GraphEdge, GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
+import { GitHubIssueDescription, GraphEdge, GraphExpansionResponse, GraphProgram, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import { warmSettingsRepos } from "@/lib/settings-cache";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
@@ -661,7 +661,9 @@ function InnerCanvas({
   const { fitView, getNode, getZoom, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
   const [prGraphCache, setPRGraphCache] = useState<Record<number, GraphResponse>>({});
+  const [programGraphCache, setProgramGraphCache] = useState<Record<string, RepoGraphResponse>>({});
   const [loadingPRNumber, setLoadingPRNumber] = useState<number | null>(null);
+  const [loadingProgramID, setLoadingProgramID] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
   const [selectedPRChange, setSelectedPRChange] = useState<SelectedPRChange | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("overview");
@@ -1014,6 +1016,7 @@ function InnerCanvas({
   }, []);
 
   const onSelectPR = useCallback(async (prNumber: number) => {
+    setSelectedNode(null);
     setSelectedPRChange(null);
     setExpandedEdgeKeys(new Set());
     setFocusedTestNodeID(null);
@@ -1037,9 +1040,41 @@ function InnerCanvas({
     }
   }, [prGraphCache, repoID, token]);
 
-  const onBackToRepo = useCallback(() => {
+  const onSelectProgram = useCallback(async (programID: string) => {
+    setSelectedNode(null);
     setSelectedPRChange(null);
     setExpandedEdgeKeys(new Set());
+    setExpandingNodeIDs({});
+    setExpandedNodeIDs({});
+    setPanelMode("overview");
+    setFocusedTestNodeID(null);
+    setTestFocusExtraNodeIDs(new Set());
+    setDetailExpansion({ nodes: [], edges: [] });
+    layoutPositionsRef.current = {};
+    setLayoutPositions({});
+    const cached = programGraphCache[programID];
+    if (cached) {
+      setActiveGraph(cached);
+      return;
+    }
+
+    setLoadingProgramID(programID);
+    try {
+      const programGraph = await apiFetch<RepoGraphResponse>(`/api/v1/repos/${repoID}/programs/${programID}/graph`, token);
+      setProgramGraphCache((current) => ({ ...current, [programID]: programGraph }));
+      setActiveGraph(programGraph);
+    } finally {
+      setLoadingProgramID(null);
+    }
+  }, [programGraphCache, repoID, token]);
+
+  const onBackToRepo = useCallback(() => {
+    setSelectedNode(null);
+    setSelectedPRChange(null);
+    setExpandedEdgeKeys(new Set());
+    setExpandingNodeIDs({});
+    setExpandedNodeIDs({});
+    setPanelMode("overview");
     setFocusedTestNodeID(null);
     setTestFocusExtraNodeIDs(new Set());
     setDetailExpansion({ nodes: [], edges: [] });
@@ -1056,6 +1091,9 @@ function InnerCanvas({
   const maxNodes = 20;
   const activeRepo = repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo);
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
+  const repoPrograms: GraphProgram[] = isPRGraph(activeGraph)
+    ? (!isPRGraph(graph) ? graph.programs ?? [] : [])
+    : activeGraph.programs ?? [];
   const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
   const detailNodes = isPRGraph(baseVisibleGraph)
     ? uniqueGraphNodes([...baseVisibleGraph.nodes, ...visibleGraph.nodes, ...detailExpansion.nodes, ...activePRTestChanges, ...(baseVisibleGraph.test_context ?? [])])
@@ -1096,8 +1134,11 @@ function InnerCanvas({
         prFiles={activePRFiles}
         testChanges={activePRTestChanges}
         prs={prs}
+        programs={repoPrograms}
         loadingPRNumber={loadingPRNumber}
+        loadingProgramID={loadingProgramID}
         onSelectPR={onSelectPR}
+        onSelectProgram={onSelectProgram}
         onBackToRepo={onBackToRepo}
         token={token}
         nodeCodeCache={nodeCodeCache}
