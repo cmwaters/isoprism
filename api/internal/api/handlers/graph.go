@@ -225,7 +225,7 @@ func packagePathForNode(node models.GraphNode) string {
 	if slash := strings.LastIndex(path, "/"); slash >= 0 {
 		return path[:slash]
 	}
-	return "."
+	return ""
 }
 
 func (h *GraphHandler) attachTestsFromEdges(ctx context.Context, repoID string, targetIDs []string, commitSHAs []string, canonicalizeID func(string) string, nodes []models.GraphNode) {

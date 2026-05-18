@@ -8,7 +8,7 @@ function filePackageName(filePath: string): string {
 }
 
 function packageLabel(packagePath: string | undefined, filePath: string): string {
-  if (!packagePath) return filePackageName(filePath);
+  if (!packagePath || packagePath === ".") return filePackageName(filePath);
   const parts = packagePath.split("/").filter(Boolean);
   return parts[parts.length - 1] || packagePath;
 }

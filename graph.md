@@ -61,7 +61,7 @@ Rename detection is intentionally conservative. A new component is considered re
 
 When a renamed component is opened, the detail endpoint uses the old symbol/file identity for the base version and the current identity for the head version. This keeps the rendered component diff aligned with the `+/-` counts shown on the PR cards and graph nodes. The UI reconstructs a full component diff from source only when the relevant sides are available: both base and head for modified or renamed components, head for added components, and base for deleted components. If a source lookup is incomplete, the UI falls back to the persisted `pr_node_changes.diff_hunk` instead of treating the visible side as a whole-component add or delete.
 
-The UI renders symbol names as context plus title: package and receiver/type context appears in the pink metadata label, while the black title shows only the function or method name. For example, `rpc/grpc:coregrpc.BlockAPI.Stop` renders as `grpc.BlockAPI` above `Stop`.
+The UI renders symbol names as context plus title: package and receiver/type context appears in the pink metadata label, while the black title shows only the function or method name. For example, `rpc/grpc:coregrpc.BlockAPI.Stop` renders as `grpc.BlockAPI` above `Stop`. Root-level files omit `package_path`; the web formatter falls back to the root filename/package label so `main.store.save` renders as `main.store` above `save`, never `..store`.
 
 Changed test functions are also stored in `pr_node_changes`, but the PR graph endpoint returns them in `test_changes[]` instead of rendering them as graph nodes. Test changes use the same labels and component diff fields as graph changes.
 

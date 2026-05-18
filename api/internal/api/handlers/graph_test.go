@@ -67,6 +67,13 @@ func TestBaseLookupIdentityIgnoresOldIdentityForNonRenames(t *testing.T) {
 	}
 }
 
+func TestPackagePathForNodeOmitsRootFileDotPath(t *testing.T) {
+	got := packagePathForNode(models.GraphNode{FilePath: "main.go"})
+	if got != "" {
+		t.Fatalf("package path for root file = %q, want empty", got)
+	}
+}
+
 func TestAppendTestFocusEdgesKeepsChangedTestHelpersReachable(t *testing.T) {
 	edges := appendTestFocusEdges(
 		[]models.GraphEdge{{SourceID: "prod-a", DestinationID: "prod-b", EdgeKind: "calls"}},
