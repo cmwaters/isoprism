@@ -20,16 +20,16 @@ Settings are not a multi-account admin area during beta. There are no tabs, orga
 The settings route remains:
 
 ```text
-/{user}/settings
+/settings
 ```
 
-The callback-safe `/settings` route is a client redirect that resolves the signed-in user's GitHub login and forwards to `/{user}/settings`.
+The settings page always resolves the signed-in user from the current Supabase session. It must not include an owner path segment, because settings are only editable for the current user.
 
-The page should be user-scoped only. Organization-specific settings pages are out of scope for the beta.
+Organization-specific and other-user settings pages are out of scope for the beta.
 
 ## 3. Layout
 
-The page is a dedicated `/{user}/settings` route, not an overlay on top of the repo graph. It should use a two-column layout:
+The page is a dedicated `/settings` route, not an overlay on top of the repo graph. It should use a two-column layout:
 
 1. Left panel with the signed-in person's name, avatar, and a back option to the selected repo view
 2. Main content with the repository management controls
@@ -41,7 +41,7 @@ The main content should have two sections:
 
 The page header should be plain and compact: the title is `Manage Repositories`, followed by a short description of GitHub access, indexing, and the selected review repository. The header should not show the signed-in user's avatar because the avatar belongs in the left panel.
 
-Navigation from a repo page to settings should be fast. The repo side panel should link to `/{user}/settings` with route prefetching enabled, and the repo page should warm a short-lived client cache for `GET /api/v1/me/repos` so settings can render cached repository data immediately before refreshing it.
+Navigation from a repo page to settings should be fast. The repo side panel should link to `/settings` with route prefetching enabled, and the repo page should warm a short-lived client cache for `GET /api/v1/me/repos` so settings can render cached repository data immediately before refreshing it.
 
 The GitHub connection section should show the signed-in GitHub user and provide one action to manage the GitHub App. Installation happens during onboarding; settings should not show a separate install action because that makes the connected state ambiguous.
 
@@ -66,7 +66,7 @@ Each row should show repository name, default branch, indexed/not indexed state,
 
 The GitHub App callback is available at `/api/v1/github/callback`. It re-syncs GitHub authorization and then decides from Isoprism account state:
 
-- Already setup accounts return to `/settings`, which resolves the signed-in user's `/{user}/settings` route.
+- Already setup accounts return to `/settings`.
 - Accounts that have not selected or indexed a repository yet return to `/onboarding/repos`.
 
 The redirect decision must not rely on GitHub's `setup_action`, because settings edits can arrive with values that look like first-time setup. Existing setup is determined from `users.selected_repo_id`, `pilot_users.selected_repo_id`, or an already ready repository.

@@ -34,11 +34,11 @@ The GitHub OAuth login requests `read:user`, `user:email`, and `read:org`. The o
 
 ## Settings
 
-Authenticated views link to `/{user}/settings` from the graph side panel. The settings entry is a left-aligned button without a pill background, and it opens the dedicated settings page instead of an in-graph overlay.
+Authenticated views link to `/settings` from the graph side panel. The settings entry is a left-aligned button without a pill background, and it opens the dedicated settings page instead of an in-graph overlay.
 
 The graph side panel uses a Next route link so the settings route can be prefetched while the repo page is open. Repo pages also warm a short-lived client cache for `GET /api/v1/me/repos`; settings renders from that cache immediately when available, then refreshes it through the same API call.
 
-Settings are intentionally simple during beta. `/{user}/settings` is a dedicated Manage Repositories page with a left panel showing the signed-in person and a back link to the repo view. The tester can:
+Settings are intentionally simple during beta. `/settings` is a dedicated Manage Repositories page for the signed-in user, with a left panel showing that person and a back link to the repo view. The tester can:
 
 - See their GitHub connection
 - Install or manage the Isoprism GitHub App on GitHub

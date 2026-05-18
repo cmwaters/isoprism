@@ -1055,8 +1055,6 @@ function InnerCanvas({
   const totalNodes = visibleGraph.nodes.length;
   const maxNodes = 20;
   const activeRepo = repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo);
-  const [activeOwner] = activeRepo.full_name.split("/");
-  const settingsHref = `/${activeOwner || "settings"}/settings`;
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
   const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
   const detailNodes = isPRGraph(baseVisibleGraph)
@@ -1113,7 +1111,7 @@ function InnerCanvas({
         onViewCode={() => {
           setPanelMode("code");
         }}
-        settingsHref={settingsHref}
+        settingsHref="/settings"
       />
 
       {activePR && selectedPRChange && (

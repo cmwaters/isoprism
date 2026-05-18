@@ -12,6 +12,8 @@ interface Props {
 
 export default async function CanonicalRepoPage({ params }: Props) {
   const { owner, repo: repoName } = await params;
+  if (repoName.toLowerCase() === "settings") redirect("/settings");
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");

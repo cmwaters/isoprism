@@ -101,7 +101,7 @@ export default function AccountPill({ variant = "fixed" }: { variant?: "fixed" |
 
   return (
     <Link
-      href={`/${encodeURIComponent(user.login)}/settings`}
+      href="/settings"
       aria-label="Open settings"
       style={{
         position: variant === "fixed" ? "fixed" : "relative",
