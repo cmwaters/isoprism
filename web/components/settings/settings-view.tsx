@@ -190,10 +190,23 @@ export function SettingsView({
   if (loading) {
     return (
       <SettingsShell>
-        <div style={loadingStyle}>
-          <Loader2 size={22} className="animate-spin" />
-          <span>Loading settings</span>
-        </div>
+        <aside style={sidebarStyle}>
+          <div style={accountBlockStyle}>
+            <div aria-hidden="true" style={{ ...avatarStyle, background: "#111111" }}>
+              {(currentUser?.name ?? account).slice(0, 1).toUpperCase()}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={accountNameStyle}>{currentUser?.name ?? "Settings"}</div>
+              <div style={accountLoginStyle}>{currentUser?.login ?? "Loading account"}</div>
+            </div>
+          </div>
+        </aside>
+        <main style={{ ...mainStyle, ...loadingMainStyle }}>
+          <div style={loadingStyle}>
+            <Loader2 size={22} className="animate-spin" />
+            <span>Loading settings</span>
+          </div>
+        </main>
       </SettingsShell>
     );
   }
@@ -545,6 +558,13 @@ const mainStyle: React.CSSProperties = {
   padding: "48px 24px",
 };
 
+const loadingMainStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
 const headerStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
@@ -780,7 +800,6 @@ const emptyStyle: React.CSSProperties = {
 };
 
 const loadingStyle: React.CSSProperties = {
-  minHeight: "100vh",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
