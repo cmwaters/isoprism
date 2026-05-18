@@ -12,6 +12,8 @@ export default function PilotRegisterPage() {
     current_review_tools: "",
     review_work_percent: 20,
     review_pain_points: "",
+    ai_review_usage: "",
+    ai_resolved_issue_classes: "",
     ai_review_difference: "",
     interested_in_pilot: "",
     name: "",
@@ -99,6 +101,12 @@ export default function PilotRegisterPage() {
           </div>
 
           <Textarea label="What pain points, if any, do you currently face in reviewing software?" value={form.review_pain_points} onChange={(value) => setForm({ ...form, review_pain_points: value })} />
+          <Field label="How do you use AI to review software?">
+            <input style={inputStyle} value={form.ai_review_usage} onChange={(event) => setForm({ ...form, ai_review_usage: event.target.value })} />
+          </Field>
+          <Field label="Which class of issues, if any, do you have resolved without any human in the loop?">
+            <input style={inputStyle} value={form.ai_resolved_issue_classes} onChange={(event) => setForm({ ...form, ai_resolved_issue_classes: event.target.value })} />
+          </Field>
           <Textarea label="Do you review software written by AI any differently to humans, if so how?" value={form.ai_review_difference} onChange={(value) => setForm({ ...form, ai_review_difference: value })} />
         </section>
 

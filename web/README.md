@@ -24,7 +24,7 @@ npm run build
 
 ## Pilot registration and auth
 
-The pilot starts at `/pilot/register`. Prospective testers submit the registration form, including their software experience, what parts of software AI does not write, their process before generating issue prompts, how they currently review code, how much of their work is spent reviewing code, whether they review AI-written software differently, and whether they want to pilot Isoprism for one week with one repository.
+The pilot starts at `/pilot/register`. Prospective testers submit the registration form, including their software experience, what parts of software AI does not write, their process before generating issue prompts, how they currently review code, how much of their work is spent reviewing code, review pain points, how they use AI to review software, issue classes resolved without a human in the loop, whether they review AI-written software differently, and whether they want to pilot Isoprism for one week with one repository.
 
 Admins review registrations at `/admin`, generate an access code, and send the invite email through Mailtrap. The invite link goes to `/pilot/{token}`, which forwards into the login/GitHub setup flow. A review email can only be sent after the invite has been generated and the pilot user has registered with GitHub; it goes to `/pilot/review/{token}` and submits the end-of-pilot review form.
 

@@ -108,6 +108,8 @@ type PilotRegistrationRequest struct {
 	CurrentReviewTools   string `json:"current_review_tools"`
 	ReviewWorkPercent    int    `json:"review_work_percent"`
 	ReviewPainPoints     string `json:"review_pain_points"`
+	AIReviewUsage        string `json:"ai_review_usage"`
+	AIResolvedIssueClass string `json:"ai_resolved_issue_classes"`
 	AIReviewDifference   string `json:"ai_review_difference"`
 	InterestedInPilot    bool   `json:"interested_in_pilot"`
 	Name                 string `json:"name"`
