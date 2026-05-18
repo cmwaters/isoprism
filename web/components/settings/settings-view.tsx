@@ -687,7 +687,6 @@ const repoButtonStyle = (selected: boolean): React.CSSProperties => ({
   display: "flex",
   alignItems: "flex-start",
   gap: 12,
-  cursor: "pointer",
   textAlign: "left",
 });
 
