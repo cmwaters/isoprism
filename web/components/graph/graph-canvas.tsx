@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   ReactFlow,
   Node,
@@ -23,7 +24,6 @@ import "@xyflow/react/dist/style.css";
 import { GitHubIssueDescription, GraphEdge, GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
-import { SettingsView } from "@/components/settings/settings-view";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel, { ComponentChangePanel, type SelectedPRChange } from "./node-detail-panel";
 import { expansionOptionsForVisibleSelection, isTypeNode } from "./graph-selection";
@@ -658,6 +658,7 @@ function InnerCanvas({
   repo?: Repository;
   prs?: QueuePR[];
 }) {
+  const router = useRouter();
   const { fitView, getNode, getZoom, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
   const [prGraphCache, setPRGraphCache] = useState<Record<number, GraphResponse>>({});
@@ -669,7 +670,6 @@ function InnerCanvas({
   const [componentPanelWidth, setComponentPanelWidth] = useState(COMPONENT_PANEL_DEFAULT_WIDTH);
   const [nodeCodeCache, setNodeCodeCache] = useState<Record<string, NodeCodeResponse>>({});
   const [issueDescriptionCache, setIssueDescriptionCache] = useState<Record<string, GitHubIssueDescription>>({});
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [layoutPositions, setLayoutPositions] = useState<Record<string, Point>>({});
   const layoutPositionsRef = useRef<Record<string, Point>>({});
   const pendingLayoutAnchorRef = useRef<Point | undefined>(undefined);
@@ -1001,10 +1001,10 @@ function InnerCanvas({
   useEffect(() => {
     const previousWidth = previousComponentPanelWidthRef.current;
     previousComponentPanelWidthRef.current = componentPanelWidth;
-    if (!selectedPRChange || settingsOpen || previousWidth === componentPanelWidth) return;
+    if (!selectedPRChange || previousWidth === componentPanelWidth) return;
     const timeout = window.setTimeout(() => fitView({ padding: 0.15 }), 60);
     return () => window.clearTimeout(timeout);
-  }, [componentPanelWidth, fitView, selectedPRChange, settingsOpen]);
+  }, [componentPanelWidth, fitView, selectedPRChange]);
 
   const onCacheNodeCode = useCallback((nodeID: string, code: NodeCodeResponse) => {
     setNodeCodeCache((current) => current[nodeID] ? current : { ...current, [nodeID]: code });
@@ -1015,7 +1015,6 @@ function InnerCanvas({
   }, []);
 
   const onSelectPR = useCallback(async (prNumber: number) => {
-    setSettingsOpen(false);
     setSelectedPRChange(null);
     setExpandedEdgeKeys(new Set());
     setFocusedTestNodeID(null);
@@ -1040,7 +1039,6 @@ function InnerCanvas({
   }, [prGraphCache, repoID, token]);
 
   const onBackToRepo = useCallback(() => {
-    setSettingsOpen(false);
     setSelectedPRChange(null);
     setExpandedEdgeKeys(new Set());
     setFocusedTestNodeID(null);
@@ -1111,14 +1109,12 @@ function InnerCanvas({
           setPanelMode("code");
         }}
         onOpenSettings={() => {
-          setSettingsOpen(true);
-          setSelectedNode(null);
-          setSelectedPRChange(null);
-          setPanelMode("overview");
+          const [owner] = activeRepo.full_name.split("/");
+          router.push(`/${owner || "settings"}/settings`);
         }}
       />
 
-      {activePR && selectedPRChange && !settingsOpen && (
+      {activePR && selectedPRChange && (
         <ComponentChangePanel
           selectedChange={selectedPRChange}
           allNodes={detailNodes}
@@ -1148,15 +1144,6 @@ function InnerCanvas({
       )}
 
       <div style={{ flex: 1, background: "#EBE9E9", position: "relative" }}>
-        {settingsOpen ? (
-          <div style={{ position: "absolute", inset: 0, overflowY: "auto" }}>
-            <SettingsView
-              account={activeRepo.full_name.split("/")[0] || "settings"}
-              embedded
-              onClose={() => setSettingsOpen(false)}
-            />
-          </div>
-        ) : (
         <div style={{ position: "absolute", inset: 0 }}>
           <ReactFlow
             nodes={nodes}
@@ -1205,7 +1192,6 @@ function InnerCanvas({
           )}
 
         </div>
-        )}
       </div>
 
       <BetaFeedbackBanner

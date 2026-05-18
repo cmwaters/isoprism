@@ -30,18 +30,23 @@ The page should be user-scoped only. Organization-specific settings pages are ou
 
 ## 3. Layout
 
-The page should have one content column with two sections:
+The page is a dedicated `/{user}/settings` route, not an overlay on top of the repo graph. It should use a two-column layout:
+
+1. Left panel with the signed-in person's name, avatar, and a back option to the selected repo view
+2. Main content with the repository management controls
+
+The main content should have two sections:
 
 1. GitHub connection
 2. Repositories
 
-The page header should be plain and compact: the title is `Settings`, followed by a short description of GitHub access, indexing, and the selected review repository. The header should not show the signed-in user's avatar.
+The page header should be plain and compact: the title is `Manage Repositories`, followed by a short description of GitHub access, indexing, and the selected review repository. The header should not show the signed-in user's avatar because the avatar belongs in the left panel.
 
 The GitHub connection section should show the signed-in GitHub user and provide one action to manage the GitHub App. Installation happens during onboarding; settings should not show a separate install action because that makes the connected state ambiguous.
 
 The repositories section should show a searchable list of repositories available through the GitHub App installation. Added repositories should appear immediately as authorized but not indexed. Revoked repositories should disappear from this list because GitHub no longer authorizes them.
 
-Each row should show repository name, default branch, selected/indexed/unused state, and the available actions:
+Each row should show repository name, default branch, indexed/not indexed state, and the available actions. Status appears once in the branch metadata line. Repositories marked for deletion are treated as `Not indexed` in the UI even if indexed data still exists until cleanup runs.
 
 - **Index** starts `POST /api/v1/repos/{repoID}/index`.
 - **Select** starts `POST /api/v1/repos/{repoID}/select` for an already indexed repository.
