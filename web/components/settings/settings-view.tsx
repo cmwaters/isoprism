@@ -3,7 +3,7 @@
 import type React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowUpRight, GitBranch, Github, Loader2, Search } from "lucide-react";
+import { ArrowUpRight, GitBranch, Github, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { getCachedSettingsRepos, warmSettingsRepos } from "@/lib/settings-cache";
@@ -128,7 +128,7 @@ export function SettingsView({
   const manageURL = "https://github.com/settings/installations";
 
   const selectedReadyRepo = repos.find((repo) => repo.is_selected && repo.index_status === "ready") ?? null;
-  const backRepo = selectedReadyRepo ?? repos.find((repo) => repo.index_status === "ready" && !repo.unused_at) ?? null;
+  const accountType = repos.some((repo) => repo.user_class === "pilot") ? "Pilot" : "Premium";
   const indexingRepo = repos.find((repo) => repo.id === indexingRepoID) ?? null;
   const filteredRepos = repos.filter((repo) => repo.full_name.toLowerCase().includes(search.toLowerCase()));
 
@@ -229,10 +229,7 @@ export function SettingsView({
             <div style={accountLoginStyle}>{currentUser?.login ?? account}</div>
           </div>
         </div>
-        <Link href={backRepo ? `/${backRepo.full_name}` : "/"} style={backLinkStyle}>
-          <ArrowLeft size={16} />
-          Back to repo
-        </Link>
+        <div style={accountTypeStyle}>{accountType}</div>
       </aside>
 
       <main style={mainStyle}>
@@ -542,12 +539,16 @@ const accountLoginStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-const backLinkStyle: React.CSSProperties = {
+const accountTypeStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  gap: 8,
-  color: "#111111",
-  textDecoration: "none",
+  width: "fit-content",
+  minHeight: 26,
+  padding: "0 9px",
+  borderRadius: 999,
+  border: "1px solid #C7C7C7",
+  background: "#E9E9E9",
+  color: "#555555",
   fontSize: 13,
   fontWeight: 650,
 };

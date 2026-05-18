@@ -31,7 +31,7 @@ Organization-specific and other-user settings pages are out of scope for the bet
 
 The page is a dedicated `/settings` route, not an overlay on top of the repo graph. It should use a two-column layout:
 
-1. Left panel with the signed-in person's name, avatar, and a back option to the selected repo view
+1. Left panel with the signed-in person's name, avatar, and account type (`Pilot` or `Premium`)
 2. Main content with the repository management controls
 
 The main content should have two sections:
