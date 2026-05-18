@@ -338,6 +338,7 @@ The pilot admin console lives at `/admin` and requires `ADMIN_PASSWORD` before r
 It should let an operator:
 
 - Review Registration and Review forms
+- Read submitted form answers as question-and-response text using the live Registration and Review form wording
 - See registered pilot users and link to their registration form
 - Add or delete pilot users manually
 - Generate an access-code link and send the invite email with Mailtrap

@@ -3,6 +3,7 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "@/lib/api";
+import { questionsForForm } from "@/lib/pilot-form-questions";
 
 type PilotUser = {
   id: string;
@@ -251,7 +252,7 @@ export default function AdminPage() {
                   <span>{form.name ?? form.email ?? "Anonymous"}</span>
                   <span>{formatDate(form.submitted_at)}</span>
                 </summary>
-                <pre style={preStyle}>{JSON.stringify(form.answers, null, 2)}</pre>
+                <FormAnswers form={form} />
               </details>
             ))}
           </section>
@@ -368,6 +369,56 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
   return <div><div style={smallLabelStyle}>{label}</div><div style={valueStyle}>{value}</div></div>;
 }
 
+function FormAnswers({ form }: { form: PilotForm }) {
+  const answers = form.answers ?? {};
+  const knownQuestions = questionsForForm(form.form_type);
+  const knownKeys = new Set(knownQuestions.map((question) => question.key));
+  const askedQuestions = knownQuestions.filter((question) => !question.askedWhen || question.askedWhen(answers));
+  const extraKeys = Object.keys(answers).filter((key) => !knownKeys.has(key));
+
+  return (
+    <div style={answersStyle}>
+      {askedQuestions.map((question) => (
+        <AnswerBlock key={question.key} label={question.label} value={answers[question.key]} />
+      ))}
+      {extraKeys.map((key) => (
+        <AnswerBlock key={key} label={humanizeKey(key)} value={answers[key]} />
+      ))}
+    </div>
+  );
+}
+
+function AnswerBlock({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div style={answerBlockStyle}>
+      <div style={answerQuestionStyle}>{label}</div>
+      <div style={answerValueStyle}>{formatAnswer(value)}</div>
+    </div>
+  );
+}
+
+function formatAnswer(value: unknown) {
+  if (value === null || value === undefined || value === "") return <span style={mutedStyle}>No response.</span>;
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return Number.isFinite(value) ? `${value}%` : String(value);
+  if (Array.isArray(value)) return value.length > 0 ? value.map(formatPlainValue).join(", ") : <span style={mutedStyle}>No response.</span>;
+  if (typeof value === "object") return JSON.stringify(value, null, 2);
+  return String(value);
+}
+
+function formatPlainValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "No response";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function humanizeKey(key: string) {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   return <div style={{ minHeight: "100vh", background: "#EBE9E9", color: "#111111" }}>{children}</div>;
 }
@@ -445,7 +496,10 @@ const inlineLinkStyle: React.CSSProperties = { color: "#111", textDecoration: "u
 const tableHeaderStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", padding: "0 8px 8px" };
 const detailCardStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: "10px 8px" };
 const summaryStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "0.6fr 1.2fr 0.8fr", gap: 10, cursor: "pointer", fontSize: 13 };
-const preStyle: React.CSSProperties = { margin: "12px 0 0", padding: 12, borderRadius: 6, background: "#F7F7F7", overflow: "auto", fontSize: 12 };
+const answersStyle: React.CSSProperties = { margin: "14px 0 2px", display: "grid", gap: 12 };
+const answerBlockStyle: React.CSSProperties = { borderTop: "1px solid #EEEEEE", paddingTop: 10 };
+const answerQuestionStyle: React.CSSProperties = { color: "#555555", fontSize: 12, fontWeight: 750, lineHeight: 1.4 };
+const answerValueStyle: React.CSSProperties = { marginTop: 4, color: "#111111", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" };
 const userCardStyle: React.CSSProperties = { border: "1px solid #E0E0E0", borderRadius: 8, overflow: "hidden", marginTop: 8, background: "#F7F7F7" };
 const userButtonStyle: React.CSSProperties = { width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 0.7fr", gap: 12, border: 0, background: "transparent", padding: 12, textAlign: "left", alignItems: "center", fontSize: 13, cursor: "pointer" };
 const expandedStyle: React.CSSProperties = { borderTop: "1px solid #E0E0E0", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 };

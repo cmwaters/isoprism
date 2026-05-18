@@ -59,7 +59,7 @@ The pilot admin console is available at `/admin`. It prompts for the admin passw
 
 Admin capabilities:
 
-- Review Registration and Review forms.
+- Review Registration and Review forms as question-and-response text using the same question wording as the live forms.
 - Add pilot users manually with a name and optional email.
 - Generate an access code and send the pilot invite email through Mailtrap.
 - Copy generated invite links from the pilot user details.

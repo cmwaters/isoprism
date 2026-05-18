@@ -342,7 +342,7 @@ The admin console is for managing pilot users and submitted forms. It is protect
 **Forms:**
 - Registration submissions
 - Review submissions
-- Full answer JSON for each submitted form
+- Submitted answers rendered as question-and-response text using the current Registration and Review form wording
 
 ---
 

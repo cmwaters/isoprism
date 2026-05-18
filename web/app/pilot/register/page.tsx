@@ -3,6 +3,9 @@
 import type React from "react";
 import { useState } from "react";
 import { API_URL } from "@/lib/api";
+import { registrationQuestions } from "@/lib/pilot-form-questions";
+
+const questionLabel = Object.fromEntries(registrationQuestions.map((question) => [question.key, question.label])) as Record<string, string>;
 
 export default function PilotRegisterPage() {
   const [form, setForm] = useState({
@@ -61,15 +64,15 @@ export default function PilotRegisterPage() {
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>Review Experience</h2>
           <div style={stackStyle}>
-            <Field label="How many years experience do you have with software?">
+            <Field label={questionLabel.software_experience}>
               <Segmented value={form.software_experience} options={["None", "<2 years", "2-5 years", "6-10 years", "10+ years"]} onChange={(value) => setForm({ ...form, software_experience: value })} />
             </Field>
 
-            <Textarea label="Are there any parts of your software that isn't written by AI, if so which?" value={form.ai_software_exceptions} onChange={(value) => setForm({ ...form, ai_software_exceptions: value })} />
+            <Textarea label={questionLabel.ai_software_exceptions} value={form.ai_software_exceptions} onChange={(value) => setForm({ ...form, ai_software_exceptions: value })} />
 
-            <Textarea label="If you are assigned an issue, what process do you have leading up to generating your prompt/s?" value={form.issue_prompt_process} onChange={(value) => setForm({ ...form, issue_prompt_process: value })} />
+            <Textarea label={questionLabel.issue_prompt_process} value={form.issue_prompt_process} onChange={(value) => setForm({ ...form, issue_prompt_process: value })} />
 
-            <Field label="What do you use currently to review software?">
+            <Field label={questionLabel.current_review_tools}>
               <div style={toolRowStyle}>
                 <Segmented value={form.current_review_tools} options={["Github", "IDE"]} onChange={(value) => setForm({ ...form, current_review_tools: value })} />
                 <input
@@ -81,7 +84,7 @@ export default function PilotRegisterPage() {
               </div>
             </Field>
 
-            <Field label="How much of your work is spent reviewing code?">
+            <Field label={questionLabel.review_work_percent}>
               <div style={rangeRowStyle}>
                 <input
                   aria-label="Review work rating"
@@ -98,24 +101,24 @@ export default function PilotRegisterPage() {
             </Field>
           </div>
 
-          <Textarea label="What pain points, if any, do you currently face in reviewing software?" value={form.review_pain_points} onChange={(value) => setForm({ ...form, review_pain_points: value })} />
-          <Textarea label="How do you use AI to review software?" value={form.ai_review_usage} onChange={(value) => setForm({ ...form, ai_review_usage: value })} />
-          <Textarea label="Which type of issues, if any, do you or would you have resolved without any human in the loop?" value={form.ai_resolved_issue_types} onChange={(value) => setForm({ ...form, ai_resolved_issue_types: value })} />
-          <Textarea label="Do you review software written by AI any differently to humans, if so how?" value={form.ai_review_difference} onChange={(value) => setForm({ ...form, ai_review_difference: value })} />
+          <Textarea label={questionLabel.review_pain_points} value={form.review_pain_points} onChange={(value) => setForm({ ...form, review_pain_points: value })} />
+          <Textarea label={questionLabel.ai_review_usage} value={form.ai_review_usage} onChange={(value) => setForm({ ...form, ai_review_usage: value })} />
+          <Textarea label={questionLabel.ai_resolved_issue_types} value={form.ai_resolved_issue_types} onChange={(value) => setForm({ ...form, ai_resolved_issue_types: value })} />
+          <Textarea label={questionLabel.ai_review_difference} value={form.ai_review_difference} onChange={(value) => setForm({ ...form, ai_review_difference: value })} />
         </section>
 
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>Pilot interest</h2>
-          <Field label="Would you be interested in piloting a prototype aiming at helping engineers understand the systems that AI builds?">
+          <Field label={questionLabel.interested_in_pilot}>
             <Segmented value={form.interested_in_pilot} options={["Yes", "No"]} onChange={(value) => setForm({ ...form, interested_in_pilot: value.toLowerCase() })} />
           </Field>
           <p style={copyStyle}>The pilot is one week using Isoprism with one repository. You are expected to connect to GitHub, choose one repo, use the prototype during PR review, and complete a short review at the end.</p>
           {interested && (
             <div style={detailsGridStyle}>
-              <input style={inputStyle} required placeholder="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-              <input style={inputStyle} required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-              <input style={inputStyle} placeholder="Language/s for the pilot" value={form.pilot_languages} onChange={(event) => setForm({ ...form, pilot_languages: event.target.value })} />
-              <input style={inputStyle} placeholder="Public repo link, if public" value={form.public_repo_url} onChange={(event) => setForm({ ...form, public_repo_url: event.target.value })} />
+              <input style={inputStyle} required placeholder={questionLabel.name} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              <input style={inputStyle} required type="email" placeholder={questionLabel.email} value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <input style={inputStyle} placeholder={questionLabel.pilot_languages} value={form.pilot_languages} onChange={(event) => setForm({ ...form, pilot_languages: event.target.value })} />
+              <input style={inputStyle} placeholder={questionLabel.public_repo_url} value={form.public_repo_url} onChange={(event) => setForm({ ...form, public_repo_url: event.target.value })} />
             </div>
           )}
         </section>

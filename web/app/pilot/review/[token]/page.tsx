@@ -3,7 +3,10 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/api";
+import { reviewQuestions } from "@/lib/pilot-form-questions";
 import { useParams } from "next/navigation";
+
+const questionLabel = Object.fromEntries(reviewQuestions.map((question) => [question.key, question.label])) as Record<string, string>;
 
 type ReviewInfo = {
   name: string;
@@ -73,7 +76,7 @@ export default function PilotReviewPage() {
         </div>
 
         <section style={sectionStyle}>
-          <Field label="Would you keep using Isoprism for PR reviews over your existing flow?">
+          <Field label={questionLabel.would_keep_using}>
             <div style={buttonRowStyle}>
               {(["yes", "no"] as const).map((value) => (
                 <button
@@ -90,10 +93,10 @@ export default function PilotReviewPage() {
 
           {form.would_keep_using === "no" && (
             <>
-              <Field label="Why not?">
+              <Field label={questionLabel.not_keep_using_reason}>
                 <textarea style={textareaStyle} value={form.not_keep_using_reason} onChange={(event) => setForm({ ...form, not_keep_using_reason: event.target.value })} />
               </Field>
-              <Field label="What would it take for you to switch from your current flow?">
+              <Field label={questionLabel.switch_requirements}>
                 <textarea style={textareaStyle} value={form.switch_requirements} onChange={(event) => setForm({ ...form, switch_requirements: event.target.value })} />
               </Field>
             </>
@@ -101,16 +104,16 @@ export default function PilotReviewPage() {
 
           {form.would_keep_using === "yes" && (
             <>
-              <Field label="Why? Tell us what you liked about it">
+              <Field label={questionLabel.keep_using_reason}>
                 <textarea style={textareaStyle} value={form.keep_using_reason} onChange={(event) => setForm({ ...form, keep_using_reason: event.target.value })} />
               </Field>
-              <Field label="What do you think is missing? What would you like to be able to do but can't?">
+              <Field label={questionLabel.most_important_features}>
                 <textarea style={textareaStyle} value={form.most_important_features} onChange={(event) => setForm({ ...form, most_important_features: event.target.value })} />
               </Field>
             </>
           )}
 
-          <Field label="Would you be open to us reaching out to get a better understanding of your experience or for trialling future versions?">
+          <Field label={questionLabel.open_to_follow_up}>
             <div style={buttonRowStyle}>
               {(["yes", "no"] as const).map((value) => (
                 <button
