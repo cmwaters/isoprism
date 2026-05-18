@@ -13,7 +13,7 @@ export default function PilotRegisterPage() {
     review_work_percent: 20,
     review_pain_points: "",
     ai_review_usage: "",
-    ai_resolved_issue_classes: "",
+    ai_resolved_issue_types: "",
     ai_review_difference: "",
     interested_in_pilot: "",
     name: "",
@@ -65,11 +65,9 @@ export default function PilotRegisterPage() {
               <Segmented value={form.software_experience} options={["None", "<2 years", "2-5 years", "6-10 years", "10+ years"]} onChange={(value) => setForm({ ...form, software_experience: value })} />
             </Field>
 
-            <Textarea label="Are there any parts of software that isn't written by AI, if so which?" value={form.ai_software_exceptions} onChange={(value) => setForm({ ...form, ai_software_exceptions: value })} />
+            <Textarea label="Are there any parts of your software that isn't written by AI, if so which?" value={form.ai_software_exceptions} onChange={(value) => setForm({ ...form, ai_software_exceptions: value })} />
 
-            <Field label="If you are assigned an issue, what process do you have leading up to generating the prompts?">
-              <input style={inputStyle} value={form.issue_prompt_process} onChange={(event) => setForm({ ...form, issue_prompt_process: event.target.value })} />
-            </Field>
+            <Textarea label="If you are assigned an issue, what process do you have leading up to generating your prompt/s?" value={form.issue_prompt_process} onChange={(value) => setForm({ ...form, issue_prompt_process: value })} />
 
             <Field label="What do you use currently to review software?">
               <div style={toolRowStyle}>
@@ -101,12 +99,8 @@ export default function PilotRegisterPage() {
           </div>
 
           <Textarea label="What pain points, if any, do you currently face in reviewing software?" value={form.review_pain_points} onChange={(value) => setForm({ ...form, review_pain_points: value })} />
-          <Field label="How do you use AI to review software?">
-            <input style={inputStyle} value={form.ai_review_usage} onChange={(event) => setForm({ ...form, ai_review_usage: event.target.value })} />
-          </Field>
-          <Field label="Which class of issues, if any, do you have resolved without any human in the loop?">
-            <input style={inputStyle} value={form.ai_resolved_issue_classes} onChange={(event) => setForm({ ...form, ai_resolved_issue_classes: event.target.value })} />
-          </Field>
+          <Textarea label="How do you use AI to review software?" value={form.ai_review_usage} onChange={(value) => setForm({ ...form, ai_review_usage: value })} />
+          <Textarea label="Which type of issues, if any, do you or would you have resolved without any human in the loop?" value={form.ai_resolved_issue_types} onChange={(value) => setForm({ ...form, ai_resolved_issue_types: value })} />
           <Textarea label="Do you review software written by AI any differently to humans, if so how?" value={form.ai_review_difference} onChange={(value) => setForm({ ...form, ai_review_difference: value })} />
         </section>
 
