@@ -42,6 +42,8 @@ The main content should have two sections:
 
 The page header should be plain and compact: the title is `Manage Repositories`, followed by a short description of GitHub access, indexing, and the selected review repository. The header should not show the signed-in user's avatar because the avatar belongs in the left panel.
 
+Navigation from a repo page to settings should be fast. The repo side panel should link to `/{user}/settings` with route prefetching enabled, and the repo page should warm a short-lived client cache for `GET /api/v1/me/repos` so settings can render cached repository data immediately before refreshing it.
+
 The GitHub connection section should show the signed-in GitHub user and provide one action to manage the GitHub App. Installation happens during onboarding; settings should not show a separate install action because that makes the connected state ambiguous.
 
 The repositories section should show a searchable list of repositories available through the GitHub App installation. Added repositories should appear immediately as authorized but not indexed. Revoked repositories should disappear from this list because GitHub no longer authorizes them.

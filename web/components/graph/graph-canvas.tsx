@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState, useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
 import {
   ReactFlow,
   Node,
@@ -23,6 +22,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { GitHubIssueDescription, GraphEdge, GraphExpansionResponse, GraphResponse, GraphNode as APIGraphNode, NodeCodeResponse, QueuePR, RepoGraphResponse, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
+import { warmSettingsRepos } from "@/lib/settings-cache";
 import BetaFeedbackBanner from "@/components/beta-feedback-banner";
 import GraphNodeComponent from "./graph-node";
 import NodeDetailPanel, { ComponentChangePanel, type SelectedPRChange } from "./node-detail-panel";
@@ -658,7 +658,6 @@ function InnerCanvas({
   repo?: Repository;
   prs?: QueuePR[];
 }) {
-  const router = useRouter();
   const { fitView, getNode, getZoom, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
   const [prGraphCache, setPRGraphCache] = useState<Record<number, GraphResponse>>({});
@@ -1049,9 +1048,15 @@ function InnerCanvas({
     setActiveGraph(graph);
   }, [graph]);
 
+  useEffect(() => {
+    void warmSettingsRepos(token);
+  }, [token]);
+
   const totalNodes = visibleGraph.nodes.length;
   const maxNodes = 20;
   const activeRepo = repo ?? (isPRGraph(activeGraph) ? fallbackRepo(repoID) : activeGraph.repo);
+  const [activeOwner] = activeRepo.full_name.split("/");
+  const settingsHref = `/${activeOwner || "settings"}/settings`;
   const activePR = isPRGraph(activeGraph) ? activeGraph.pr : undefined;
   const activePRFiles = isPRGraph(activeGraph) ? activeGraph.files ?? [] : [];
   const detailNodes = isPRGraph(baseVisibleGraph)
@@ -1108,10 +1113,7 @@ function InnerCanvas({
         onViewCode={() => {
           setPanelMode("code");
         }}
-        onOpenSettings={() => {
-          const [owner] = activeRepo.full_name.split("/");
-          router.push(`/${owner || "settings"}/settings`);
-        }}
+        settingsHref={settingsHref}
       />
 
       {activePR && selectedPRChange && (

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { GitHubIssueDescription, GitHubIssueReference, GraphEdge, GraphNode, GraphPR, NodeCodeResponse, NodeCodeSegment, PRFileDiff, QueuePR, Repository } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
 import type { PanelMode } from "./graph-canvas";
@@ -42,7 +43,7 @@ interface Props {
   mode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
   onViewCode: () => void;
-  onOpenSettings: () => void;
+  settingsHref: string;
 }
 
 const settingsButtonStyle: CSSProperties = {
@@ -60,6 +61,7 @@ const settingsButtonStyle: CSSProperties = {
   fontSize: 13,
   fontWeight: 650,
   padding: "0 8px",
+  textDecoration: "none",
 };
 
 export default function NodeDetailPanel({
@@ -87,7 +89,7 @@ export default function NodeDetailPanel({
   mode,
   onModeChange,
   onViewCode,
-  onOpenSettings,
+  settingsHref,
 }: Props) {
   const startResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -187,10 +189,10 @@ export default function NodeDetailPanel({
             zIndex: 30,
           }}
         >
-          <button type="button" onClick={onOpenSettings} style={settingsButtonStyle}>
+          <Link href={settingsHref} prefetch style={settingsButtonStyle}>
             <Settings size={16} />
             <span>Settings</span>
-          </button>
+          </Link>
         </div>
       )}
       <div

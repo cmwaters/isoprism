@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowUpRight, Check, GitBranch, Github, Loader2, RefreshCw, 
 import { useEffect, useMemo, useState } from "react";
 import IndexingProgress from "@/components/onboarding/indexing-progress";
 import { apiFetch } from "@/lib/api";
+import { getCachedSettingsRepos, warmSettingsRepos } from "@/lib/settings-cache";
 import { createClient } from "@/lib/supabase/client";
 import { Repository } from "@/lib/types";
 
@@ -56,15 +57,31 @@ export function SettingsView({
         account;
 
       try {
-        const { repos: repoList } = await apiFetch<{ repos: Repository[] }>("/api/v1/me/repos", token);
+        const cachedRepos = getCachedSettingsRepos();
+        if (cachedRepos && active) {
+          setCurrentUser({
+            login,
+            name: metadata.full_name ?? metadata.name ?? login,
+            avatarURL: metadata.avatar_url ?? metadata.picture,
+          });
+          setRepos(cachedRepos);
+          setSelectedRepoID(cachedRepos.find((repo) => repo.is_selected)?.id ?? null);
+          setLoading(false);
+        }
+
+        const repoList = await warmSettingsRepos(token);
         if (!active) return;
+        if (!repoList) {
+          if (cachedRepos) return;
+          throw new Error("settings repos unavailable");
+        }
         setCurrentUser({
           login,
           name: metadata.full_name ?? metadata.name ?? login,
           avatarURL: metadata.avatar_url ?? metadata.picture,
         });
-        setRepos(repoList ?? []);
-        setSelectedRepoID((repoList ?? []).find((repo) => repo.is_selected)?.id ?? null);
+        setRepos(repoList);
+        setSelectedRepoID(repoList.find((repo) => repo.is_selected)?.id ?? null);
       } catch {
         if (!active) return;
         setError("Settings could not be loaded.");
