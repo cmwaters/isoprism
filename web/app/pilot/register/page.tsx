@@ -7,7 +7,8 @@ import { API_URL } from "@/lib/api";
 export default function PilotRegisterPage() {
   const [form, setForm] = useState({
     software_experience: "",
-    ai_writes_most_software: "",
+    ai_software_exceptions: "",
+    issue_prompt_process: "",
     current_review_tools: "",
     review_work_percent: 20,
     review_pain_points: "",
@@ -50,8 +51,8 @@ export default function PilotRegisterPage() {
     <main style={pageStyle}>
       <form style={formStyle} onSubmit={submit}>
         <div style={headerBlockStyle}>
-          <div style={eyebrowStyle}>Pilot registration</div>
-          <h1 style={titleStyle}>Register interest</h1>
+          <div style={eyebrowStyle}>Pilot registration + Questionnaire</div>
+          <h1 style={titleStyle}>Working with AI</h1>
           <p style={copyStyle}>We&apos;d like to better understand how AI has changed the workflows of software engineers so we can better rethink how new workflows should look like.</p>
         </div>
 
@@ -62,8 +63,10 @@ export default function PilotRegisterPage() {
               <Segmented value={form.software_experience} options={["None", "<2 years", "2-5 years", "6-10 years", "10+ years"]} onChange={(value) => setForm({ ...form, software_experience: value })} />
             </Field>
 
-            <Field label="Does AI write most of your software?">
-              <Segmented value={form.ai_writes_most_software} options={["Yes", "No"]} onChange={(value) => setForm({ ...form, ai_writes_most_software: value })} />
+            <Textarea label="Are there any parts of software that isn't written by AI, if so which?" value={form.ai_software_exceptions} onChange={(value) => setForm({ ...form, ai_software_exceptions: value })} />
+
+            <Field label="If you are assigned an issue, what process do you have leading up to generating the prompts?">
+              <input style={inputStyle} value={form.issue_prompt_process} onChange={(event) => setForm({ ...form, issue_prompt_process: event.target.value })} />
             </Field>
 
             <Field label="What do you use currently to review software?">

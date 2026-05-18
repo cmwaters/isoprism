@@ -305,9 +305,10 @@ pilot_forms
   created_at            timestamptz
 
 -- Registration answers currently contain:
--- software_experience, ai_writes_most_software, current_review_tools,
--- review_work_percent, review_pain_points, ai_review_difference,
--- interested_in_pilot, name, email, pilot_languages, public_repo_url
+-- software_experience, ai_software_exceptions, issue_prompt_process,
+-- current_review_tools, review_work_percent, review_pain_points,
+-- ai_review_difference, interested_in_pilot, name, email, pilot_languages,
+-- public_repo_url
 -- Review answers currently contain:
 -- would_keep_using, keep_using_reason, most_important_features,
 -- not_keep_using_reason, switch_requirements, open_to_follow_up
