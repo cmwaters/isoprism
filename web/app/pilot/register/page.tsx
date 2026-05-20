@@ -56,6 +56,7 @@ export default function PilotRegisterPage() {
     <main style={pageStyle}>
       <form style={formStyle} onSubmit={submit}>
         <div style={headerBlockStyle}>
+          <div style={heroIconStyle} aria-hidden="true">🤖</div>
           <div style={eyebrowStyle}>Pilot registration + Questionnaire</div>
           <h1 style={titleStyle}>Working with AI</h1>
           <p style={copyStyle}>We&apos;d like to better understand how AI has changed the workflows of software engineers so we can better rethink how new workflows should look like.</p>
@@ -147,6 +148,7 @@ function Segmented({ value, options, onChange }: { value: string; options: strin
 const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "#EBE9E9", color: "#111", padding: "34px 24px 48px", display: "grid", alignItems: "center" };
 const formStyle: React.CSSProperties = { width: "min(920px, 100%)", margin: "0 auto", display: "grid", gap: 14 };
 const headerBlockStyle: React.CSSProperties = { padding: "6px 0 4px" };
+const heroIconStyle: React.CSSProperties = { fontSize: 28, lineHeight: 1, marginBottom: 10 };
 const eyebrowStyle: React.CSSProperties = { color: "#777", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 7 };
 const titleStyle: React.CSSProperties = { margin: 0, fontSize: 24, lineHeight: 1.18, fontWeight: 750 };
 const copyStyle: React.CSSProperties = { color: "#666", fontSize: 14, lineHeight: 1.55, margin: "6px 0 0" };

@@ -25,7 +25,7 @@ export const registrationQuestions: PilotFormQuestion[] = [
   },
   {
     key: "review_work_percent",
-    label: "How much of your work is spent reviewing code?",
+    label: "How much of your time is spent reviewing code?",
   },
   {
     key: "review_pain_points",
