@@ -7,6 +7,14 @@ const geist = Geist({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Isoprism",
   description: "See what your code changes actually mean.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({

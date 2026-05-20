@@ -11,8 +11,12 @@ export default function LoginPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setPilotToken(new URLSearchParams(window.location.search).get("pilot") ?? "");
-    setReady(true);
+    const nextPilotToken = new URLSearchParams(window.location.search).get("pilot") ?? "";
+    const frame = window.requestAnimationFrame(() => {
+      setPilotToken(nextPilotToken);
+      setReady(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   async function signInWithGitHub() {
