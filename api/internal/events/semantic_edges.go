@@ -97,27 +97,61 @@ func typeUsageEdges(nodes []parser.Node, knownTypes []parser.Node) []semanticEdg
 			continue
 		}
 		for _, field := range node.Fields {
-			targetShort := lastTypeSegment(field.Type)
-			if ambiguousShortNames[targetShort] {
-				continue
+			for _, targetShort := range typeSegments(field.Type) {
+				if ambiguousShortNames[targetShort] {
+					continue
+				}
+				target := byShortName[targetShort]
+				if target == "" || target == node.FullName {
+					continue
+				}
+				key := node.FullName + "\x00" + target
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				edges = append(edges, semanticEdge{
+					SourceFullName:      node.FullName,
+					DestinationFullName: target,
+					Kind:                edgeKindUsesType,
+				})
 			}
-			target := byShortName[targetShort]
-			if target == "" || target == node.FullName {
-				continue
-			}
-			key := node.FullName + "\x00" + target
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			edges = append(edges, semanticEdge{
-				SourceFullName:      node.FullName,
-				DestinationFullName: target,
-				Kind:                edgeKindUsesType,
-			})
 		}
 	}
 	return edges
+}
+
+func typeSegments(typeName string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range strings.FieldsFunc(typeName, func(r rune) bool {
+		switch r {
+		case '*', '[', ']', '{', '}', '(', ')', ',', ' ', '\t', '\n', '\r', '<', '-':
+			return true
+		default:
+			return false
+		}
+	}) {
+		segment := lastTypeSegment(raw)
+		if segment == "" || isBuiltinGoTypeSegment(segment) || seen[segment] {
+			continue
+		}
+		seen[segment] = true
+		out = append(out, segment)
+	}
+	return out
+}
+
+func isBuiltinGoTypeSegment(segment string) bool {
+	switch segment {
+	case "any", "bool", "byte", "comparable", "complex64", "complex128", "error",
+		"float32", "float64", "int", "int8", "int16", "int32", "int64",
+		"rune", "string", "struct", "uint", "uint8", "uint16", "uint32",
+		"uint64", "uintptr", "map", "chan", "func", "interface":
+		return true
+	default:
+		return false
+	}
 }
 
 func lastTypeSegment(typeName string) string {

@@ -556,6 +556,9 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 			repoID, headSHA, edge.SourceFullName).Scan(&sourceID)
 		db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
 			repoID, headSHA, edge.DestinationFullName).Scan(&destinationID)
+		if destinationID == "" {
+			destinationID = refNodeIDs[edge.DestinationFullName]
+		}
 		if sourceID == "" || destinationID == "" || sourceID == destinationID {
 			continue
 		}
@@ -573,6 +576,9 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 			repoID, baseCommit, edge.SourceFullName).Scan(&sourceID)
 		db.QueryRow(ctx, `select id from code_nodes where repo_id=$1 and commit_sha=$2 and full_name=$3`,
 			repoID, baseCommit, edge.DestinationFullName).Scan(&destinationID)
+		if destinationID == "" {
+			destinationID = refNodeIDs[edge.DestinationFullName]
+		}
 		if sourceID == "" || destinationID == "" || sourceID == destinationID {
 			continue
 		}
