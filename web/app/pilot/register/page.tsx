@@ -56,8 +56,8 @@ export default function PilotRegisterPage() {
     <main style={pageStyle}>
       <form style={formStyle} onSubmit={submit}>
         <div style={headerBlockStyle}>
-          <div style={heroIconStyle} aria-hidden="true">🤖</div>
           <div style={eyebrowStyle}>Pilot registration + Questionnaire</div>
+          <div style={heroIconStyle} aria-hidden="true">🤖</div>
           <h1 style={titleStyle}>Working with AI</h1>
           <p style={copyStyle}>We&apos;d like to better understand how AI has changed the workflows of software engineers so we can better rethink how new workflows should look like.</p>
         </div>
