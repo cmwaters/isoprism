@@ -127,7 +127,6 @@ export function SettingsView({
 
   const manageURL = "https://github.com/settings/installations";
 
-  const selectedReadyRepo = repos.find((repo) => repo.is_selected && repo.index_status === "ready") ?? null;
   const accountType = repos.some((repo) => repo.user_class === "pilot") ? "Pilot" : "Premium";
   const indexingRepo = repos.find((repo) => repo.id === indexingRepoID) ?? null;
   const filteredRepos = repos.filter((repo) => repo.full_name.toLowerCase().includes(search.toLowerCase()));
@@ -239,13 +238,6 @@ export function SettingsView({
             <p style={copyStyle}>
               Manage GitHub access, indexing, and the repository selected for review.
             </p>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {selectedReadyRepo && (
-              <Link href={`/${selectedReadyRepo.full_name}`} style={secondaryActionStyle}>
-                Exit settings
-              </Link>
-            )}
           </div>
         </header>
 
@@ -540,17 +532,9 @@ const accountLoginStyle: React.CSSProperties = {
 };
 
 const accountTypeStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  width: "fit-content",
-  minHeight: 26,
-  padding: "0 9px",
-  borderRadius: 999,
-  border: "1px solid #C7C7C7",
-  background: "#E9E9E9",
-  color: "#555555",
+  color: "#111111",
   fontSize: 13,
-  fontWeight: 650,
+  fontWeight: 700,
 };
 
 const mainStyle: React.CSSProperties = {
