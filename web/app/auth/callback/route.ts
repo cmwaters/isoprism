@@ -19,16 +19,21 @@ export async function GET(request: NextRequest) {
 
       // Otherwise, ask the shared auth-status helper where to send the user.
       const userId = data.session.user.id;
-      if (pilot) {
-        try {
-          await fetch(`${API_URL}/api/v1/pilot/invites/${encodeURIComponent(pilot)}/accept`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: userId }),
-          });
-        } catch {
-          // Continue through normal auth routing; invalid pilot links are handled operationally.
+      if (!pilot) {
+        return NextResponse.redirect(`${origin}/login?error=pilot_required`);
+      }
+
+      try {
+        const inviteRes = await fetch(`${API_URL}/api/v1/pilot/invites/${encodeURIComponent(pilot)}/accept`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId }),
+        });
+        if (!inviteRes.ok) {
+          return NextResponse.redirect(`${origin}/login?error=invalid_pilot`);
         }
+      } catch {
+        return NextResponse.redirect(`${origin}/login?error=invalid_pilot`);
       }
 
       try {

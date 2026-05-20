@@ -226,6 +226,10 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 		repoID := chi.URLParam(r, "repoID")
 		userID := r.Header.Get("X-User-ID")
 		ctx := r.Context()
+		if !handlers.HasPilotUser(ctx, db, userID) {
+			http.Error(w, "pilot invite required", http.StatusForbidden)
+			return
+		}
 		handlers.EnsureUserExists(ctx, db, userID)
 		handlers.CleanupExpiredRepositories(ctx, db)
 

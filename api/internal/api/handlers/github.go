@@ -303,6 +303,11 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 
 	// Ensure user row exists
 	if userID != "" {
+		if !hasPilotUser(ctx, h.DB, userID) {
+			log.Printf("github_callback: pilot_required installation_id=%d user_source=%q redirect=%q", installationID, userSource, redirectBaseURL+"/login?error=pilot_required")
+			http.Redirect(w, r, redirectBaseURL+"/login?error=pilot_required", http.StatusFound)
+			return
+		}
 		ensureUserExists(ctx, h.DB, userID)
 	}
 

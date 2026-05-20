@@ -1,17 +1,25 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
+  const [pilotToken, setPilotToken] = useState("");
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setPilotToken(new URLSearchParams(window.location.search).get("pilot") ?? "");
+    setReady(true);
+  }, []);
 
   async function signInWithGitHub() {
+    if (!pilotToken) return;
     setLoading(true);
-    const pilot = new URLSearchParams(window.location.search).get("pilot");
     const callback = new URL("/auth/callback", window.location.origin);
-    if (pilot) callback.searchParams.set("pilot", pilot);
+    callback.searchParams.set("pilot", pilotToken);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "github",
       options: {
@@ -53,27 +61,48 @@ export default function LoginPage() {
           </p>
         </section>
 
+        {ready && !pilotToken && (
+          <div style={{
+            background: "#FFFFFF",
+            border: "1px solid #D4D4D4",
+            borderRadius: 8,
+            color: "#333333",
+            marginBottom: 16,
+            padding: 16,
+          }}>
+            <p style={{ fontSize: 14, fontWeight: 650, margin: "0 0 6px 0" }}>
+              Pilot invite required
+            </p>
+            <p style={{ color: "#666666", fontSize: 13, lineHeight: 1.55, margin: "0 0 12px 0" }}>
+              You need a pilot invite link to create an Isoprism account.
+            </p>
+            <Link href="/pilot/register" style={{ color: "#111111", fontSize: 13, fontWeight: 700 }}>
+              Register for the pilot
+            </Link>
+          </div>
+        )}
+
         <button
           onClick={signInWithGitHub}
-          disabled={loading}
+          disabled={loading || !pilotToken}
           style={{
             width: "100%",
             height: 48,
-            background: loading ? "#CCCCCC" : "#111111",
+            background: loading || !pilotToken ? "#CCCCCC" : "#111111",
             color: "#FFFFFF",
             border: "none",
             borderRadius: 8,
             fontSize: 15,
             fontWeight: 500,
-            cursor: loading ? "not-allowed" : "pointer",
+            cursor: loading || !pilotToken ? "not-allowed" : "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             gap: 10,
             transition: "background 150ms ease-out",
           }}
-          onMouseEnter={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = "#333333"; }}
-          onMouseLeave={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = "#111111"; }}
+          onMouseEnter={(e) => { if (!loading && pilotToken) (e.currentTarget as HTMLButtonElement).style.background = "#333333"; }}
+          onMouseLeave={(e) => { if (!loading && pilotToken) (e.currentTarget as HTMLButtonElement).style.background = "#111111"; }}
         >
           {loading ? (
             <span style={{ opacity: 0.7 }}>Connecting…</span>

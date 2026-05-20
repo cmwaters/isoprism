@@ -30,6 +30,11 @@ func (h *RepoHandler) GetAuthStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !hasPilotUser(ctx, h.DB, userID) {
+		json.NewEncoder(w).Encode(map[string]string{"redirect": "/login?error=pilot_required"})
+		return
+	}
+
 	// Ensure user row exists (created by Supabase trigger, but may be missing
 	// if the trigger hasn't fired yet).
 	ensureUserExists(ctx, h.DB, userID)
@@ -389,9 +394,7 @@ func isRepoSelected(ctx context.Context, db *pgxpool.Pool, userID, repoID string
 }
 
 func userClass(ctx context.Context, db *pgxpool.Pool, userID string) string {
-	var isPilot bool
-	_ = db.QueryRow(ctx, `select exists(select 1 from pilot_users where user_id = $1)`, userID).Scan(&isPilot)
-	if isPilot {
+	if hasPilotUser(ctx, db, userID) {
 		return "pilot"
 	}
 	var class string
@@ -400,6 +403,16 @@ func userClass(ctx context.Context, db *pgxpool.Pool, userID string) string {
 		return "regular"
 	}
 	return class
+}
+
+func hasPilotUser(ctx context.Context, db *pgxpool.Pool, userID string) bool {
+	var isPilot bool
+	_ = db.QueryRow(ctx, `select exists(select 1 from pilot_users where user_id = $1)`, userID).Scan(&isPilot)
+	return isPilot
+}
+
+func HasPilotUser(ctx context.Context, db *pgxpool.Pool, userID string) bool {
+	return hasPilotUser(ctx, db, userID)
 }
 
 func selectRepository(ctx context.Context, db *pgxpool.Pool, userID, repoID string) error {
