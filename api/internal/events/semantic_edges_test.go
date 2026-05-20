@@ -31,11 +31,15 @@ func TestTypeUsageEdgesConnectStructToResolvableFieldTypes(t *testing.T) {
 	nodes := []parser.Node{
 		{FullName: "rpc/grpc:coregrpc.BlockAPI", Kind: "struct", Fields: []parser.Param{
 			{Name: "env", Type: "*core.Environment"},
-			{Name: "response", Type: "SubscribeNewHeightsResponse"},
+			{Name: "heightListeners", Type: "map[chan SubscribeNewHeightsResponse]struct{}"},
+			{Name: "subscription", Type: "eventstypes.Subscription"},
+			{Name: "query", Type: "pubsub.Query"},
 			{Name: "external", Type: "sync.Mutex"},
+			{Name: "id", Type: "string"},
 		}},
 		{FullName: "rpc/core:core.Environment", Kind: "struct"},
 		{FullName: "rpc/grpc:coregrpc.SubscribeNewHeightsResponse", Kind: "struct"},
+		{FullName: "libs/pubsub:pubsub.Query", Kind: "type"},
 	}
 
 	edges := typeUsageEdges(nodes, nodes)
@@ -46,8 +50,14 @@ func TestTypeUsageEdgesConnectStructToResolvableFieldTypes(t *testing.T) {
 	if !hasSemanticEdge(edges, "rpc/grpc:coregrpc.BlockAPI", "rpc/grpc:coregrpc.SubscribeNewHeightsResponse", edgeKindUsesType) {
 		t.Fatalf("missing BlockAPI -> SubscribeNewHeightsResponse type usage edge: %#v", edges)
 	}
+	if !hasSemanticEdge(edges, "rpc/grpc:coregrpc.BlockAPI", "libs/pubsub:pubsub.Query", edgeKindUsesType) {
+		t.Fatalf("missing BlockAPI -> Query type usage edge: %#v", edges)
+	}
 	if hasSemanticEdge(edges, "rpc/grpc:coregrpc.BlockAPI", "sync.Mutex", edgeKindUsesType) {
 		t.Fatalf("external field type should not produce a graph edge: %#v", edges)
+	}
+	if hasSemanticEdge(edges, "rpc/grpc:coregrpc.BlockAPI", "string", edgeKindUsesType) {
+		t.Fatalf("builtin field type should not produce a graph edge: %#v", edges)
 	}
 }
 
