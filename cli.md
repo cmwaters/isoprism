@@ -611,6 +611,8 @@ go run ./cmd/isoprism diff staged
 go run ./cmd/isoprism diff <ref1> <ref2> --json
 go run ./cmd/isoprism diff <ref1> <ref2> --output /tmp/isoprism.html --no-open
 go run ./cmd/isoprism serve --port 3717
+go run ./cmd/isoprism serve --port 3717 --web-port 3000
+go run ./cmd/isoprism serve --no-web
 go run ./cmd/isoprism annotate diff --reason-for-change "..." --expected-outcome "..."
 go run ./cmd/isoprism annotate node <node-sha256> --description "..." --reasoning "..." --confidence high
 go run ./cmd/isoprism annotate test --node <node-sha256> --description "..."
@@ -627,21 +629,26 @@ Implemented behavior:
 - `--open` is on by default, and `--no-open` disables browser launch.
 - `.isoprism/objects/nodes` and `.isoprism/objects/index/blob_to_nodes` cache parsed semantic nodes by git blob SHA.
 - `--rebuild-cache` removes `.isoprism/objects` and rebuilds parser-derived objects without deleting annotations.
-- `serve` binds to `127.0.0.1:3717` by default and exposes the initial local API endpoints:
+- `serve` binds the local API to `127.0.0.1:3717` by default, starts the local Next viewer on `127.0.0.1:3000/local`, and points the viewer at the local API with `NEXT_PUBLIC_API_URL`.
+- `serve --no-web` runs the API only.
+- The local viewer reuses the production `GraphCanvas` repo/program surface so the split panel, dotted graph canvas, node cards, zoom controls, node detail panel, graph expansion, and code view match the website for a local repository.
+- The local API exposes the website-compatible endpoints used by that viewer:
   - `GET /`
   - `GET /api/diff`
-  - `GET /api/repo/programs`
-  - `GET /api/repo/programs/{nodeID}/graph`
-  - `POST /api/repo/graph/expand`
-  - `GET /api/nodes/{nodeID}/code`
+  - `GET /api/v1/local/repo`
+  - `GET /api/v1/repos/local/queue`
+  - `GET /api/v1/repos/local/programs`
+  - `GET /api/v1/repos/local/programs/{nodeID}/graph`
+  - `POST /api/v1/repos/local/graph/expand`
+  - `GET /api/v1/repos/local/nodes/{nodeID}/code`
 - `annotate` writes documented annotation JSON under `.isoprism/annotations/<base-sha>..<head-sha>/`.
 - When the index contains staged changes, `annotate` targets the same `HEAD..index` range as `diff staged`; otherwise it targets the default `default-branch..HEAD` range.
 
 Current intentional gaps:
 
 - `diff unstaged` is not implemented yet. It needs a working-tree overlay model that can parse tracked disk contents, represent deleted and renamed files, and decide whether untracked supported files are included or reported as deferred.
-- `serve` returns the generated review payload dynamically, but it does not yet watch files, push SSE/WebSocket refresh events, or maintain a persistent full-repo browsing graph independent of the active diff.
-- `GET /api/nodes/{nodeID}/code` returns source for nodes included in the active review payload. Full-repo source lookup for nodes outside the bounded diff graph belongs with the persistent `serve` graph.
+- `serve` does not yet watch files or push SSE/WebSocket refresh events. Reloading `/local` rebuilds from local git/cache.
+- Local repo node code lookup works for nodes parsed from the active `HEAD` graph.
 - The static HTML is a self-contained readable artifact with embedded JSON, but it does not yet boot the extracted React graph viewer. Achieving website visual parity requires the frontend extraction described below.
 - Incoming link indexes are not persisted yet. The first implementation computes one-hop context from the active base/head graphs during payload generation.
 

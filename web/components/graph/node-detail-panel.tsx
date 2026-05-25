@@ -46,7 +46,7 @@ interface Props {
   mode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
   onViewCode: () => void;
-  settingsHref: string;
+  settingsHref?: string | null;
 }
 
 const settingsButtonStyle: CSSProperties = {
@@ -188,7 +188,7 @@ export default function NodeDetailPanel({
           />
         )}
       </div>
-      {!pr && (
+      {!pr && settingsHref && (
         <div
           style={{
             position: "absolute",

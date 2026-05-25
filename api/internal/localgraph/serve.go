@@ -6,7 +6,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
+
+	"github.com/isoprism/api/internal/models"
 )
 
 func Serve(ctx context.Context, opts ServeOptions) error {
@@ -18,6 +24,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	if port == 0 {
 		port = 3717
 	}
+	webPort := opts.WebPort
+	if webPort == 0 {
+		webPort = 3000
+	}
 	if host == "0.0.0.0" || host == "::" {
 		log.Printf("warning: serving on non-loopback host %s because it was explicitly requested", host)
 	}
@@ -25,95 +35,123 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	if err != nil {
 		return err
 	}
-	g := gitClient{root: root}
-	defaultBranch, err := g.resolveDefaultBranch(ctx)
-	if err != nil {
-		return err
-	}
 	cacheDir := opts.CacheDir
 	if cacheDir == "" {
-		cacheDir = root + "/.isoprism"
+		cacheDir = filepath.Join(root, ".isoprism")
 	}
-	load := func() (ReviewGraphPayload, error) {
-		return GenerateDiff(ctx, Options{RepoDir: root, Args: []string{defaultBranch, "HEAD"}, CacheDir: cacheDir})
+	apiBase := "http://" + host + ":" + strconv.Itoa(port)
+	mux := localMux(root, cacheDir)
+	server := &http.Server{Addr: host + ":" + strconv.Itoa(port), Handler: mux}
+
+	if opts.NoWeb {
+		log.Printf("isoprism API listening on %s", apiBase)
+		return server.ListenAndServe()
 	}
+
+	errCh := make(chan error, 2)
+	go func() {
+		log.Printf("isoprism API listening on %s", apiBase)
+		errCh <- server.ListenAndServe()
+	}()
+
+	webURL := "http://127.0.0.1:" + strconv.Itoa(webPort) + "/local"
+	cmd := exec.CommandContext(ctx, "npm", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", strconv.Itoa(webPort))
+	cmd.Dir = filepath.Join(root, "web")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), "NEXT_PUBLIC_API_URL="+apiBase)
+	log.Printf("isoprism web listening on %s", webURL)
+	if err := cmd.Start(); err != nil {
+		_ = server.Shutdown(context.Background())
+		return fmt.Errorf("start local web viewer: %w", err)
+	}
+	go func() {
+		errCh <- cmd.Wait()
+	}()
+	log.Printf("open %s", webURL)
+	return <-errCh
+}
+
+func localMux(root, cacheDir string) http.Handler {
 	mux := http.NewServeMux()
+	opts := Options{RepoDir: root, CacheDir: cacheDir}
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := load()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		withCORS(w)
+		if r.Method == http.MethodOptions {
 			return
 		}
-		html, err := RenderStaticHTML(payload)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(html)
+		http.Redirect(w, r, "/api/diff", http.StatusFound)
 	})
 	mux.HandleFunc("/api/diff", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := load()
+		withCORS(w)
+		payload, err := GenerateDiff(r.Context(), opts)
 		writeJSON(w, payload, err)
 	})
-	mux.HandleFunc("/api/repo/programs", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := load()
+	mux.HandleFunc("/api/v1/local/repo", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		data, err := GenerateRepo(r.Context(), opts)
+		writeJSON(w, data.Repo, err)
+	})
+	mux.HandleFunc("/api/v1/repos/local/queue", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		writeJSON(w, map[string]any{"prs": []models.QueuePR{}}, nil)
+	})
+	mux.HandleFunc("/api/v1/repos/local/programs", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		data, err := GenerateRepo(r.Context(), opts)
 		if err != nil {
 			writeJSON(w, nil, err)
 			return
 		}
-		programs := []modelsGraphProgram{}
-		for _, node := range append(payload.Graph.Nodes, payload.Graph.TestContext...) {
-			if node.IsEntrypoint || node.NodeType == "changed" {
-				programs = append(programs, modelsGraphProgram{ID: node.ID, FullName: node.FullName, FilePath: node.FilePath, LineStart: node.LineStart, LineEnd: node.LineEnd, Language: node.Language, Kind: node.Kind, IsEntrypoint: node.IsEntrypoint})
-			}
+		writeJSON(w, models.RepoProgramsResponse{Repo: data.Repo, Programs: data.Programs}, nil)
+	})
+	mux.HandleFunc("/api/v1/repos/local/programs/", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		id := strings.TrimPrefix(r.URL.Path, "/api/v1/repos/local/programs/")
+		id = strings.TrimSuffix(id, "/graph")
+		graph, _, err := ProgramGraph(r.Context(), opts, id)
+		writeJSON(w, graph, err)
+	})
+	mux.HandleFunc("/api/v1/repos/local/graph/expand", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		if r.Method == http.MethodOptions {
+			return
 		}
-		writeJSON(w, map[string]any{"repo": payload.Repository, "programs": programs}, nil)
+		var req models.GraphExpansionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		response, _, err := ExpandGraph(r.Context(), opts, req.NodeID, req.VisibleNodeIDs)
+		writeJSON(w, response, err)
 	})
-	mux.HandleFunc("/api/repo/programs/", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := load()
-		writeJSON(w, payload.Graph, err)
-	})
-	mux.HandleFunc("/api/repo/graph/expand", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := load()
-		writeJSON(w, map[string]any{"nodes": payload.Graph.Nodes, "edges": payload.Graph.Edges, "expanded_node_id": "", "has_more": false, "hidden_neighbor_count": 0}, err)
-	})
-	mux.HandleFunc("/api/nodes/", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := load()
+	mux.HandleFunc("/api/v1/repos/local/nodes/", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		id := strings.TrimPrefix(r.URL.Path, "/api/v1/repos/local/nodes/")
+		id = strings.TrimSuffix(id, "/code")
+		data, err := GenerateRepo(r.Context(), opts)
 		if err != nil {
 			writeJSON(w, nil, err)
 			return
 		}
-		id := r.URL.Path[len("/api/nodes/"):]
-		if len(id) > len("/code") && id[len(id)-len("/code"):] == "/code" {
-			id = id[:len(id)-len("/code")]
-		}
-		for _, node := range append(payload.Graph.Nodes, payload.Graph.TestChanges...) {
-			if node.ID == id {
-				source := ""
-				if sources, ok := payload.Metadata["sources"].(map[string]string); ok {
-					source = sources[id]
-				}
-				writeJSON(w, map[string]any{"node_id": id, "file_path": node.FilePath, "line_start": node.LineStart, "line_end": node.LineEnd, "source": source}, nil)
-				return
-			}
+		if code, ok := data.Sources[id]; ok {
+			writeJSON(w, code, nil)
+			return
 		}
 		http.NotFound(w, r)
 	})
-	addr := host + ":" + strconv.Itoa(port)
-	log.Printf("isoprism serve listening on http://%s", addr)
-	return http.ListenAndServe(addr, mux)
+	return mux
 }
 
-type modelsGraphProgram struct {
-	ID           string `json:"id"`
-	FullName     string `json:"full_name"`
-	FilePath     string `json:"file_path"`
-	LineStart    int    `json:"line_start"`
-	LineEnd      int    `json:"line_end"`
-	Language     string `json:"language"`
-	Kind         string `json:"kind"`
-	IsEntrypoint bool   `json:"is_entrypoint"`
+func withCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 }
 
 func writeJSON(w http.ResponseWriter, value any, err error) {

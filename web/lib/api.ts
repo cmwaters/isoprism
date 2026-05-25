@@ -5,12 +5,25 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "https://api.isoprism.com";
 
+declare global {
+  interface Window {
+    __ISOPRISM_API_URL__?: string;
+  }
+}
+
+function apiURL() {
+  if (typeof window !== "undefined" && window.__ISOPRISM_API_URL__) {
+    return window.__ISOPRISM_API_URL__;
+  }
+  return API_URL;
+}
+
 export async function apiFetch<T>(
   path: string,
   token: string,
   options?: RequestInit
 ): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${apiURL()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",

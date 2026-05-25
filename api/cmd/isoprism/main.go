@@ -84,11 +84,13 @@ func runServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	host := fs.String("host", "127.0.0.1", "host to bind")
 	port := fs.Int("port", 3717, "port to bind")
+	webPort := fs.Int("web-port", 3000, "local web viewer port")
 	cacheDir := fs.String("cache-dir", "", "cache directory")
+	noWeb := fs.Bool("no-web", false, "serve only the local API")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	return localgraph.Serve(ctx, localgraph.ServeOptions{RepoDir: ".", Host: *host, Port: *port, CacheDir: *cacheDir})
+	return localgraph.Serve(ctx, localgraph.ServeOptions{RepoDir: ".", Host: *host, Port: *port, WebPort: *webPort, CacheDir: *cacheDir, NoWeb: *noWeb})
 }
 
 func runAnnotate(ctx context.Context, args []string) error {

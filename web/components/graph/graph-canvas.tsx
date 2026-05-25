@@ -651,12 +651,16 @@ function InnerCanvas({
   token,
   repo,
   prs = [],
+  settingsHref = "/settings",
+  showFeedbackBanner = true,
 }: {
   graph: UnifiedGraph;
   repoID: string;
   token: string;
   repo?: Repository;
   prs?: QueuePR[];
+  settingsHref?: string | null;
+  showFeedbackBanner?: boolean;
 }) {
   const { fitView, getNode, getZoom, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
@@ -1152,7 +1156,7 @@ function InnerCanvas({
         onViewCode={() => {
           setPanelMode("code");
         }}
-        settingsHref="/settings"
+        settingsHref={settingsHref}
       />
 
       {activePR && selectedPRChange && (
@@ -1235,12 +1239,14 @@ function InnerCanvas({
         </div>
       </div>
 
-      <BetaFeedbackBanner
-        token={token}
-        repo={activeRepo}
-        pr={activePR}
-        selectedNode={selectedNode}
-      />
+      {showFeedbackBanner && (
+        <BetaFeedbackBanner
+          token={token}
+          repo={activeRepo}
+          pr={activePR}
+          selectedNode={selectedNode}
+        />
+      )}
     </div>
   );
 }
@@ -1275,16 +1281,28 @@ export default function GraphCanvas({
   token,
   repo,
   prs,
+  settingsHref,
+  showFeedbackBanner,
 }: {
   graph: UnifiedGraph;
   repoID: string;
   token: string;
   repo?: Repository;
   prs?: QueuePR[];
+  settingsHref?: string | null;
+  showFeedbackBanner?: boolean;
 }) {
   return (
     <ReactFlowProvider>
-      <InnerCanvas graph={graph} repoID={repoID} token={token} repo={repo} prs={prs} />
+      <InnerCanvas
+        graph={graph}
+        repoID={repoID}
+        token={token}
+        repo={repo}
+        prs={prs}
+        settingsHref={settingsHref}
+        showFeedbackBanner={showFeedbackBanner}
+      />
     </ReactFlowProvider>
   );
 }

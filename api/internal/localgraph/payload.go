@@ -28,7 +28,9 @@ type ServeOptions struct {
 	RepoDir  string
 	Host     string
 	Port     int
+	WebPort  int
 	CacheDir string
+	NoWeb    bool
 }
 
 type ReviewGraphPayload struct {
