@@ -598,6 +598,55 @@ Minimum behavior:
 
 This proves the new architecture without waiting for the full local server or AI skill loop.
 
+## Current Implementation Status
+
+The repo now includes an initial local CLI implementation under `api/cmd/isoprism`:
+
+```bash
+cd api
+go run ./cmd/isoprism diff
+go run ./cmd/isoprism diff <ref>
+go run ./cmd/isoprism diff <ref1> <ref2>
+go run ./cmd/isoprism diff staged
+go run ./cmd/isoprism diff <ref1> <ref2> --json
+go run ./cmd/isoprism diff <ref1> <ref2> --output /tmp/isoprism.html --no-open
+go run ./cmd/isoprism serve --port 3717
+go run ./cmd/isoprism annotate diff --reason-for-change "..." --expected-outcome "..."
+go run ./cmd/isoprism annotate node <node-sha256> --description "..." --reasoning "..." --confidence high
+go run ./cmd/isoprism annotate test --node <node-sha256> --description "..."
+```
+
+Implemented behavior:
+
+- `diff` resolves the repository root from local git.
+- `diff` detects the default branch from `origin/HEAD`, `git remote show origin`, `main`, then `master`.
+- `diff <ref>` and `diff <ref1> <ref2>` work for committed refs.
+- `diff staged` compares `HEAD` against the current git index without calling `git write-tree`, so it works in restricted environments that cannot create `.git/index.lock`.
+- `--json` emits a `ReviewGraphPayload` that wraps the existing website `GraphResponse` shape.
+- `--output` writes self-contained static HTML with the embedded review payload and file patches.
+- `--open` is on by default, and `--no-open` disables browser launch.
+- `.isoprism/objects/nodes` and `.isoprism/objects/index/blob_to_nodes` cache parsed semantic nodes by git blob SHA.
+- `--rebuild-cache` removes `.isoprism/objects` and rebuilds parser-derived objects without deleting annotations.
+- `serve` binds to `127.0.0.1:3717` by default and exposes the initial local API endpoints:
+  - `GET /`
+  - `GET /api/diff`
+  - `GET /api/repo/programs`
+  - `GET /api/repo/programs/{nodeID}/graph`
+  - `POST /api/repo/graph/expand`
+  - `GET /api/nodes/{nodeID}/code`
+- `annotate` writes documented annotation JSON under `.isoprism/annotations/<base-sha>..<head-sha>/`.
+- When the index contains staged changes, `annotate` targets the same `HEAD..index` range as `diff staged`; otherwise it targets the default `default-branch..HEAD` range.
+
+Current intentional gaps:
+
+- `diff unstaged` is not implemented yet. It needs a working-tree overlay model that can parse tracked disk contents, represent deleted and renamed files, and decide whether untracked supported files are included or reported as deferred.
+- `serve` returns the generated review payload dynamically, but it does not yet watch files, push SSE/WebSocket refresh events, or maintain a persistent full-repo browsing graph independent of the active diff.
+- `GET /api/nodes/{nodeID}/code` returns source for nodes included in the active review payload. Full-repo source lookup for nodes outside the bounded diff graph belongs with the persistent `serve` graph.
+- The static HTML is a self-contained readable artifact with embedded JSON, but it does not yet boot the extracted React graph viewer. Achieving website visual parity requires the frontend extraction described below.
+- Incoming link indexes are not persisted yet. The first implementation computes one-hop context from the active base/head graphs during payload generation.
+
+These gaps are documented explicitly because pretending to have full website parity here would make the CLI contract less reliable, not more.
+
 ## Missing Or Underspecified Work
 
 The plan is directionally complete, but several implementation contracts need to be specified before the CLI can behave like the website.
