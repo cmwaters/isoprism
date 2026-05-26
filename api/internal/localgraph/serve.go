@@ -58,7 +58,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		errCh <- server.ListenAndServe()
 	}()
 
-	cmd := exec.CommandContext(ctx, "npm", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", strconv.Itoa(webPort))
+	cmd := exec.CommandContext(ctx, "npm", "run", "dev", "--", "--webpack", "--hostname", "127.0.0.1", "--port", strconv.Itoa(webPort))
 	cmd.Dir = filepath.Join(root, "web")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
