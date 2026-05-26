@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import LocalRepoGraph from "@/components/local/local-repo-graph";
 import type { QueueResponse, RepoGraphResponse, RepoProgramsResponse, Repository } from "@/lib/types";
 import "@/app/globals.css";
+import "./shell.css";
 
 type LoadState =
   | { status: "loading" }
