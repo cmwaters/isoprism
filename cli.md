@@ -19,6 +19,16 @@ isoprism serve
 
 `isoprism serve` starts a local server for ambient semantic browsing of the full repository. It reuses the same graph engine and frontend, but serves graph data dynamically instead of embedding a bounded payload into one file.
 
+The intended install flow is:
+
+```bash
+brew install isoprism
+cd /path/to/any/git/repo
+isoprism serve
+```
+
+After installation, users should not need the Isoprism source checkout, Node.js, `npm install`, Supabase credentials, GitHub OAuth, or a local `web/` directory. The release artifact should contain everything needed to run the local API and browser viewer against the current repository.
+
 The CLI should also read adjacent context when available:
 
 - `gh` CLI for PR title, body, URL, base branch, and issue references.
@@ -96,7 +106,9 @@ isoprism serve --web-dir /Users/callum/Developer/isoprism/web
 
 `serve` starts a local-only HTTP server by default. It should not bind to a public interface unless the user explicitly passes a non-loopback host.
 
-The current implementation does not embed the web app into the Go binary. `serve` runs the Go local API against the current repository and starts the Isoprism Next.js viewer from the Isoprism `web/` app source. It discovers that app from `--web-dir`, `ISOPRISM_WEB_DIR`, the current repo when developing inside Isoprism, or the source path recorded in the locally built binary. A future standalone distribution should either embed a built local viewer or ship the viewer assets alongside the binary.
+The current implementation does not embed the web app into the Go binary. `serve` runs the Go local API against the current repository and starts the Isoprism Next.js viewer from the Isoprism `web/` app source. It discovers that app from `--web-dir`, `ISOPRISM_WEB_DIR`, the current repo when developing inside Isoprism, or the source path recorded in the locally built binary.
+
+This is a development-only bridge. It is not the release contract. Before a Homebrew-style release, `serve` must stop shelling out to `next dev` and instead serve packaged local viewer assets from the Go process.
 
 The server provides the full repo browsing experience:
 
@@ -440,6 +452,28 @@ Behavior:
 
 This mode is the local precursor to the eventual hosted SaaS graph browser.
 
+## Distribution And Packaging
+
+The release distribution target is a Homebrew-style install where `isoprism serve` works immediately in any git repository:
+
+```bash
+brew install isoprism
+cd /path/to/repo
+isoprism serve
+```
+
+The preferred packaging design is a single Go CLI binary with embedded local viewer assets:
+
+- Build the reusable local viewer as static browser assets during release.
+- Embed those assets into the Go binary with `go:embed`.
+- Serve `GET /local`, static JS/CSS assets, and the local API from the same Go process.
+- Keep `--web-dir` and `ISOPRISM_WEB_DIR` only as development overrides for working directly against the Next.js source app.
+- Do not require users to install Node.js, clone Isoprism, run `npm install`, or configure hosted web/API credentials for local repo browsing.
+
+If embedding the viewer makes the binary too large or blocks a release, the acceptable fallback is a packaged asset directory installed by Homebrew alongside the binary. In that fallback, the binary must locate its installed assets automatically and still support `cd any/repo && isoprism serve` without extra flags.
+
+The current source-checkout `next dev --webpack` path remains useful for frontend iteration, but it is explicitly not considered complete CLI parity.
+
 ## Shared Frontend
 
 The current Next.js graph UI should be extracted into a reusable viewer package.
@@ -655,7 +689,7 @@ Implemented behavior:
 Current intentional gaps:
 
 - `diff unstaged` is not implemented yet. It needs a working-tree overlay model that can parse tracked disk contents, represent deleted and renamed files, and decide whether untracked supported files are included or reported as deferred.
-- The CLI binary is not yet fully standalone. `serve` still needs access to the Isoprism `web/` app source and local Node dependencies; complete standalone parity needs an embedded built viewer or a packaged viewer asset directory.
+- The CLI binary is not yet fully standalone. `serve` still needs access to the Isoprism `web/` app source and local Node dependencies. This does not meet the Homebrew install contract; complete standalone parity needs an embedded built viewer or an automatically located packaged viewer asset directory.
 - `serve` does not yet watch files or push SSE/WebSocket refresh events. Reloading `/local` rebuilds from local git/cache.
 - Local repo node code lookup works for nodes parsed from the active `HEAD` graph.
 - The static HTML is a self-contained readable artifact with embedded JSON, but it does not yet boot the extracted React graph viewer. Achieving website visual parity requires the frontend extraction described below.
