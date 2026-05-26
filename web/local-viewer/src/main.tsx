@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import GraphCanvas from "@/components/graph/graph-canvas";
+import LocalRepoGraph from "@/components/local/local-repo-graph";
 import type { QueueResponse, RepoGraphResponse, RepoProgramsResponse, Repository } from "@/lib/types";
 import "@/app/globals.css";
 
@@ -55,17 +55,7 @@ function LocalViewer() {
     return <div style={{ padding: 32, color: "#AA2222" }}>{state.message}</div>;
   }
 
-  return (
-    <GraphCanvas
-      graph={state.graph}
-      prs={state.prs}
-      repoID="local"
-      repo={state.repo}
-      token="local"
-      settingsHref={null}
-      showFeedbackBanner={false}
-    />
-  );
+  return <LocalRepoGraph graph={state.graph} prs={state.prs} repo={state.repo} />;
 }
 
 createRoot(document.getElementById("root")!).render(

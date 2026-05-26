@@ -669,7 +669,7 @@ Implemented behavior:
 - `serve` analyzes the current git repository and does not require the Isoprism source checkout, Node.js, or local frontend dependencies.
 - Visiting the API root, `http://127.0.0.1:3717/`, redirects to the local web repo view instead of the JSON diff endpoint.
 - `serve --no-web` runs the API only.
-- The embedded local viewer is built with Vite from the same React `GraphCanvas` UI used by `/local`, so the default local UI should not diverge from the website/local development view unless a UI change is made intentionally in the shared component.
+- The embedded local viewer is built with Vite from the same React `LocalRepoGraph`/`GraphCanvas` UI used by `/local`, so the repo sideboard, graph canvas, node cards, zoom controls, node detail panel, and local repo props should not diverge unless a UI change is made intentionally in the shared component.
 - `--web-dir` and `ISOPRISM_WEB_DIR` are development overrides. When either is set, `serve` starts the source Next.js viewer with `next dev --webpack` on `--web-port`.
 - The local API exposes the website-compatible endpoints used by that viewer:
   - `GET /`

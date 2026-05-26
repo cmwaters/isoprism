@@ -1,5 +1,5 @@
 import { API_URL } from "@/lib/api";
-import GraphCanvas from "@/components/graph/graph-canvas";
+import LocalRepoGraph from "@/components/local/local-repo-graph";
 import { QueueResponse, RepoGraphResponse, RepoProgramsResponse, Repository } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -10,17 +10,7 @@ export default async function LocalRepoPage() {
   const programs = await localFetch<RepoProgramsResponse>("/api/v1/repos/local/programs").catch(() => ({ repo, programs: [] }));
   const graph: RepoGraphResponse = { repo, programs: programs.programs, nodes: [], edges: [] };
 
-  return (
-    <GraphCanvas
-      graph={graph}
-      prs={queue.prs}
-      repoID="local"
-      repo={repo}
-      token="local"
-      settingsHref={null}
-      showFeedbackBanner={false}
-    />
-  );
+  return <LocalRepoGraph graph={graph} prs={queue.prs} repo={repo} />;
 }
 
 async function localFetch<T>(path: string): Promise<T> {
