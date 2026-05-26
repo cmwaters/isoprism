@@ -146,6 +146,18 @@ The side panel has two modes:
 
 The overview/code/contents icon controls switch the side panel mode without changing the selected graph node.
 
+## Local Viewer Parity
+
+The CLI embedded viewer and the Next `/local` route must render the same repo graph surface. Both paths go through `web/components/local/local-repo-graph.tsx`, which renders `GraphCanvas` and the shared side panel.
+
+The embedded Vite viewer must also load the same app shell baseline that Next normally applies around that component:
+
+- `web/app/globals.css`
+- `web/local-viewer/src/shell.css`
+- Geist/Geist Mono font variables
+
+Do not add a separate side panel or repo-card implementation for the CLI viewer. If the CLI view needs a UI change, make it in the shared graph components so the website and CLI move together. The `local-viewer/parity.test.ts` test guards the shared component import and shell font/style imports.
+
 ## API contract used by the PR overview
 
 PR graph responses include the semantic graph and the GitHub file-level diff used by the PR overview:
