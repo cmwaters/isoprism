@@ -5,18 +5,11 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "https://api.isoprism.com";
 
-declare global {
-  interface Window {
-    __ISOPRISM_API_URL__?: string;
-  }
-}
+const LOCAL_API_URL = process.env.NEXT_PUBLIC_ISOPRISM_LOCAL_API_URL;
 
 function apiURL() {
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/local")) {
-    return "";
-  }
-  if (typeof window !== "undefined" && window.__ISOPRISM_API_URL__) {
-    return window.__ISOPRISM_API_URL__;
+    return LOCAL_API_URL ?? API_URL;
   }
   return API_URL;
 }

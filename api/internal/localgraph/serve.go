@@ -62,7 +62,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	cmd.Dir = filepath.Join(root, "web")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "NEXT_PUBLIC_API_URL="+apiBase)
+	cmd.Env = append(os.Environ(),
+		"NEXT_PUBLIC_API_URL="+apiBase,
+		"NEXT_PUBLIC_ISOPRISM_LOCAL_API_URL="+apiBase,
+	)
 	log.Printf("isoprism web listening on %s", webURL)
 	if err := cmd.Start(); err != nil {
 		_ = server.Shutdown(context.Background())

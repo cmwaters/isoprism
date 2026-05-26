@@ -629,10 +629,11 @@ Implemented behavior:
 - `--open` is on by default, and `--no-open` disables browser launch.
 - `.isoprism/objects/nodes` and `.isoprism/objects/index/blob_to_nodes` cache parsed semantic nodes by git blob SHA.
 - `--rebuild-cache` removes `.isoprism/objects` and rebuilds parser-derived objects without deleting annotations.
-- `serve` binds the local API to `127.0.0.1:3717` by default, starts the local Next viewer on `127.0.0.1:3000/local`, and points the viewer at the local API with `NEXT_PUBLIC_API_URL`.
+- `serve` binds the local API to `127.0.0.1:3717` by default, starts the local Next viewer on `127.0.0.1:3000/local`, and points both server-rendered and browser-side local viewer requests at the local API with `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_ISOPRISM_LOCAL_API_URL`.
 - Visiting the API root, `http://127.0.0.1:3717/`, redirects to the local web repo view instead of the JSON diff endpoint.
 - `serve --no-web` runs the API only.
 - The local viewer reuses the production `GraphCanvas` repo/program surface so the split panel, dotted graph canvas, node cards, zoom controls, node detail panel, graph expansion, and code view match the website for a local repository.
+- Browser-side graph fetches in `/local` go directly to the Go API rather than through a Next.js rewrite/proxy. This keeps `serve` behavior closer to the website API contract while avoiding Next dev server heap pressure from proxying local graph payloads.
 - The local API exposes the website-compatible endpoints used by that viewer:
   - `GET /`
   - `GET /api/diff`
