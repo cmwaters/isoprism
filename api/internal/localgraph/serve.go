@@ -2,19 +2,23 @@ package localgraph
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/isoprism/api/internal/models"
 )
+
+//go:embed viewer/*
+var embeddedViewer embed.FS
 
 func Serve(ctx context.Context, opts ServeOptions) error {
 	host := opts.Host
@@ -43,19 +47,32 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	apiBase := "http://" + host + ":" + strconv.Itoa(port)
 	webURL := ""
 	if !opts.NoWeb {
-		webURL = "http://127.0.0.1:" + strconv.Itoa(webPort) + "/local"
+		webURL = apiBase + "/local"
 	}
-	mux := localMux(root, cacheDir, webURL)
-	server := &http.Server{Addr: host + ":" + strconv.Itoa(port), Handler: mux}
 
 	if opts.NoWeb {
+		mux := localMux(root, cacheDir, "", false)
+		server := &http.Server{Addr: host + ":" + strconv.Itoa(port), Handler: mux}
 		log.Printf("isoprism API listening on %s", apiBase)
 		return server.ListenAndServe()
 	}
-	webDir, err := resolveWebDir(root, opts.WebDir)
+
+	if opts.WebDir == "" && os.Getenv("ISOPRISM_WEB_DIR") == "" {
+		mux := localMux(root, cacheDir, webURL, true)
+		server := &http.Server{Addr: host + ":" + strconv.Itoa(port), Handler: mux}
+		log.Printf("isoprism API listening on %s", apiBase)
+		log.Printf("isoprism web listening on %s", webURL)
+		log.Printf("open %s", webURL)
+		return server.ListenAndServe()
+	}
+
+	webDir, err := resolveWebDir(opts.WebDir)
 	if err != nil {
 		return err
 	}
+	webURL = "http://127.0.0.1:" + strconv.Itoa(webPort) + "/local"
+	mux := localMux(root, cacheDir, webURL, false)
+	server := &http.Server{Addr: host + ":" + strconv.Itoa(port), Handler: mux}
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -83,28 +100,13 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	return <-errCh
 }
 
-func resolveWebDir(repoRoot, explicit string) (string, error) {
+func resolveWebDir(explicit string) (string, error) {
 	var candidates []string
 	if explicit != "" {
 		candidates = append(candidates, explicit)
 	}
 	if env := os.Getenv("ISOPRISM_WEB_DIR"); env != "" {
 		candidates = append(candidates, env)
-	}
-	candidates = append(candidates, filepath.Join(repoRoot, "web"))
-	if _, file, _, ok := runtime.Caller(0); ok {
-		candidates = append(candidates, filepath.Join(filepath.Dir(file), "..", "..", "..", "web"))
-	}
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		for i := 0; i < 5; i++ {
-			candidates = append(candidates, filepath.Join(dir, "web"))
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
 	}
 	for _, candidate := range candidates {
 		webDir, ok := validWebDir(candidate)
@@ -130,9 +132,13 @@ func validWebDir(candidate string) (string, bool) {
 	return abs, true
 }
 
-func localMux(root, cacheDir, webURL string) http.Handler {
+func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Handler {
 	mux := http.NewServeMux()
 	opts := Options{RepoDir: root, CacheDir: cacheDir}
+
+	if serveEmbeddedViewer {
+		handleEmbeddedViewer(mux)
+	}
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
@@ -212,6 +218,35 @@ func localMux(root, cacheDir, webURL string) http.Handler {
 		http.NotFound(w, r)
 	})
 	return mux
+}
+
+func handleEmbeddedViewer(mux *http.ServeMux) {
+	viewerFS, err := fs.Sub(embeddedViewer, "viewer")
+	if err != nil {
+		panic(err)
+	}
+	assets := http.FileServer(http.FS(viewerFS))
+	mux.Handle("/local/assets/", http.StripPrefix("/local/", assets))
+	mux.HandleFunc("/local", embeddedIndex)
+	mux.HandleFunc("/local/", embeddedIndex)
+}
+
+func embeddedIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		withCORS(w)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	data, err := embeddedViewer.ReadFile("viewer/index.html")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read embedded viewer: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(data)
 }
 
 func withCORS(w http.ResponseWriter) {

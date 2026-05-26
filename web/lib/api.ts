@@ -9,7 +9,7 @@ const LOCAL_API_URL = process.env.NEXT_PUBLIC_ISOPRISM_LOCAL_API_URL;
 
 function apiURL() {
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/local")) {
-    return LOCAL_API_URL ?? API_URL;
+    return LOCAL_API_URL ?? window.location.origin ?? API_URL;
   }
   return API_URL;
 }

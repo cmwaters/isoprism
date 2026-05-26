@@ -84,8 +84,8 @@ func runServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	host := fs.String("host", "127.0.0.1", "host to bind")
 	port := fs.Int("port", 3717, "port to bind")
-	webPort := fs.Int("web-port", 3000, "local web viewer port")
-	webDir := fs.String("web-dir", "", "path to the Isoprism web app directory")
+	webPort := fs.Int("web-port", 3000, "development Next.js viewer port used with --web-dir")
+	webDir := fs.String("web-dir", "", "development path to the Isoprism web app directory")
 	cacheDir := fs.String("cache-dir", "", "cache directory")
 	noWeb := fs.Bool("no-web", false, "serve only the local API")
 	if err := fs.Parse(args); err != nil {

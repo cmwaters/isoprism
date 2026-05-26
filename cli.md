@@ -101,14 +101,13 @@ isoprism diff --rebuild-cache
 isoprism serve
 isoprism serve --port 3717
 isoprism serve --host 127.0.0.1
-isoprism serve --web-dir /Users/callum/Developer/isoprism/web
 ```
 
 `serve` starts a local-only HTTP server by default. It should not bind to a public interface unless the user explicitly passes a non-loopback host.
 
-The current implementation does not embed the web app into the Go binary. `serve` runs the Go local API against the current repository and starts the Isoprism Next.js viewer from the Isoprism `web/` app source. It discovers that app from `--web-dir`, `ISOPRISM_WEB_DIR`, the current repo when developing inside Isoprism, or the source path recorded in the locally built binary.
+The default implementation embeds a static local viewer into the Go binary and serves it from the same local process as the API. The default browser URL is `http://127.0.0.1:3717/local`.
 
-This is a development-only bridge. It is not the release contract. Before a Homebrew-style release, `serve` must stop shelling out to `next dev` and instead serve packaged local viewer assets from the Go process.
+For frontend development only, `--web-dir` or `ISOPRISM_WEB_DIR` switches `serve` back to the source-checkout Next.js bridge and starts that app with `next dev --webpack` on `--web-port`.
 
 The server provides the full repo browsing experience:
 
@@ -462,9 +461,9 @@ cd /path/to/repo
 isoprism serve
 ```
 
-The preferred packaging design is a single Go CLI binary with embedded local viewer assets:
+The implemented packaging design is a single Go CLI binary with embedded local viewer assets:
 
-- Build the reusable local viewer as static browser assets during release.
+- Build or maintain the reusable local viewer as static browser assets.
 - Embed those assets into the Go binary with `go:embed`.
 - Serve `GET /local`, static JS/CSS assets, and the local API from the same Go process.
 - Keep `--web-dir` and `ISOPRISM_WEB_DIR` only as development overrides for working directly against the Next.js source app.
@@ -472,7 +471,7 @@ The preferred packaging design is a single Go CLI binary with embedded local vie
 
 If embedding the viewer makes the binary too large or blocks a release, the acceptable fallback is a packaged asset directory installed by Homebrew alongside the binary. In that fallback, the binary must locate its installed assets automatically and still support `cd any/repo && isoprism serve` without extra flags.
 
-The current source-checkout `next dev --webpack` path remains useful for frontend iteration, but it is explicitly not considered complete CLI parity.
+The source-checkout `next dev --webpack` path remains useful for frontend iteration, but it is explicitly not the default user path.
 
 ## Shared Frontend
 
@@ -648,8 +647,7 @@ go run ./cmd/isoprism diff staged
 go run ./cmd/isoprism diff <ref1> <ref2> --json
 go run ./cmd/isoprism diff <ref1> <ref2> --output /tmp/isoprism.html --no-open
 go run ./cmd/isoprism serve --port 3717
-go run ./cmd/isoprism serve --port 3717 --web-port 3000
-go run ./cmd/isoprism serve --web-dir ../web
+go run ./cmd/isoprism serve --web-dir ../web --web-port 3000
 go run ./cmd/isoprism serve --no-web
 go run ./cmd/isoprism annotate diff --reason-for-change "..." --expected-outcome "..."
 go run ./cmd/isoprism annotate node <node-sha256> --description "..." --reasoning "..." --confidence high
@@ -667,13 +665,12 @@ Implemented behavior:
 - `--open` is on by default, and `--no-open` disables browser launch.
 - `.isoprism/objects/nodes` and `.isoprism/objects/index/blob_to_nodes` cache parsed semantic nodes by git blob SHA.
 - `--rebuild-cache` removes `.isoprism/objects` and rebuilds parser-derived objects without deleting annotations.
-- `serve` binds the local API to `127.0.0.1:3717` by default, starts the local Next viewer on `127.0.0.1:3000/local` with the webpack dev backend, and points both server-rendered and browser-side local viewer requests at the local API with `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_ISOPRISM_LOCAL_API_URL`.
-- `serve` analyzes the current git repository but resolves the Isoprism web app independently. Use `--web-dir` or `ISOPRISM_WEB_DIR` when the binary cannot infer the Isoprism source checkout.
+- `serve` binds the local API and embedded local viewer to `127.0.0.1:3717` by default. The local viewer is available at `http://127.0.0.1:3717/local`.
+- `serve` analyzes the current git repository and does not require the Isoprism source checkout, Node.js, or local frontend dependencies.
 - Visiting the API root, `http://127.0.0.1:3717/`, redirects to the local web repo view instead of the JSON diff endpoint.
 - `serve --no-web` runs the API only.
-- The local viewer reuses the production `GraphCanvas` repo/program surface so the split panel, dotted graph canvas, node cards, zoom controls, node detail panel, graph expansion, and code view match the website for a local repository.
-- Browser-side graph fetches in `/local` go directly to the Go API rather than through a Next.js rewrite/proxy. This keeps `serve` behavior closer to the website API contract while avoiding Next dev server heap pressure from proxying local graph payloads.
-- `serve` intentionally uses `next dev --webpack` rather than the default Turbopack dev backend. Turbopack/SWC currently emits intermittent invalid-token browser chunks and can grow until Node OOMs during longer local viewer sessions.
+- The embedded local viewer is built with Vite from the same React `GraphCanvas` UI used by `/local`, so the default local UI should not diverge from the website/local development view unless a UI change is made intentionally in the shared component.
+- `--web-dir` and `ISOPRISM_WEB_DIR` are development overrides. When either is set, `serve` starts the source Next.js viewer with `next dev --webpack` on `--web-port`.
 - The local API exposes the website-compatible endpoints used by that viewer:
   - `GET /`
   - `GET /api/diff`
@@ -689,7 +686,7 @@ Implemented behavior:
 Current intentional gaps:
 
 - `diff unstaged` is not implemented yet. It needs a working-tree overlay model that can parse tracked disk contents, represent deleted and renamed files, and decide whether untracked supported files are included or reported as deferred.
-- The CLI binary is not yet fully standalone. `serve` still needs access to the Isoprism `web/` app source and local Node dependencies. This does not meet the Homebrew install contract; complete standalone parity needs an embedded built viewer or an automatically located packaged viewer asset directory.
+- The static diff HTML is not yet visually identical to the hosted website. It still uses the older self-contained readable artifact path instead of the shared React graph UI.
 - `serve` does not yet watch files or push SSE/WebSocket refresh events. Reloading `/local` rebuilds from local git/cache.
 - Local repo node code lookup works for nodes parsed from the active `HEAD` graph.
 - The static HTML is a self-contained readable artifact with embedded JSON, but it does not yet boot the extracted React graph viewer. Achieving website visual parity requires the frontend extraction described below.
@@ -1026,6 +1023,6 @@ As implementation lands, keep documentation source-of-truth aligned:
 ## Open Decisions
 
 - Whether `node-sha256` should include `git_blob_sha` permanently or whether stable logical node IDs should be introduced alongside versioned node objects.
-- Exact static frontend build system: Vite bundle, Next export, or a dedicated viewer package.
+- Whether the Vite local viewer build should remain under `web/local-viewer` or move to a dedicated package once the CLI release workflow is formalized.
 - How much working-tree and untracked-file support is required in the first `unstaged` implementation.
 - Whether `.isoprism/` committed cache should be mandatory or configurable per repo via `.isoprism/config`.
