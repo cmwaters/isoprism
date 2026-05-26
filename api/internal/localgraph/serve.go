@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -51,6 +52,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		log.Printf("isoprism API listening on %s", apiBase)
 		return server.ListenAndServe()
 	}
+	webDir, err := resolveWebDir(root, opts.WebDir)
+	if err != nil {
+		return err
+	}
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -59,7 +64,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}()
 
 	cmd := exec.CommandContext(ctx, "npm", "run", "dev", "--", "--webpack", "--hostname", "127.0.0.1", "--port", strconv.Itoa(webPort))
-	cmd.Dir = filepath.Join(root, "web")
+	cmd.Dir = webDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(),
@@ -76,6 +81,53 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}()
 	log.Printf("open %s", webURL)
 	return <-errCh
+}
+
+func resolveWebDir(repoRoot, explicit string) (string, error) {
+	var candidates []string
+	if explicit != "" {
+		candidates = append(candidates, explicit)
+	}
+	if env := os.Getenv("ISOPRISM_WEB_DIR"); env != "" {
+		candidates = append(candidates, env)
+	}
+	candidates = append(candidates, filepath.Join(repoRoot, "web"))
+	if _, file, _, ok := runtime.Caller(0); ok {
+		candidates = append(candidates, filepath.Join(filepath.Dir(file), "..", "..", "..", "web"))
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		for i := 0; i < 5; i++ {
+			candidates = append(candidates, filepath.Join(dir, "web"))
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	for _, candidate := range candidates {
+		webDir, ok := validWebDir(candidate)
+		if ok {
+			return webDir, nil
+		}
+	}
+	return "", fmt.Errorf("could not find Isoprism web app directory; pass --web-dir <path> or set ISOPRISM_WEB_DIR")
+}
+
+func validWebDir(candidate string) (string, bool) {
+	if candidate == "" {
+		return "", false
+	}
+	abs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", false
+	}
+	info, err := os.Stat(filepath.Join(abs, "package.json"))
+	if err != nil || info.IsDir() {
+		return "", false
+	}
+	return abs, true
 }
 
 func localMux(root, cacheDir, webURL string) http.Handler {

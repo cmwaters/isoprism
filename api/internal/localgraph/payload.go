@@ -26,6 +26,7 @@ type Options struct {
 
 type ServeOptions struct {
 	RepoDir  string
+	WebDir   string
 	Host     string
 	Port     int
 	WebPort  int

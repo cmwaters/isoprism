@@ -91,9 +91,12 @@ isoprism diff --rebuild-cache
 isoprism serve
 isoprism serve --port 3717
 isoprism serve --host 127.0.0.1
+isoprism serve --web-dir /Users/callum/Developer/isoprism/web
 ```
 
 `serve` starts a local-only HTTP server by default. It should not bind to a public interface unless the user explicitly passes a non-loopback host.
+
+The current implementation does not embed the web app into the Go binary. `serve` runs the Go local API against the current repository and starts the Isoprism Next.js viewer from the Isoprism `web/` app source. It discovers that app from `--web-dir`, `ISOPRISM_WEB_DIR`, the current repo when developing inside Isoprism, or the source path recorded in the locally built binary. A future standalone distribution should either embed a built local viewer or ship the viewer assets alongside the binary.
 
 The server provides the full repo browsing experience:
 
@@ -612,6 +615,7 @@ go run ./cmd/isoprism diff <ref1> <ref2> --json
 go run ./cmd/isoprism diff <ref1> <ref2> --output /tmp/isoprism.html --no-open
 go run ./cmd/isoprism serve --port 3717
 go run ./cmd/isoprism serve --port 3717 --web-port 3000
+go run ./cmd/isoprism serve --web-dir ../web
 go run ./cmd/isoprism serve --no-web
 go run ./cmd/isoprism annotate diff --reason-for-change "..." --expected-outcome "..."
 go run ./cmd/isoprism annotate node <node-sha256> --description "..." --reasoning "..." --confidence high
@@ -630,6 +634,7 @@ Implemented behavior:
 - `.isoprism/objects/nodes` and `.isoprism/objects/index/blob_to_nodes` cache parsed semantic nodes by git blob SHA.
 - `--rebuild-cache` removes `.isoprism/objects` and rebuilds parser-derived objects without deleting annotations.
 - `serve` binds the local API to `127.0.0.1:3717` by default, starts the local Next viewer on `127.0.0.1:3000/local` with the webpack dev backend, and points both server-rendered and browser-side local viewer requests at the local API with `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_ISOPRISM_LOCAL_API_URL`.
+- `serve` analyzes the current git repository but resolves the Isoprism web app independently. Use `--web-dir` or `ISOPRISM_WEB_DIR` when the binary cannot infer the Isoprism source checkout.
 - Visiting the API root, `http://127.0.0.1:3717/`, redirects to the local web repo view instead of the JSON diff endpoint.
 - `serve --no-web` runs the API only.
 - The local viewer reuses the production `GraphCanvas` repo/program surface so the split panel, dotted graph canvas, node cards, zoom controls, node detail panel, graph expansion, and code view match the website for a local repository.
@@ -650,6 +655,7 @@ Implemented behavior:
 Current intentional gaps:
 
 - `diff unstaged` is not implemented yet. It needs a working-tree overlay model that can parse tracked disk contents, represent deleted and renamed files, and decide whether untracked supported files are included or reported as deferred.
+- The CLI binary is not yet fully standalone. `serve` still needs access to the Isoprism `web/` app source and local Node dependencies; complete standalone parity needs an embedded built viewer or a packaged viewer asset directory.
 - `serve` does not yet watch files or push SSE/WebSocket refresh events. Reloading `/local` rebuilds from local git/cache.
 - Local repo node code lookup works for nodes parsed from the active `HEAD` graph.
 - The static HTML is a self-contained readable artifact with embedded JSON, but it does not yet boot the extracted React graph viewer. Achieving website visual parity requires the frontend extraction described below.

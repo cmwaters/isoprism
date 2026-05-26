@@ -85,12 +85,13 @@ func runServe(ctx context.Context, args []string) error {
 	host := fs.String("host", "127.0.0.1", "host to bind")
 	port := fs.Int("port", 3717, "port to bind")
 	webPort := fs.Int("web-port", 3000, "local web viewer port")
+	webDir := fs.String("web-dir", "", "path to the Isoprism web app directory")
 	cacheDir := fs.String("cache-dir", "", "cache directory")
 	noWeb := fs.Bool("no-web", false, "serve only the local API")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	return localgraph.Serve(ctx, localgraph.ServeOptions{RepoDir: ".", Host: *host, Port: *port, WebPort: *webPort, CacheDir: *cacheDir, NoWeb: *noWeb})
+	return localgraph.Serve(ctx, localgraph.ServeOptions{RepoDir: ".", WebDir: *webDir, Host: *host, Port: *port, WebPort: *webPort, CacheDir: *cacheDir, NoWeb: *noWeb})
 }
 
 func runAnnotate(ctx context.Context, args []string) error {
