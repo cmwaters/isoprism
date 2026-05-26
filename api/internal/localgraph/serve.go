@@ -40,7 +40,11 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		cacheDir = filepath.Join(root, ".isoprism")
 	}
 	apiBase := "http://" + host + ":" + strconv.Itoa(port)
-	mux := localMux(root, cacheDir)
+	webURL := ""
+	if !opts.NoWeb {
+		webURL = "http://127.0.0.1:" + strconv.Itoa(webPort) + "/local"
+	}
+	mux := localMux(root, cacheDir, webURL)
 	server := &http.Server{Addr: host + ":" + strconv.Itoa(port), Handler: mux}
 
 	if opts.NoWeb {
@@ -54,7 +58,6 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		errCh <- server.ListenAndServe()
 	}()
 
-	webURL := "http://127.0.0.1:" + strconv.Itoa(webPort) + "/local"
 	cmd := exec.CommandContext(ctx, "npm", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", strconv.Itoa(webPort))
 	cmd.Dir = filepath.Join(root, "web")
 	cmd.Stdout = os.Stdout
@@ -72,7 +75,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	return <-errCh
 }
 
-func localMux(root, cacheDir string) http.Handler {
+func localMux(root, cacheDir, webURL string) http.Handler {
 	mux := http.NewServeMux()
 	opts := Options{RepoDir: root, CacheDir: cacheDir}
 
@@ -85,7 +88,15 @@ func localMux(root, cacheDir string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		http.Redirect(w, r, "/api/diff", http.StatusFound)
+		if webURL != "" {
+			http.Redirect(w, r, webURL, http.StatusFound)
+			return
+		}
+		writeJSON(w, map[string]string{
+			"status": "ok",
+			"viewer": "disabled",
+			"diff":   "/api/diff",
+		}, nil)
 	})
 	mux.HandleFunc("/api/diff", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)

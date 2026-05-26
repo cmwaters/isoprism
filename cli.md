@@ -630,6 +630,7 @@ Implemented behavior:
 - `.isoprism/objects/nodes` and `.isoprism/objects/index/blob_to_nodes` cache parsed semantic nodes by git blob SHA.
 - `--rebuild-cache` removes `.isoprism/objects` and rebuilds parser-derived objects without deleting annotations.
 - `serve` binds the local API to `127.0.0.1:3717` by default, starts the local Next viewer on `127.0.0.1:3000/local`, and points the viewer at the local API with `NEXT_PUBLIC_API_URL`.
+- Visiting the API root, `http://127.0.0.1:3717/`, redirects to the local web repo view instead of the JSON diff endpoint.
 - `serve --no-web` runs the API only.
 - The local viewer reuses the production `GraphCanvas` repo/program surface so the split panel, dotted graph canvas, node cards, zoom controls, node detail panel, graph expansion, and code view match the website for a local repository.
 - The local API exposes the website-compatible endpoints used by that viewer:
