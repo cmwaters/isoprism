@@ -12,6 +12,9 @@ declare global {
 }
 
 function apiURL() {
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/local")) {
+    return "";
+  }
   if (typeof window !== "undefined" && window.__ISOPRISM_API_URL__) {
     return window.__ISOPRISM_API_URL__;
   }
