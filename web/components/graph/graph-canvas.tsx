@@ -653,6 +653,7 @@ function InnerCanvas({
   prs = [],
   settingsHref = "/settings",
   showFeedbackBanner = true,
+  enableLocalReview = false,
 }: {
   graph: UnifiedGraph;
   repoID: string;
@@ -661,6 +662,7 @@ function InnerCanvas({
   prs?: QueuePR[];
   settingsHref?: string | null;
   showFeedbackBanner?: boolean;
+  enableLocalReview?: boolean;
 }) {
   const { fitView, getNode, getZoom, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
@@ -668,6 +670,10 @@ function InnerCanvas({
   const [programGraphCache, setProgramGraphCache] = useState<Record<string, RepoGraphResponse>>({});
   const [loadingPRNumber, setLoadingPRNumber] = useState<number | null>(null);
   const [loadingProgramID, setLoadingProgramID] = useState<string | null>(null);
+  const [reviewBaseRef, setReviewBaseRef] = useState(repo?.default_branch || "main");
+  const [reviewHeadRef, setReviewHeadRef] = useState("worktree");
+  const [loadingReview, setLoadingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
   const [selectedPRChange, setSelectedPRChange] = useState<SelectedPRChange | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("overview");
@@ -1072,6 +1078,36 @@ function InnerCanvas({
     }
   }, [programGraphCache, repoID, token]);
 
+  const onCompareLocalReview = useCallback(async () => {
+    setSelectedNode(null);
+    setSelectedPRChange(null);
+    setExpandedEdgeKeys(new Set());
+    setExpandingNodeIDs({});
+    setExpandedNodeIDs({});
+    setPanelMode("overview");
+    setFocusedTestNodeID(null);
+    setTestFocusExtraNodeIDs(new Set());
+    setDetailExpansion({ nodes: [], edges: [] });
+    layoutPositionsRef.current = {};
+    setLayoutPositions({});
+    setReviewError(null);
+    setLoadingReview(true);
+    try {
+      const reviewGraph = await apiFetch<GraphResponse>("/api/v1/local/review/compare", token, {
+        method: "POST",
+        body: JSON.stringify({
+          base_ref: reviewBaseRef.trim() || repo?.default_branch || "main",
+          head_ref: reviewHeadRef.trim() || "worktree",
+        }),
+      });
+      setActiveGraph(reviewGraph);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoadingReview(false);
+    }
+  }, [repo?.default_branch, reviewBaseRef, reviewHeadRef, token]);
+
   const onBackToRepo = useCallback(() => {
     setSelectedNode(null);
     setSelectedPRChange(null);
@@ -1141,6 +1177,15 @@ function InnerCanvas({
         programs={repoPrograms}
         loadingPRNumber={loadingPRNumber}
         loadingProgramID={loadingProgramID}
+        reviewCompare={enableLocalReview ? {
+          baseRef: reviewBaseRef,
+          headRef: reviewHeadRef,
+          loading: loadingReview,
+          error: reviewError,
+          onBaseRefChange: setReviewBaseRef,
+          onHeadRefChange: setReviewHeadRef,
+          onCompare: onCompareLocalReview,
+        } : undefined}
         onSelectPR={onSelectPR}
         onSelectProgram={onSelectProgram}
         onBackToRepo={onBackToRepo}
@@ -1283,6 +1328,7 @@ export default function GraphCanvas({
   prs,
   settingsHref,
   showFeedbackBanner,
+  enableLocalReview,
 }: {
   graph: UnifiedGraph;
   repoID: string;
@@ -1291,6 +1337,7 @@ export default function GraphCanvas({
   prs?: QueuePR[];
   settingsHref?: string | null;
   showFeedbackBanner?: boolean;
+  enableLocalReview?: boolean;
 }) {
   return (
     <ReactFlowProvider>
@@ -1302,6 +1349,7 @@ export default function GraphCanvas({
         prs={prs}
         settingsHref={settingsHref}
         showFeedbackBanner={showFeedbackBanner}
+        enableLocalReview={enableLocalReview}
       />
     </ReactFlowProvider>
   );

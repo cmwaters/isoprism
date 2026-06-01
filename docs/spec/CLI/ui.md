@@ -35,6 +35,17 @@ type RepoWorkspaceModel = {
 
 For local, `reviewItems` may be `[]` or omitted. The panel should not show an empty PR queue unless a product explicitly asks for one.
 
+## Review Compare
+
+The local repo panel includes a `Review` section above `Programs`. It allows the user to compare two local git states and render the result as a semantic review graph.
+
+Default inputs:
+
+- Base: detected default branch, normally `main`
+- Compare: `worktree`
+
+The compare input accepts branches, tags, commits, `staged`, `worktree`, `working-tree`, or `unstaged`. When the user runs a comparison, the daemon indexes uncached branches, commits, staged blobs, or working-tree files before calculating the semantic diff.
+
 ## Local-Unique Components
 
 Local-specific components should remain thin:

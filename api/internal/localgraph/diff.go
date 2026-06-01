@@ -10,7 +10,10 @@ import (
 	"github.com/isoprism/api/internal/parser"
 )
 
-const indexTreeRef = ":index:"
+const (
+	indexTreeRef    = ":index:"
+	worktreeTreeRef = ":worktree:"
+)
 
 func GenerateDiff(ctx context.Context, opts Options) (ReviewGraphPayload, error) {
 	root, err := repoRoot(ctx, opts.RepoDir)
@@ -72,7 +75,11 @@ func resolveDiffRefs(ctx context.Context, g gitClient, args []string) (string, s
 	}
 	for _, arg := range args {
 		if arg == "unstaged" {
-			return "", "", fmt.Errorf("unstaged mode needs working-tree overlay support and is not implemented yet; use staged or pass committed refs")
+			branch, err := g.resolveDefaultBranch(ctx)
+			if err != nil {
+				return "", "", err
+			}
+			return branch, worktreeTreeRef, nil
 		}
 	}
 	switch len(args) {
@@ -82,7 +89,13 @@ func resolveDiffRefs(ctx context.Context, g gitClient, args []string) (string, s
 		}
 		return args[0], "HEAD", nil
 	case 2:
-		return args[0], args[1], nil
+		head := args[1]
+		if head == "worktree" || head == "working-tree" || head == "unstaged" {
+			head = worktreeTreeRef
+		} else if head == "staged" {
+			head = indexTreeRef
+		}
+		return args[0], head, nil
 	default:
 		return "", "", fmt.Errorf("diff accepts zero, one, or two refs")
 	}

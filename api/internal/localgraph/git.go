@@ -3,8 +3,12 @@ package localgraph
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -65,6 +69,13 @@ func (g gitClient) resolveDefaultBranch(ctx context.Context) (string, error) {
 }
 
 func (g gitClient) resolveCommit(ctx context.Context, ref string) (string, error) {
+	if ref == worktreeTreeRef {
+		head, err := g.resolveCommit(ctx, "HEAD")
+		if err != nil {
+			return "", err
+		}
+		return "worktree-" + head, nil
+	}
 	candidates := []string{ref}
 	if !strings.HasPrefix(ref, "origin/") {
 		candidates = append(candidates, "origin/"+ref)
@@ -98,6 +109,9 @@ func (g gitClient) listTree(ctx context.Context, ref string) (map[string]string,
 	if ref == indexTreeRef {
 		return g.listIndex(ctx)
 	}
+	if ref == worktreeTreeRef {
+		return g.listWorktree(ctx)
+	}
 	out, err := g.run(ctx, "ls-tree", "-r", "-z", ref)
 	if err != nil {
 		return nil, err
@@ -115,6 +129,26 @@ func (g gitClient) listTree(ctx context.Context, ref string) (map[string]string,
 		if len(parts) >= 3 && parts[1] == "blob" {
 			tree[path] = parts[2]
 		}
+	}
+	return tree, nil
+}
+
+func (g gitClient) listWorktree(ctx context.Context) (map[string]string, error) {
+	out, err := g.run(ctx, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	tree := map[string]string{}
+	for _, path := range strings.Split(out, "\x00") {
+		if path == "" {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(g.root, filepath.FromSlash(path)))
+		if err != nil {
+			continue
+		}
+		sum := sha256.Sum256(content)
+		tree[path] = "worktree-" + hex.EncodeToString(sum[:])
 	}
 	return tree, nil
 }
@@ -142,6 +176,9 @@ func (g gitClient) listIndex(ctx context.Context) (map[string]string, error) {
 }
 
 func (g gitClient) showFile(ctx context.Context, ref, path string) ([]byte, error) {
+	if ref == worktreeTreeRef {
+		return os.ReadFile(filepath.Join(g.root, filepath.FromSlash(path)))
+	}
 	if ref == indexTreeRef {
 		tree, err := g.listIndex(ctx)
 		if err != nil {
@@ -174,6 +211,15 @@ func (g gitClient) diffPatch(ctx context.Context, from, to string, paths ...stri
 		}
 		return out, nil
 	}
+	if to == worktreeTreeRef {
+		args := []string{"diff", "--patch", from, "--"}
+		args = append(args, paths...)
+		out, err := g.run(ctx, args...)
+		if err != nil {
+			return "", err
+		}
+		return out, nil
+	}
 	args := []string{"diff", "--patch", from, to, "--"}
 	args = append(args, paths...)
 	out, err := g.run(ctx, args...)
@@ -186,6 +232,9 @@ func (g gitClient) diffPatch(ctx context.Context, from, to string, paths ...stri
 func (g gitClient) diffNameStatus(ctx context.Context, from, to string) ([]fileChange, error) {
 	if to == indexTreeRef {
 		return g.diffNameStatusArgs(ctx, "diff", "--cached", "--name-status", "--find-renames", "-z", from)
+	}
+	if to == worktreeTreeRef {
+		return g.diffNameStatusArgs(ctx, "diff", "--name-status", "--find-renames", "-z", from)
 	}
 	return g.diffNameStatusArgs(ctx, "diff", "--name-status", "--find-renames", "-z", from, to)
 }
@@ -237,6 +286,9 @@ func (g gitClient) diffNumstat(ctx context.Context, from, to string) (map[string
 	args := []string{"diff", "--numstat", "-z", from, to}
 	if to == indexTreeRef {
 		args = []string{"diff", "--cached", "--numstat", "-z", from}
+	}
+	if to == worktreeTreeRef {
+		args = []string{"diff", "--numstat", "-z", from}
 	}
 	out, err := g.run(ctx, args...)
 	if err != nil {

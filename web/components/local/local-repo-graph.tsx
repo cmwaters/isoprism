@@ -21,6 +21,7 @@ export default function LocalRepoGraph({
       token="local"
       settingsHref={null}
       showFeedbackBanner={false}
+      enableLocalReview
     />
   );
 }

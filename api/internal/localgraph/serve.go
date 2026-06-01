@@ -164,6 +164,44 @@ func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Hand
 		payload, err := GenerateDiff(r.Context(), opts)
 		writeJSON(w, payload, err)
 	})
+	mux.HandleFunc("/api/v1/local/review/compare", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		if r.Method == http.MethodOptions {
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			BaseRef string `json:"base_ref"`
+			HeadRef string `json:"head_ref"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid review comparison payload", http.StatusBadRequest)
+			return
+		}
+		baseRef := strings.TrimSpace(req.BaseRef)
+		headRef := strings.TrimSpace(req.HeadRef)
+		if baseRef == "" {
+			g := gitClient{root: root}
+			branch, err := g.resolveDefaultBranch(r.Context())
+			if err != nil {
+				writeJSON(w, nil, err)
+				return
+			}
+			baseRef = branch
+		}
+		if headRef == "" {
+			headRef = "worktree"
+		}
+		payload, err := GenerateDiff(r.Context(), Options{RepoDir: root, CacheDir: cacheDir, Args: []string{baseRef, headRef}})
+		if err != nil {
+			writeJSON(w, nil, err)
+			return
+		}
+		writeJSON(w, payload.Graph, nil)
+	})
 	mux.HandleFunc("/api/v1/local/repo", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
 		data, err := GenerateRepo(r.Context(), opts)

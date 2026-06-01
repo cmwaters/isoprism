@@ -28,6 +28,7 @@ Data routes:
 ```text
 GET  /api/diff
 GET  /api/v1/local/repo
+POST /api/v1/local/review/compare
 GET  /api/v1/repos/local/queue
 GET  /api/v1/repos/local/programs
 GET  /api/v1/repos/local/programs/{nodeID}/graph
@@ -45,6 +46,23 @@ GET  /api/v1/repos/local/nodes/{nodeID}/code
 }
 ```
 
+`POST /api/v1/local/review/compare` accepts:
+
+```json
+{
+  "base_ref": "main",
+  "head_ref": "worktree"
+}
+```
+
+Both fields are optional. If `base_ref` is empty, the daemon uses the detected default branch. If `head_ref` is empty, the daemon uses `worktree`. The daemon indexes any uncached trees or working-tree blobs before returning the semantic review graph.
+
+Supported `head_ref` aliases:
+
+- `worktree`, `working-tree`, or `unstaged` compare the base ref against the current working tree.
+- `staged` compares the base ref against the git index.
+- Any other value is resolved as a branch, tag, or commit ref.
+
 ## Target Local API
 
 The target API should be honest about being local:
@@ -54,6 +72,7 @@ GET  /api/local/session
 GET  /api/local/repo
 GET  /api/local/programs
 GET  /api/local/review-items
+POST /api/local/review/compare
 GET  /api/local/programs/{programID}/graph
 GET  /api/local/review-items/{reviewItemID}/graph
 POST /api/local/graph/expand

@@ -17,8 +17,10 @@ Resolution rules:
 - `isoprism diff` compares the default branch to `HEAD`.
 - `isoprism diff <ref>` compares `<ref>` to `HEAD`.
 - `isoprism diff <ref1> <ref2>` compares the two named refs.
-- `staged` compares the git index against `HEAD`.
-- `unstaged` compares working-tree changes against `HEAD`.
+- `staged` compares the git index against the detected default branch.
+- `unstaged` compares the working tree against the detected default branch.
+- In two-ref form, `staged` may be used as the second ref to compare the first ref against the git index.
+- In two-ref form, `worktree`, `working-tree`, or `unstaged` may be used as the second ref to compare the first ref against the current working tree.
 
 Supported flags:
 

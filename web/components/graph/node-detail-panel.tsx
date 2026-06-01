@@ -16,6 +16,16 @@ export type SelectedPRChange =
   | { type: "pr-description"; body: string; htmlURL: string }
   | { type: "issue"; issue: GitHubIssueReference };
 
+export interface ReviewCompareControls {
+  baseRef: string;
+  headRef: string;
+  loading: boolean;
+  error?: string | null;
+  onBaseRefChange: (value: string) => void;
+  onHeadRefChange: (value: string) => void;
+  onCompare: () => void;
+}
+
 interface Props {
   node: GraphNode | null;
   allNodes: GraphNode[];
@@ -31,6 +41,7 @@ interface Props {
   programs?: GraphProgram[];
   loadingPRNumber?: number | null;
   loadingProgramID?: string | null;
+  reviewCompare?: ReviewCompareControls;
   onSelectPR: (prNumber: number) => void;
   onSelectProgram: (programID: string) => void;
   onBackToRepo: () => void;
@@ -82,6 +93,7 @@ export default function NodeDetailPanel({
   programs,
   loadingPRNumber,
   loadingProgramID,
+  reviewCompare,
   onSelectPR,
   onSelectProgram,
   onBackToRepo,
@@ -149,6 +161,7 @@ export default function NodeDetailPanel({
               allNodes={allNodes}
               loadingPRNumber={loadingPRNumber}
               loadingProgramID={loadingProgramID}
+              reviewCompare={reviewCompare}
               onSelectPR={onSelectPR}
               onSelectProgram={onSelectProgram}
             />
@@ -231,6 +244,7 @@ function RepoSummaryPanel({
   allNodes,
   loadingPRNumber,
   loadingProgramID,
+  reviewCompare,
   onSelectPR,
   onSelectProgram,
 }: {
@@ -240,6 +254,7 @@ function RepoSummaryPanel({
   allNodes: GraphNode[];
   loadingPRNumber?: number | null;
   loadingProgramID?: string | null;
+  reviewCompare?: ReviewCompareControls;
   onSelectPR: (prNumber: number) => void;
   onSelectProgram: (programID: string) => void;
 }) {
@@ -255,6 +270,61 @@ function RepoSummaryPanel({
       <h1 style={{ color: "#111111", fontSize: 18, fontWeight: 600, margin: "0 0 8px 0" }}>
         {name}
       </h1>
+
+      {reviewCompare && (
+        <>
+          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, marginTop: 20 }}>
+            Review
+          </p>
+          <div style={{ background: "#FFFFFF", border: "1px solid #D4D4D4", borderRadius: 6, display: "flex", flexDirection: "column", gap: 10, marginBottom: 20, padding: 12 }}>
+            <label style={reviewLabelStyle}>
+              <span>Base</span>
+              <input
+                value={reviewCompare.baseRef}
+                onChange={(event) => reviewCompare.onBaseRefChange(event.target.value)}
+                placeholder="main"
+                style={reviewInputStyle}
+              />
+            </label>
+            <label style={reviewLabelStyle}>
+              <span>Compare</span>
+              <input
+                value={reviewCompare.headRef}
+                onChange={(event) => reviewCompare.onHeadRefChange(event.target.value)}
+                placeholder="worktree"
+                style={reviewInputStyle}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={reviewCompare.onCompare}
+              disabled={reviewCompare.loading}
+              style={{
+                background: reviewCompare.loading ? "#D8D8D8" : "#111111",
+                border: "none",
+                borderRadius: 6,
+                color: "#FFFFFF",
+                cursor: reviewCompare.loading ? "wait" : "pointer",
+                fontFamily: "inherit",
+                fontSize: 13,
+                fontWeight: 650,
+                height: 36,
+                padding: "0 12px",
+              }}
+            >
+              {reviewCompare.loading ? "Indexing states..." : "Compare changes"}
+            </button>
+            <p style={{ color: "#888888", fontSize: 12, lineHeight: 1.45, margin: 0 }}>
+              Defaults to comparing the working tree against the default branch. You can enter branches, commits, staged, or worktree.
+            </p>
+            {reviewCompare.error && (
+              <p style={{ color: "#AA2222", fontSize: 12, lineHeight: 1.45, margin: 0 }}>
+                {reviewCompare.error}
+              </p>
+            )}
+          </div>
+        </>
+      )}
 
       {prs.length > 0 && (
         <>
@@ -372,6 +442,30 @@ function RepoSummaryPanel({
     </div>
   );
 }
+
+const reviewLabelStyle: CSSProperties = {
+  color: "#666666",
+  display: "flex",
+  flexDirection: "column",
+  fontSize: 11,
+  fontWeight: 650,
+  gap: 4,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+};
+
+const reviewInputStyle: CSSProperties = {
+  background: "#F5F5F5",
+  border: "1px solid #D4D4D4",
+  borderRadius: 6,
+  color: "#111111",
+  fontFamily: "inherit",
+  fontSize: 13,
+  height: 34,
+  padding: "0 9px",
+  textTransform: "none",
+  letterSpacing: 0,
+};
 
 function splitRepoFullName(fullName: string): { owner: string; name: string } {
   const [owner, name] = fullName.split("/");
