@@ -8,6 +8,7 @@ import (
 	"github.com/isoprism/api/internal/parser"
 )
 
+// TestExtractComponentHunkKeepsOnlyComponentLines verifies extract component hunk keeps only component lines.
 func TestExtractComponentHunkKeepsOnlyComponentLines(t *testing.T) {
 	patch := strings.Join([]string{
 		"@@ -10,9 +10,10 @@",
@@ -37,6 +38,7 @@ func TestExtractComponentHunkKeepsOnlyComponentLines(t *testing.T) {
 	}
 }
 
+// TestExtractComponentHunkSupportsDeletedComponent verifies extract component hunk supports deleted component.
 func TestExtractComponentHunkSupportsDeletedComponent(t *testing.T) {
 	patch := strings.Join([]string{
 		"@@ -30,4 +30,0 @@",
@@ -58,6 +60,7 @@ func TestExtractComponentHunkSupportsDeletedComponent(t *testing.T) {
 	}
 }
 
+// TestComponentDiffHunkTreatsAddedComponentBodyAsAdded verifies component diff hunk treats added component body as added.
 func TestComponentDiffHunkTreatsAddedComponentBodyAsAdded(t *testing.T) {
 	patch := strings.Join([]string{
 		"@@ -10,7 +10,10 @@",
@@ -86,6 +89,7 @@ func TestComponentDiffHunkTreatsAddedComponentBodyAsAdded(t *testing.T) {
 	}
 }
 
+// TestComponentDiffHunkTreatsDeletedComponentPatchLinesAsRemoved verifies component diff hunk treats deleted component patch lines as removed.
 func TestComponentDiffHunkTreatsDeletedComponentPatchLinesAsRemoved(t *testing.T) {
 	patch := strings.Join([]string{
 		"@@ -28,7 +28,3 @@",
@@ -114,6 +118,7 @@ func TestComponentDiffHunkTreatsDeletedComponentPatchLinesAsRemoved(t *testing.T
 	}
 }
 
+// TestComponentDiffHunkTreatsRenameOnlyAsMetadata verifies component diff hunk treats rename only as metadata.
 func TestComponentDiffHunkTreatsRenameOnlyAsMetadata(t *testing.T) {
 	oldName := "old/path:pkg.OldName"
 	oldPath := "old/path/file.go"
@@ -132,6 +137,7 @@ func TestComponentDiffHunkTreatsRenameOnlyAsMetadata(t *testing.T) {
 	}
 }
 
+// TestClassifyHeadNodeChangeKeepsDifferentBodyOverlapAdded verifies classify head node change keeps different body overlap added.
 func TestClassifyHeadNodeChangeKeepsDifferentBodyOverlapAdded(t *testing.T) {
 	base := parserNode("BlockAPI.closeAllListeners", "rpc/grpc/api.go", "method", 193, 203)
 	base.BodyHash = "old-body"
@@ -154,6 +160,7 @@ func TestClassifyHeadNodeChangeKeepsDifferentBodyOverlapAdded(t *testing.T) {
 	}
 }
 
+// TestClassifyHeadNodeChangeUsesBodyHashForConservativeRename verifies classify head node change uses body hash for conservative rename.
 func TestClassifyHeadNodeChangeUsesBodyHashForConservativeRename(t *testing.T) {
 	base := parserNode("BlockAPI.closeAllListeners", "rpc/grpc/api.go", "method", 193, 203)
 	base.BodyHash = "same-body"
@@ -173,6 +180,7 @@ func TestClassifyHeadNodeChangeUsesBodyHashForConservativeRename(t *testing.T) {
 	}
 }
 
+// TestCurrentProcessorCommitSHAPrefersExplicitEnv verifies current processor commit SHA prefers explicit env.
 func TestCurrentProcessorCommitSHAPrefersExplicitEnv(t *testing.T) {
 	t.Setenv("ISOPRISM_COMMIT_SHA", "app-commit")
 	t.Setenv("RAILWAY_GIT_COMMIT_SHA", "railway-commit")
@@ -182,6 +190,7 @@ func TestCurrentProcessorCommitSHAPrefersExplicitEnv(t *testing.T) {
 	}
 }
 
+// TestPRProcessingStatsJSONUsesDiagnosticNames verifies PR processing stats JSON uses diagnostic names.
 func TestPRProcessingStatsJSONUsesDiagnosticNames(t *testing.T) {
 	stats := prProcessingStats{
 		ChangedFiles:                  4,
@@ -219,6 +228,7 @@ func TestPRProcessingStatsJSONUsesDiagnosticNames(t *testing.T) {
 	}
 }
 
+// parserNode builds a parser node fixture for tests.
 func parserNode(name, path, kind string, start, end int) parser.Node {
 	return parser.Node{
 		Name:      name,

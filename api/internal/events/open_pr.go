@@ -161,6 +161,7 @@ func ReprocessPRGraph(ctx context.Context, db *pgxpool.Pool, appClient *github.A
 	}
 	stats.ChangedFiles = len(changedFiles)
 
+	// changedNode describes a graph node used by PR graph processing.
 	type changedNode struct {
 		node        parser.Node
 		changeType  string
@@ -701,6 +702,7 @@ func ReprocessPRAI(ctx context.Context, db *pgxpool.Pool, appClient *github.AppC
 	return nil
 }
 
+// loadExistingPRChangeSummaries loads existing PR change summaries for PR graph processing.
 func loadExistingPRChangeSummaries(ctx context.Context, db *pgxpool.Pool, prID string) map[string]string {
 	summaries := map[string]string{}
 	rows, err := db.Query(ctx, `
@@ -729,6 +731,7 @@ func loadExistingPRChangeSummaries(ctx context.Context, db *pgxpool.Pool, prID s
 	return summaries
 }
 
+// buildPRAnalysisInput builds PR analysis input for PR graph processing.
 func buildPRAnalysisInput(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient, prID string) (ai.PRAnalysisInput, map[string][]string, map[string][]string, error) {
 	var repoID, fullName string
 	var installationID int64
@@ -826,6 +829,7 @@ func buildPRAnalysisInput(ctx context.Context, db *pgxpool.Pool, appClient *gith
 	return input, nodeIDsByFullName, testNodeIDsByName, nil
 }
 
+// persistUnavailablePRAnalysis persists unavailable PR analysis for PR graph processing.
 func persistUnavailablePRAnalysis(ctx context.Context, db *pgxpool.Pool, prID string) error {
 	_, err := db.Exec(ctx, `
 		insert into pr_analyses (pull_request_id, summary, nodes_changed, risk_score, risk_label, ai_model, generated_at, analysis_payload, prompt_version)
@@ -842,6 +846,7 @@ func persistUnavailablePRAnalysis(ctx context.Context, db *pgxpool.Pool, prID st
 	return err
 }
 
+// nullIfEmpty converts empty strings into nil database values.
 func nullIfEmpty(s string) interface{} {
 	if s == "" {
 		return nil
@@ -849,6 +854,7 @@ func nullIfEmpty(s string) interface{} {
 	return s
 }
 
+// nullIfZero converts zero counts into nil database values.
 func nullIfZero(n int) interface{} {
 	if n == 0 {
 		return nil
@@ -856,6 +862,7 @@ func nullIfZero(n int) interface{} {
 	return n
 }
 
+// loadBaseNodesForPath loads base nodes for path for PR graph processing.
 func loadBaseNodesForPath(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA, filePath string) ([]parser.Node, error) {
 	rows, err := db.Query(ctx, `
 		select full_name, file_path, line_start, line_end, inputs, outputs, language, kind, body_hash, coalesce(doc_comment, ''),
@@ -893,6 +900,7 @@ func loadBaseNodesForPath(ctx context.Context, db *pgxpool.Pool, repoID, commitS
 	return nodes, nil
 }
 
+// decodeParserParams decodes parser params for PR graph processing.
 func decodeParserParams(raw []byte) []parser.Param {
 	if len(raw) == 0 {
 		return nil
@@ -904,6 +912,7 @@ func decodeParserParams(raw []byte) []parser.Param {
 	return params
 }
 
+// leafName returns the final segment of a qualified symbol name.
 func leafName(fullName string) string {
 	if idx := strings.LastIndex(fullName, "."); idx >= 0 && idx < len(fullName)-1 {
 		return fullName[idx+1:]
@@ -911,6 +920,7 @@ func leafName(fullName string) string {
 	return fullName
 }
 
+// matchesImportDirSuffix reports whether a file path belongs to one of the import directories.
 func matchesImportDirSuffix(filePath string, suffixes map[string]bool) bool {
 	dir := strings.Trim(filepathToSlashDir(filePath), "/")
 	for suffix := range suffixes {
@@ -925,6 +935,7 @@ func matchesImportDirSuffix(filePath string, suffixes map[string]bool) bool {
 	return false
 }
 
+// filepathToSlashDir returns the slash-separated directory portion of a file path.
 func filepathToSlashDir(filePath string) string {
 	if idx := strings.LastIndex(filePath, "/"); idx >= 0 {
 		return filePath[:idx]
@@ -932,6 +943,7 @@ func filepathToSlashDir(filePath string) string {
 	return ""
 }
 
+// shouldSkipPRForSize reports whether a PR exceeds beta processing limits.
 func shouldSkipPRForSize(pr *github.GHPullRequest) bool {
 	return pr.ChangedFiles > maxPRChangedFiles ||
 		pr.Additions > maxPRAdditions ||
@@ -939,6 +951,7 @@ func shouldSkipPRForSize(pr *github.GHPullRequest) bool {
 		pr.Additions+pr.Deletions > maxPRChangedLines
 }
 
+// prSizeSkipReason explains which beta PR size limits were exceeded.
 func prSizeSkipReason(pr *github.GHPullRequest) string {
 	return fmt.Sprintf(
 		"PR size exceeds beta processing limits (%d files changed, %d additions, %d deletions; limits: %d files, %d additions, %d deletions, or %d changed lines).",
@@ -952,6 +965,7 @@ func prSizeSkipReason(pr *github.GHPullRequest) string {
 	)
 }
 
+// markPRSkipped marks PR skipped in PR graph processing.
 func markPRSkipped(ctx context.Context, db *pgxpool.Pool, prID, reason string, stats prProcessingStats) {
 	now := time.Now()
 	_, _ = db.Exec(ctx, `delete from pr_node_changes where pull_request_id=$1`, prID)
@@ -974,6 +988,7 @@ func markPRSkipped(ctx context.Context, db *pgxpool.Pool, prID, reason string, s
 	markPRProcessing(ctx, db, prID, "skipped", stats, reason)
 }
 
+// prProcessingStats stores the fields used by PR graph processing.
 type prProcessingStats struct {
 	GitHubChangedFiles            int    `json:"github_changed_files,omitempty"`
 	GitHubAdditions               int    `json:"github_additions,omitempty"`
@@ -1000,10 +1015,12 @@ type prProcessingStats struct {
 	SkipReason                    string `json:"skip_reason,omitempty"`
 }
 
+// newPRProcessingStats initializes an empty PR processing diagnostics record.
 func newPRProcessingStats() prProcessingStats {
 	return prProcessingStats{}
 }
 
+// markPRProcessing marks PR processing in PR graph processing.
 func markPRProcessing(ctx context.Context, db *pgxpool.Pool, prID, graphStatus string, stats prProcessingStats, processingError string) {
 	statsJSON, err := json.Marshal(stats)
 	if err != nil {
@@ -1024,6 +1041,7 @@ func markPRProcessing(ctx context.Context, db *pgxpool.Pool, prID, graphStatus s
 	}
 }
 
+// currentProcessorCommitSHA returns the deployed processor commit SHA from known environment variables.
 func currentProcessorCommitSHA() string {
 	for _, key := range []string{"ISOPRISM_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "GIT_COMMIT_SHA"} {
 		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
@@ -1054,6 +1072,7 @@ func componentDiffHunk(changeType, patch, body string, oldStart, oldEnd, newStar
 	}
 }
 
+// renameMetadataHunk formats rename metadata as a synthetic diff hunk.
 func renameMetadataHunk(oldFullName, oldFilePath *string) string {
 	var lines []string
 	if oldFilePath != nil && *oldFilePath != "" {
@@ -1065,14 +1084,17 @@ func renameMetadataHunk(oldFullName, oldFilePath *string) string {
 	return strings.Join(lines, "\n")
 }
 
+// stringPtr returns a pointer to the provided string.
 func stringPtr(s string) *string {
 	return &s
 }
 
+// semanticNodeKey returns the file-plus-symbol key for a parsed node.
 func semanticNodeKey(n parser.Node) string {
 	return n.FullName + "|" + n.FilePath
 }
 
+// firstUnmatchedBaseNodeWithHash returns the first matching unmatched base node with hash.
 func firstUnmatchedBaseNodeWithHash(nodes []parser.Node, matched map[string]bool) (parser.Node, bool) {
 	for _, n := range nodes {
 		if !matched[semanticNodeKey(n)] {
@@ -1082,6 +1104,7 @@ func firstUnmatchedBaseNodeWithHash(nodes []parser.Node, matched map[string]bool
 	return parser.Node{}, false
 }
 
+// parserNodeFullNames returns parsed node full names for database pruning.
 func parserNodeFullNames(nodes []parser.Node) []string {
 	names := make([]string, 0, len(nodes))
 	for _, n := range nodes {
@@ -1090,6 +1113,7 @@ func parserNodeFullNames(nodes []parser.Node) []string {
 	return names
 }
 
+// pruneStaleCodeNodesForFile removes stale code nodes for file records for PR graph processing.
 func pruneStaleCodeNodesForFile(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA, filePath string, currentFullNames []string) error {
 	if len(currentFullNames) == 0 {
 		_, err := db.Exec(ctx, `
@@ -1106,6 +1130,7 @@ func pruneStaleCodeNodesForFile(ctx context.Context, db *pgxpool.Pool, repoID, c
 	return err
 }
 
+// classifyHeadNodeChange classifies head node change for PR graph processing.
 func classifyHeadNodeChange(
 	head parser.Node,
 	fileStatus string,
@@ -1132,6 +1157,7 @@ func classifyHeadNodeChange(
 	return "added", nil, false
 }
 
+// prefixSourceLines adds a diff prefix to every source line.
 func prefixSourceLines(source string, prefix byte) string {
 	if source == "" {
 		return ""
@@ -1197,15 +1223,18 @@ func extractComponentHunk(patch string, oldStart, oldEnd, newStart, newEnd int) 
 	return strings.Join(out, "\n")
 }
 
+// lineRange stores the fields used by PR graph processing.
 type lineRange struct {
 	start int
 	end   int
 }
 
+// contains reports whether a line falls inside the range.
 func (r lineRange) contains(line int) bool {
 	return line > 0 && r.start > 0 && r.end >= r.start && line >= r.start && line <= r.end
 }
 
+// parseHunkHeader parses hunk header for PR graph processing.
 func parseHunkHeader(header string) (oldStart, oldCount, newStart, newCount int) {
 	// Format: @@ -a,b +c,d @@ optional context
 	minusIdx := strings.Index(header, "-")
@@ -1223,6 +1252,7 @@ func parseHunkHeader(header string) (oldStart, oldCount, newStart, newCount int)
 	return
 }
 
+// parseHunkRange parses hunk range for PR graph processing.
 func parseHunkRange(rest string) (start, count int) {
 	rest = strings.TrimSpace(rest)
 	if ci := strings.Index(rest, ","); ci >= 0 {

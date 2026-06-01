@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { Repository } from "@/lib/types";
 import IndexingProgress from "@/components/onboarding/indexing-progress";
 
+// ReposContent renders the repos content for onboarding.
 function ReposContent() {
   const router = useRouter();
   const supabase = createClient();
@@ -20,6 +21,7 @@ function ReposContent() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // load loads data for the enclosing route or component.
     async function load() {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -39,6 +41,7 @@ function ReposContent() {
     load();
   }, []);
 
+  // handleIndex handles index for onboarding.
   async function handleIndex() {
     if (!selected) return;
     const { data: sessionData } = await supabase.auth.getSession();
@@ -189,6 +192,7 @@ function ReposContent() {
   );
 }
 
+// SearchIcon renders the search icon for onboarding.
 function SearchIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#AAAAAA" strokeWidth="2" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>
@@ -198,6 +202,7 @@ function SearchIcon() {
   );
 }
 
+// ReposPage renders the repos page for onboarding.
 export default function ReposPage() {
   return (
     <Suspense>

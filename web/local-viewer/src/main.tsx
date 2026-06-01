@@ -5,15 +5,18 @@ import type { QueueResponse, RepoGraphResponse, RepoProgramsResponse, Repository
 import "@/app/globals.css";
 import "./shell.css";
 
+// LoadState represents UI or workflow state for the embedded local viewer.
 type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; graph: RepoGraphResponse; prs: QueueResponse["prs"]; repo: Repository };
 
+// ReviewItemsResponse describes an outbound response for the embedded local viewer.
 type ReviewItemsResponse = {
   review_items: QueueResponse["prs"];
 };
 
+// localFetch loads JSON from the local viewer API.
 async function localFetch<T>(path: string): Promise<T> {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) {
@@ -22,12 +25,14 @@ async function localFetch<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// LocalViewer renders the local viewer for the embedded local viewer.
 function LocalViewer() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
 
+    // load loads data for the enclosing route or component.
     async function load() {
       try {
         const [programs, queue] = await Promise.all([

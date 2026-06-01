@@ -17,6 +17,7 @@ import (
 
 const nodeSchemaVersion = "isoprism-node-v1"
 
+// Options configures the local CLI graph runtime.
 type Options struct {
 	RepoDir      string
 	Args         []string
@@ -24,6 +25,7 @@ type Options struct {
 	RebuildCache bool
 }
 
+// ServeOptions configures the local CLI graph runtime.
 type ServeOptions struct {
 	RepoDir  string
 	WebDir   string
@@ -34,6 +36,7 @@ type ServeOptions struct {
 	NoWeb    bool
 }
 
+// ReviewGraphPayload carries the payload exchanged by the local CLI graph runtime.
 type ReviewGraphPayload struct {
 	SchemaVersion string                 `json:"schema_version"`
 	Mode          string                 `json:"mode"`
@@ -44,12 +47,14 @@ type ReviewGraphPayload struct {
 	Metadata      map[string]interface{} `json:"metadata"`
 }
 
+// DiffAnnotations stores the fields used by the local CLI graph runtime.
 type DiffAnnotations struct {
 	Summary        *DiffSummaryAnnotation          `json:"summary,omitempty"`
 	NodeChanges    map[string]NodeChangeAnnotation `json:"node_changes,omitempty"`
 	TestAssertions []TestAssertionAnnotation       `json:"test_assertions,omitempty"`
 }
 
+// DiffSummaryAnnotation stores the fields used by the local CLI graph runtime.
 type DiffSummaryAnnotation struct {
 	IssueLink              *string                   `json:"issue_link"`
 	PRLink                 *string                   `json:"pr_link"`
@@ -60,6 +65,7 @@ type DiffSummaryAnnotation struct {
 	TestAssertions         []TestAssertionAnnotation `json:"test_assertions"`
 }
 
+// NodeChangeAnnotation describes a graph node used by the local CLI graph runtime.
 type NodeChangeAnnotation struct {
 	Description string  `json:"description"`
 	Reasoning   string  `json:"reasoning"`
@@ -68,17 +74,20 @@ type NodeChangeAnnotation struct {
 	FollowUp    *string `json:"follow_up"`
 }
 
+// TestAssertionAnnotation stores the fields used by the local CLI graph runtime.
 type TestAssertionAnnotation struct {
 	Description string `json:"description"`
 	NodeSHA256  string `json:"node_sha256"`
 }
 
+// LocalRepository describes repository data used by the local CLI graph runtime.
 type LocalRepository struct {
 	Root          string `json:"root"`
 	Name          string `json:"name"`
 	DefaultBranch string `json:"default_branch"`
 }
 
+// DiffMetadata stores the fields used by the local CLI graph runtime.
 type DiffMetadata struct {
 	BaseRef string `json:"base_ref"`
 	HeadRef string `json:"head_ref"`
@@ -86,6 +95,7 @@ type DiffMetadata struct {
 	HeadSHA string `json:"head_sha"`
 }
 
+// fileChange stores the fields used by the local CLI graph runtime.
 type fileChange struct {
 	Filename         string
 	PreviousFilename string
@@ -95,6 +105,7 @@ type fileChange struct {
 	Patch            string
 }
 
+// graphNodeObject describes a graph node used by the local CLI graph runtime.
 type graphNodeObject struct {
 	SchemaVersion string         `json:"schema_version"`
 	Type          string         `json:"type"`
@@ -116,11 +127,13 @@ type graphNodeObject struct {
 	OutgoingLinks []linkObject   `json:"outgoing_links"`
 }
 
+// linkObject stores the fields used by the local CLI graph runtime.
 type linkObject struct {
 	RelationType string `json:"relation_type"`
 	Target       string `json:"target"`
 }
 
+// treeGraph stores the fields used by the local CLI graph runtime.
 type treeGraph struct {
 	ref        string
 	sha        string
@@ -131,21 +144,25 @@ type treeGraph struct {
 	edgesByRef map[string][]semanticEdge
 }
 
+// semanticEdge describes a graph edge used by the local CLI graph runtime.
 type semanticEdge struct {
 	SourceRef string
 	TargetRef string
 	Kind      string
 }
 
+// semanticRef returns the stable file-plus-symbol reference for a local node.
 func semanticRef(filePath, fullName string) string {
 	return filePath + "::" + fullName
 }
 
+// nodeID builds a deterministic local graph node ID.
 func nodeID(kind, fullName, filePath, blobSHA string) string {
 	h := sha256.Sum256([]byte(strings.Join([]string{nodeSchemaVersion, kind, fullName, filePath, blobSHA}, "\n")))
 	return hex.EncodeToString(h[:])
 }
 
+// packagePath returns the directory path used as local package context.
 func packagePath(filePath string) string {
 	path := filepath.ToSlash(filePath)
 	dir := filepath.Dir(path)
@@ -155,6 +172,7 @@ func packagePath(filePath string) string {
 	return dir
 }
 
+// nodeKind maps parser node kinds into graph node kinds.
 func nodeKind(n parser.Node) string {
 	if n.IsTest {
 		return "test"
@@ -162,6 +180,7 @@ func nodeKind(n parser.Node) string {
 	return n.Kind
 }
 
+// toTypeRefs converts parser parameters into graph type references.
 func toTypeRefs(params []parser.Param) []models.TypeRef {
 	out := make([]models.TypeRef, 0, len(params))
 	for _, p := range params {
@@ -170,6 +189,7 @@ func toTypeRefs(params []parser.Param) []models.TypeRef {
 	return out
 }
 
+// graphNodeFromObject converts a cached local node object into API graph shape.
 func graphNodeFromObject(id string, obj graphNodeObject, nodeType string) models.GraphNode {
 	var doc *string
 	if strings.TrimSpace(obj.DocComment) != "" {
@@ -197,6 +217,7 @@ func graphNodeFromObject(id string, obj graphNodeObject, nodeType string) models
 	}
 }
 
+// writeJSONAtomic writes JSON atomic for the local CLI graph runtime.
 func writeJSONAtomic(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -212,6 +233,7 @@ func writeJSONAtomic(path string, value any) error {
 	return os.Rename(tmp, path)
 }
 
+// readJSON reads JSON for the local CLI graph runtime.
 func readJSON(path string, value any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -220,6 +242,7 @@ func readJSON(path string, value any) error {
 	return json.Unmarshal(data, value)
 }
 
+// RenderStaticHTML renders static HTML for the local CLI graph runtime.
 func RenderStaticHTML(payload ReviewGraphPayload) ([]byte, error) {
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
@@ -259,6 +282,7 @@ func RenderStaticHTML(payload ReviewGraphPayload) ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
+// sortGraphPayload orders graph payload deterministically.
 func sortGraphPayload(payload *ReviewGraphPayload) {
 	sort.Slice(payload.Graph.Nodes, func(i, j int) bool { return payload.Graph.Nodes[i].ID < payload.Graph.Nodes[j].ID })
 	sort.Slice(payload.Graph.TestChanges, func(i, j int) bool { return payload.Graph.TestChanges[i].ID < payload.Graph.TestChanges[j].ID })

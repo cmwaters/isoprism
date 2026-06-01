@@ -16,6 +16,7 @@ type ResolverIndex struct {
 	GoFuncReturns map[string]string
 }
 
+// GoTypeInfo stores the fields used by semantic parsing.
 type GoTypeInfo struct {
 	FullName string
 	Fields   map[string]string
@@ -74,6 +75,7 @@ func GoImportDirSuffixes(src []byte, filePath string) map[string]bool {
 	return out
 }
 
+// extractGoTypeInfo extracts go type info for semantic parsing.
 func extractGoTypeInfo(src []byte, filePath string, root *sitter.Node, out map[string]GoTypeInfo, nodeByName map[string]bool) {
 	pkg := goPackageName(src, root)
 	prefix := goPackagePrefix(filePath, pkg)
@@ -111,6 +113,7 @@ func extractGoTypeInfo(src []byte, filePath string, root *sitter.Node, out map[s
 	})
 }
 
+// extractGoFuncReturns extracts go func returns for semantic parsing.
 func extractGoFuncReturns(src []byte, filePath string, root *sitter.Node, out map[string]string, nodeByName map[string]bool) {
 	pkg := goPackageName(src, root)
 	prefix := goPackagePrefix(filePath, pkg)
@@ -134,6 +137,7 @@ func extractGoFuncReturns(src []byte, filePath string, root *sitter.Node, out ma
 	}
 }
 
+// goFieldNames extracts field names from a Go field declaration.
 func goFieldNames(src []byte, field *sitter.Node, typeNode *sitter.Node) []string {
 	var names []string
 	for i := uint(0); i < field.NamedChildCount(); i++ {
@@ -155,6 +159,7 @@ func goFieldNames(src []byte, field *sitter.Node, typeNode *sitter.Node) []strin
 	return nil
 }
 
+// sameTreeSitterNode reports whether two tree-sitter nodes cover the same source range.
 func sameTreeSitterNode(a, b *sitter.Node) bool {
 	if a == nil || b == nil {
 		return false
@@ -162,6 +167,7 @@ func sameTreeSitterNode(a, b *sitter.Node) bool {
 	return a.StartByte() == b.StartByte() && a.EndByte() == b.EndByte() && a.Kind() == b.Kind()
 }
 
+// embeddedGoFieldName returns the type name implied by an embedded Go field.
 func embeddedGoFieldName(src []byte, typeNode *sitter.Node) string {
 	typeText := strings.TrimPrefix(strings.TrimSpace(text(src, typeNode)), "*")
 	typeText = strings.TrimPrefix(typeText, "[]")
@@ -173,6 +179,7 @@ func embeddedGoFieldName(src []byte, typeNode *sitter.Node) string {
 
 type goScope map[string]string
 
+// buildGoScope builds go scope for semantic parsing.
 func buildGoScope(src []byte, fn *sitter.Node, prefix string, imports map[string]string, index ResolverIndex) goScope {
 	scope := goScope{}
 	if fn.Kind() == "method_declaration" {
@@ -190,6 +197,7 @@ func buildGoScope(src []byte, fn *sitter.Node, prefix string, imports map[string
 	return scope
 }
 
+// goReceiverBinding returns the receiver variable and type binding for a method.
 func goReceiverBinding(src []byte, receiver *sitter.Node) (string, string) {
 	if receiver == nil {
 		return "", ""
@@ -214,6 +222,7 @@ func goReceiverBinding(src []byte, receiver *sitter.Node) (string, string) {
 	return name, typ
 }
 
+// addGoParamBindings adds parameter type bindings to a Go resolver scope.
 func addGoParamBindings(src []byte, params *sitter.Node, prefix string, imports map[string]string, nodeByName map[string]bool, scope goScope) {
 	if params == nil {
 		return
@@ -233,6 +242,7 @@ func addGoParamBindings(src []byte, params *sitter.Node, prefix string, imports 
 	})
 }
 
+// addGoLocalBindings adds local assignment bindings to a Go resolver scope.
 func addGoLocalBindings(src []byte, body *sitter.Node, prefix string, imports map[string]string, index ResolverIndex, scope goScope) {
 	walk(body, func(n *sitter.Node) bool {
 		switch n.Kind() {
@@ -269,6 +279,7 @@ func addGoLocalBindings(src []byte, body *sitter.Node, prefix string, imports ma
 	})
 }
 
+// goExpressionListChildren returns meaningful children from a Go expression list.
 func goExpressionListChildren(n *sitter.Node) []*sitter.Node {
 	var out []*sitter.Node
 	if n.Kind() != "expression_list" {
@@ -282,6 +293,7 @@ func goExpressionListChildren(n *sitter.Node) []*sitter.Node {
 	return out
 }
 
+// inferGoExprType infers the graph type name for a Go expression.
 func inferGoExprType(src []byte, expr *sitter.Node, prefix string, imports map[string]string, index ResolverIndex, scope goScope) string {
 	if expr == nil {
 		return ""
@@ -304,6 +316,7 @@ func inferGoExprType(src []byte, expr *sitter.Node, prefix string, imports map[s
 	return ""
 }
 
+// resolveGoTypeExpr resolves go type expr for semantic parsing.
 func resolveGoTypeExpr(typeExpr, prefix string, imports map[string]string, nodeByName map[string]bool) string {
 	typeExpr = cleanGoTypeExpr(typeExpr)
 	if typeExpr == "" {
@@ -325,6 +338,7 @@ func resolveGoTypeExpr(typeExpr, prefix string, imports map[string]string, nodeB
 	return known(typeExpr, nodeByName)
 }
 
+// cleanGoTypeExpr removes wrappers from a Go type expression.
 func cleanGoTypeExpr(typeExpr string) string {
 	typeExpr = strings.TrimSpace(typeExpr)
 	for {
@@ -339,6 +353,7 @@ func cleanGoTypeExpr(typeExpr string) string {
 	}
 }
 
+// goSelectorParts splits a Go selector expression into identifiers.
 func goSelectorParts(src []byte, n *sitter.Node) []string {
 	if n == nil {
 		return nil
@@ -365,6 +380,7 @@ func goSelectorParts(src []byte, n *sitter.Node) []string {
 	}
 }
 
+// resolveGoFieldChainCall resolves a chained Go selector call through known field types.
 func resolveGoFieldChainCall(src []byte, fun *sitter.Node, index ResolverIndex, scope goScope) string {
 	if scope == nil || len(index.GoTypes) == 0 {
 		return ""
@@ -393,6 +409,7 @@ func resolveGoFieldChainCall(src []byte, fun *sitter.Node, index ResolverIndex, 
 	return known(methodFullName, index.NodeByName)
 }
 
+// repoRelativeImportDirs returns import directory suffixes likely to map into the repository.
 func repoRelativeImportDirs(importPath string) []string {
 	cleanPath := filepath.ToSlash(strings.Trim(importPath, `"`))
 	suffixes := []string{

@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestPilotInviteEmailHTML verifies pilot invite email HTML.
 func TestPilotInviteEmailHTML(t *testing.T) {
 	html := pilotInviteEmailHTML("Euge", "https://isoprism.com/pilot/invite-token")
 
@@ -23,6 +24,7 @@ func TestPilotInviteEmailHTML(t *testing.T) {
 	}
 }
 
+// TestPilotReviewEmailHTML verifies pilot review email HTML.
 func TestPilotReviewEmailHTML(t *testing.T) {
 	html := pilotReviewEmailHTML("Euge", "https://isoprism.com/pilot/review/review-token")
 

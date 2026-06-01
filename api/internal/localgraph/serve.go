@@ -21,6 +21,7 @@ import (
 //go:embed viewer/*
 var embeddedViewer embed.FS
 
+// Serve starts the local HTTP daemon and opens the viewer when requested.
 func Serve(ctx context.Context, opts ServeOptions) error {
 	host := opts.Host
 	if host == "" {
@@ -101,6 +102,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	return <-errCh
 }
 
+// resolveWebDir resolves web dir for the local CLI graph runtime.
 func resolveWebDir(explicit string) (string, error) {
 	var candidates []string
 	if explicit != "" {
@@ -118,6 +120,7 @@ func resolveWebDir(explicit string) (string, error) {
 	return "", fmt.Errorf("could not find Isoprism web app directory; pass --web-dir <path> or set ISOPRISM_WEB_DIR")
 }
 
+// validWebDir reports whether a candidate directory contains the local web viewer.
 func validWebDir(candidate string) (string, bool) {
 	if candidate == "" {
 		return "", false
@@ -133,6 +136,7 @@ func validWebDir(candidate string) (string, bool) {
 	return abs, true
 }
 
+// localMux builds the HTTP mux for the local graph daemon.
 func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Handler {
 	mux := http.NewServeMux()
 	opts := Options{RepoDir: root, CacheDir: cacheDir}
@@ -333,6 +337,7 @@ func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Hand
 	return mux
 }
 
+// handleEmbeddedViewer handles embedded viewer for the local CLI graph runtime.
 func handleEmbeddedViewer(mux *http.ServeMux) {
 	viewerFS, err := fs.Sub(embeddedViewer, "viewer")
 	if err != nil {
@@ -342,6 +347,7 @@ func handleEmbeddedViewer(mux *http.ServeMux) {
 	mux.Handle("/assets/", assets)
 }
 
+// embeddedIndex serves the embedded local viewer HTML.
 func embeddedIndex(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		withCORS(w)
@@ -360,12 +366,14 @@ func embeddedIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// withCORS adds permissive local CORS headers.
 func withCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 }
 
+// localReviewNodeCode loads code for a node inside a local review graph.
 func localReviewNodeCode(payload ReviewGraphPayload, nodeID string) (models.NodeCodeResponse, bool) {
 	node, ok := findReviewNode(payload.Graph, nodeID)
 	if !ok {
@@ -402,6 +410,7 @@ func localReviewNodeCode(payload ReviewGraphPayload, nodeID string) (models.Node
 	return response, true
 }
 
+// findReviewNode finds review node for the local CLI graph runtime.
 func findReviewNode(graph models.GraphResponse, nodeID string) (models.GraphNode, bool) {
 	for _, node := range graph.Nodes {
 		if node.ID == nodeID {
@@ -421,6 +430,7 @@ func findReviewNode(graph models.GraphResponse, nodeID string) (models.GraphNode
 	return models.GraphNode{}, false
 }
 
+// writeJSON writes JSON for the local CLI graph runtime.
 func writeJSON(w http.ResponseWriter, value any, err error) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -9,6 +9,7 @@ import (
 	"testing"
 )
 
+// TestResolveDiffRefsSupportsLocalReviewAliases verifies resolve diff refs supports local review aliases.
 func TestResolveDiffRefsSupportsLocalReviewAliases(t *testing.T) {
 	ctx := context.Background()
 	root := initLocalGraphTestRepo(t)
@@ -59,6 +60,7 @@ func TestResolveDiffRefsSupportsLocalReviewAliases(t *testing.T) {
 	}
 }
 
+// TestLoadTreeGraphSkipsFilesOverSemanticSizeCap verifies load tree graph skips files over semantic size cap.
 func TestLoadTreeGraphSkipsFilesOverSemanticSizeCap(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -87,6 +89,7 @@ func TestLoadTreeGraphSkipsFilesOverSemanticSizeCap(t *testing.T) {
 	}
 }
 
+// TestGenerateDiffIncludesUntrackedWorktreeFiles verifies generate diff includes untracked worktree files.
 func TestGenerateDiffIncludesUntrackedWorktreeFiles(t *testing.T) {
 	ctx := context.Background()
 	root := initLocalGraphTestRepo(t)
@@ -123,6 +126,7 @@ func TestGenerateDiffIncludesUntrackedWorktreeFiles(t *testing.T) {
 	}
 }
 
+// initLocalGraphTestRepo creates a temporary git repo for local graph tests.
 func initLocalGraphTestRepo(t *testing.T) string {
 	t.Helper()
 
@@ -136,6 +140,7 @@ func initLocalGraphTestRepo(t *testing.T) string {
 	return root
 }
 
+// runGitTestCommand runs git test command for the local CLI graph runtime.
 func runGitTestCommand(t *testing.T, dir string, args ...string) {
 	t.Helper()
 
@@ -146,12 +151,14 @@ func runGitTestCommand(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// writeTestFile writes test file for the local CLI graph runtime.
 func writeTestFile(t *testing.T, root, path, content string) {
 	t.Helper()
 
 	writeTestBytes(t, root, path, []byte(content))
 }
 
+// writeTestBytes writes test bytes for the local CLI graph runtime.
 func writeTestBytes(t *testing.T, root, path string, content []byte) {
 	t.Helper()
 

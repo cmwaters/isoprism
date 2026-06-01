@@ -54,11 +54,13 @@ type PRAnalysisInput struct {
 	OtherFiles  []PROtherFileInput
 }
 
+// PRChangeOutput describes pull request data used by PR AI enrichment.
 type PRChangeOutput struct {
 	FullName      string `json:"full_name"`
 	ChangeSummary string `json:"change_summary"`
 }
 
+// PRTestAssertionOutput describes pull request data used by PR AI enrichment.
 type PRTestAssertionOutput struct {
 	Name             string `json:"name"`
 	AssertionSummary string `json:"assertion_summary"`
@@ -72,16 +74,19 @@ type PRAnalysisOutput struct {
 	RiskScore      int                     `json:"risk_score"`
 }
 
+// Enricher stores the fields used by PR AI enrichment.
 type Enricher struct {
 	APIKey string
 	Model  string
 	client *http.Client
 }
 
+// NewEnricher constructs a enricher.
 func NewEnricher(apiKey string) *Enricher {
 	return NewEnricherWithModel(apiKey, DefaultModel)
 }
 
+// NewEnricherWithModel constructs a enricher with model.
 func NewEnricherWithModel(apiKey, model string) *Enricher {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -94,10 +99,12 @@ func NewEnricherWithModel(apiKey, model string) *Enricher {
 	}
 }
 
+// HasAPIKey reports whether API key is present.
 func (e *Enricher) HasAPIKey() bool {
 	return e != nil && strings.TrimSpace(e.APIKey) != ""
 }
 
+// EnrichPRChanges adds AI context to PR changes.
 func (e *Enricher) EnrichPRChanges(ctx context.Context, input PRAnalysisInput) (PRAnalysisOutput, error) {
 	if !e.HasAPIKey() {
 		return PRAnalysisOutput{}, nil
@@ -147,6 +154,7 @@ func (e *Enricher) EnrichPRChanges(ctx context.Context, input PRAnalysisInput) (
 	return out, nil
 }
 
+// BuildPRAnalysisPrompt builds PR analysis prompt for PR AI enrichment.
 func BuildPRAnalysisPrompt(input PRAnalysisInput) string {
 	if len(input.Changes) == 0 && len(input.TestChanges) == 0 && len(input.OtherFiles) == 0 {
 		return ""
@@ -215,6 +223,7 @@ PR title:
 	return sb.String()
 }
 
+// ParsePRAnalysisOutput parses PR analysis output for PR AI enrichment.
 func ParsePRAnalysisOutput(raw string) (PRAnalysisOutput, error) {
 	var out PRAnalysisOutput
 	if err := json.Unmarshal([]byte(extractJSON(raw)), &out); err != nil {
@@ -226,6 +235,7 @@ func ParsePRAnalysisOutput(raw string) (PRAnalysisOutput, error) {
 	return out, nil
 }
 
+// ValidatePRAnalysisOutput validates PR analysis output for PR AI enrichment.
 func ValidatePRAnalysisOutput(out PRAnalysisOutput) error {
 	if strings.TrimSpace(out.PRSummary) == "" {
 		return fmt.Errorf("pr_summary is required")
@@ -252,6 +262,7 @@ func ValidatePRAnalysisOutput(out PRAnalysisOutput) error {
 	return nil
 }
 
+// ChangeSummariesByFullName indexes AI change summaries by graph node full name.
 func (out PRAnalysisOutput) ChangeSummariesByFullName() map[string]string {
 	summaries := make(map[string]string, len(out.Changes))
 	for _, change := range out.Changes {
@@ -260,6 +271,7 @@ func (out PRAnalysisOutput) ChangeSummariesByFullName() map[string]string {
 	return summaries
 }
 
+// TestAssertionsByName verifies assertions by name.
 func (out PRAnalysisOutput) TestAssertionsByName() map[string]string {
 	summaries := make(map[string]string, len(out.TestAssertions))
 	for _, assertion := range out.TestAssertions {
@@ -268,6 +280,7 @@ func (out PRAnalysisOutput) TestAssertionsByName() map[string]string {
 	return summaries
 }
 
+// call sends a Gemini API request and decodes the model response.
 func (e *Enricher) call(ctx context.Context, prompt string) (string, error) {
 	body := map[string]interface{}{
 		"contents": []map[string]interface{}{
@@ -328,19 +341,23 @@ func (e *Enricher) call(ctx context.Context, prompt string) (string, error) {
 	return "", fmt.Errorf("no text content in Gemini response")
 }
 
+// transientProviderError marks an error condition handled specially by PR AI enrichment.
 type transientProviderError struct {
 	status int
 }
 
+// Error returns the provider error message.
 func (e transientProviderError) Error() string {
 	return fmt.Sprintf("gemini API transient error: status %d", e.status)
 }
 
+// isTransientProviderError reports whether transient provider error matches the expected condition.
 func isTransientProviderError(err error) bool {
 	_, ok := err.(transientProviderError)
 	return ok
 }
 
+// truncateDiff shortens large diffs before they are sent to the model.
 func truncateDiff(diff string) string {
 	if len(diff) <= maxPromptDiffChars {
 		return diff

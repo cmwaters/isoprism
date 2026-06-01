@@ -12,10 +12,12 @@ import (
 	"strings"
 )
 
+// gitClient wraps outbound calls for the local CLI graph runtime.
 type gitClient struct {
 	root string
 }
 
+// repoRoot resolves the root directory of the current git checkout.
 func repoRoot(ctx context.Context, dir string) (string, error) {
 	out, err := runGit(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -24,10 +26,12 @@ func repoRoot(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// run dispatches the requested CLI subcommand.
 func (g gitClient) run(ctx context.Context, args ...string) (string, error) {
 	return runGit(ctx, g.root, args...)
 }
 
+// runGit runs git for the local CLI graph runtime.
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
@@ -44,6 +48,7 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
+// resolveDefaultBranch resolves default branch for the local CLI graph runtime.
 func (g gitClient) resolveDefaultBranch(ctx context.Context) (string, error) {
 	if out, err := g.run(ctx, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"); err == nil {
 		ref := strings.TrimSpace(out)
@@ -68,6 +73,7 @@ func (g gitClient) resolveDefaultBranch(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("could not detect the default branch; pass an explicit ref")
 }
 
+// defaultBranchRef returns the best local ref for the detected default branch.
 func (g gitClient) defaultBranchRef(ctx context.Context, branch string) string {
 	if branch == "" || strings.Contains(branch, "/") {
 		return branch
@@ -79,6 +85,7 @@ func (g gitClient) defaultBranchRef(ctx context.Context, branch string) string {
 	return branch
 }
 
+// currentBranch returns the current branch name when the checkout is attached.
 func (g gitClient) currentBranch(ctx context.Context) string {
 	if out, err := g.run(ctx, "branch", "--show-current"); err == nil {
 		if branch := strings.TrimSpace(out); branch != "" {
@@ -93,6 +100,7 @@ func (g gitClient) currentBranch(ctx context.Context) string {
 	return "HEAD"
 }
 
+// resolveCommit resolves commit for the local CLI graph runtime.
 func (g gitClient) resolveCommit(ctx context.Context, ref string) (string, error) {
 	if ref == worktreeTreeRef {
 		head, err := g.resolveCommit(ctx, "HEAD")
@@ -114,6 +122,7 @@ func (g gitClient) resolveCommit(ctx context.Context, ref string) (string, error
 	return "", fmt.Errorf("could not resolve %q as a commit, local branch, or origin branch", ref)
 }
 
+// resolveObject resolves object for the local CLI graph runtime.
 func (g gitClient) resolveObject(ctx context.Context, ref string) (string, error) {
 	out, err := g.run(ctx, "rev-parse", "--verify", ref)
 	if err != nil {
@@ -122,17 +131,20 @@ func (g gitClient) resolveObject(ctx context.Context, ref string) (string, error
 	return strings.TrimSpace(out), nil
 }
 
+// commitExists reports whether a git ref resolves to a commit.
 func (g gitClient) commitExists(ctx context.Context, ref string) bool {
 	_, err := g.run(ctx, "cat-file", "-e", ref+"^{commit}")
 	return err == nil
 }
 
+// fetch runs git fetch for the requested refspecs.
 func (g gitClient) fetch(ctx context.Context, refspecs ...string) error {
 	args := append([]string{"fetch", "--quiet", "origin"}, refspecs...)
 	_, err := g.run(ctx, args...)
 	return err
 }
 
+// mergeBase merges base into the local CLI graph runtime.
 func (g gitClient) mergeBase(ctx context.Context, refs ...string) (string, error) {
 	args := append([]string{"merge-base"}, refs...)
 	out, err := g.run(ctx, args...)
@@ -142,6 +154,7 @@ func (g gitClient) mergeBase(ctx context.Context, refs ...string) (string, error
 	return strings.TrimSpace(out), nil
 }
 
+// writeIndexTree writes index tree for the local CLI graph runtime.
 func (g gitClient) writeIndexTree(ctx context.Context) (string, error) {
 	out, err := g.run(ctx, "write-tree")
 	if err != nil {
@@ -150,6 +163,7 @@ func (g gitClient) writeIndexTree(ctx context.Context) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// listTree lists tree for the local CLI graph runtime.
 func (g gitClient) listTree(ctx context.Context, ref string) (map[string]string, error) {
 	if ref == indexTreeRef {
 		return g.listIndex(ctx)
@@ -178,6 +192,7 @@ func (g gitClient) listTree(ctx context.Context, ref string) (map[string]string,
 	return tree, nil
 }
 
+// listWorktree lists worktree for the local CLI graph runtime.
 func (g gitClient) listWorktree(ctx context.Context) (map[string]string, error) {
 	out, err := g.run(ctx, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
@@ -198,6 +213,7 @@ func (g gitClient) listWorktree(ctx context.Context) (map[string]string, error) 
 	return tree, nil
 }
 
+// listUntracked lists untracked for the local CLI graph runtime.
 func (g gitClient) listUntracked(ctx context.Context) ([]string, error) {
 	out, err := g.run(ctx, "ls-files", "-z", "--others", "--exclude-standard")
 	if err != nil {
@@ -212,6 +228,7 @@ func (g gitClient) listUntracked(ctx context.Context) ([]string, error) {
 	return paths, nil
 }
 
+// listIndex lists index for the local CLI graph runtime.
 func (g gitClient) listIndex(ctx context.Context) (map[string]string, error) {
 	out, err := g.run(ctx, "ls-files", "-s", "-z")
 	if err != nil {
@@ -234,6 +251,7 @@ func (g gitClient) listIndex(ctx context.Context) (map[string]string, error) {
 	return tree, nil
 }
 
+// showFile reads a file from a git ref or the worktree.
 func (g gitClient) showFile(ctx context.Context, ref, path string) ([]byte, error) {
 	if ref == worktreeTreeRef {
 		return os.ReadFile(filepath.Join(g.root, filepath.FromSlash(path)))
@@ -260,6 +278,7 @@ func (g gitClient) showFile(ctx context.Context, ref, path string) ([]byte, erro
 	return []byte(out), nil
 }
 
+// fileSize returns the byte size of a file at a ref.
 func (g gitClient) fileSize(ctx context.Context, ref, path string) (int64, error) {
 	if ref == worktreeTreeRef {
 		info, err := os.Stat(filepath.Join(g.root, filepath.FromSlash(path)))
@@ -282,6 +301,7 @@ func (g gitClient) fileSize(ctx context.Context, ref, path string) (int64, error
 	return g.objectSize(ctx, ref+":"+path)
 }
 
+// objectSize returns the byte size of a git object.
 func (g gitClient) objectSize(ctx context.Context, object string) (int64, error) {
 	out, err := g.run(ctx, "cat-file", "-s", object)
 	if err != nil {
@@ -294,6 +314,7 @@ func (g gitClient) objectSize(ctx context.Context, object string) (int64, error)
 	return size, nil
 }
 
+// diffPatch returns a unified git diff patch.
 func (g gitClient) diffPatch(ctx context.Context, from, to string, paths ...string) (string, error) {
 	if to == indexTreeRef {
 		args := []string{"diff", "--cached", "--patch", from, "--"}
@@ -322,6 +343,7 @@ func (g gitClient) diffPatch(ctx context.Context, from, to string, paths ...stri
 	return out, nil
 }
 
+// diffNameStatus returns changed file statuses between two refs.
 func (g gitClient) diffNameStatus(ctx context.Context, from, to string) ([]fileChange, error) {
 	if to == indexTreeRef {
 		return g.diffNameStatusArgs(ctx, "diff", "--cached", "--name-status", "--find-renames", "-z", from)
@@ -343,6 +365,7 @@ func (g gitClient) diffNameStatus(ctx context.Context, from, to string) ([]fileC
 	return g.diffNameStatusArgs(ctx, "diff", "--name-status", "--find-renames", "-z", from, to)
 }
 
+// diffNameStatusArgs parses git name-status output from arbitrary diff arguments.
 func (g gitClient) diffNameStatusArgs(ctx context.Context, args ...string) ([]fileChange, error) {
 	out, err := g.run(ctx, args...)
 	if err != nil {
@@ -386,6 +409,7 @@ func (g gitClient) diffNameStatusArgs(ctx context.Context, args ...string) ([]fi
 	return changes, nil
 }
 
+// diffNumstat returns addition and deletion counts per file.
 func (g gitClient) diffNumstat(ctx context.Context, from, to string) (map[string][2]int, error) {
 	args := []string{"diff", "--numstat", "-z", from, to}
 	if to == indexTreeRef {
@@ -434,6 +458,7 @@ func (g gitClient) diffNumstat(ctx context.Context, from, to string) (map[string
 	return stats, nil
 }
 
+// worktreeLineCount counts lines in a worktree file.
 func (g gitClient) worktreeLineCount(path string) (int, error) {
 	content, err := os.ReadFile(filepath.Join(g.root, filepath.FromSlash(path)))
 	if err != nil {
@@ -449,6 +474,7 @@ func (g gitClient) worktreeLineCount(path string) (int, error) {
 	return lines, nil
 }
 
+// parseNumstat parses numstat for the local CLI graph runtime.
 func parseNumstat(value string) int {
 	n := 0
 	for _, r := range value {

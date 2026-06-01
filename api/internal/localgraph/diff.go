@@ -17,6 +17,7 @@ const (
 	maxSemanticFileBytes int64 = 512 * 1024
 )
 
+// GenerateDiff builds the local semantic review payload for a git diff.
 func GenerateDiff(ctx context.Context, opts Options) (ReviewGraphPayload, error) {
 	root, err := repoRoot(ctx, opts.RepoDir)
 	if err != nil {
@@ -67,6 +68,7 @@ func GenerateDiff(ctx context.Context, opts Options) (ReviewGraphPayload, error)
 	return payload, nil
 }
 
+// resolveDiffRefs resolves diff refs for the local CLI graph runtime.
 func resolveDiffRefs(ctx context.Context, g gitClient, args []string) (string, string, error) {
 	if len(args) == 0 {
 		branch, err := g.resolveDefaultBranch(ctx)
@@ -103,6 +105,7 @@ func resolveDiffRefs(ctx context.Context, g gitClient, args []string) (string, s
 	}
 }
 
+// loadTreeGraph loads tree graph for the local CLI graph runtime.
 func loadTreeGraph(ctx context.Context, g gitClient, cacheDir, ref, sha string) (treeGraph, error) {
 	tree, err := g.listTree(ctx, ref)
 	if err != nil {
@@ -175,6 +178,7 @@ func loadTreeGraph(ctx context.Context, g gitClient, cacheDir, ref, sha string) 
 	return graph, nil
 }
 
+// loadBlobNodes loads blob nodes for the local CLI graph runtime.
 func loadBlobNodes(ctx context.Context, g gitClient, cacheDir, ref, path, blobSHA string) (map[string]graphNodeObject, []byte, error) {
 	indexPath := filepath.Join(cacheDir, "objects", "index", "blob_to_nodes", blobSHA+".json")
 	var index struct {
@@ -224,6 +228,7 @@ func loadBlobNodes(ctx context.Context, g gitClient, cacheDir, ref, path, blobSH
 	return out, content, nil
 }
 
+// loadFileChanges loads file changes for the local CLI graph runtime.
 func loadFileChanges(ctx context.Context, g gitClient, baseRef, headRef string) ([]fileChange, error) {
 	changes, err := g.diffNameStatus(ctx, baseRef, headRef)
 	if err != nil {
@@ -248,6 +253,7 @@ func loadFileChanges(ctx context.Context, g gitClient, baseRef, headRef string) 
 	return changes, nil
 }
 
+// buildReviewPayload builds review payload for the local CLI graph runtime.
 func buildReviewPayload(root, baseRef, headRef, baseSHA, headSHA string, baseGraph, headGraph treeGraph, changes []fileChange) ReviewGraphPayload {
 	filePatches := map[string]string{}
 	files := make([]models.PRFileDiff, 0, len(changes))
@@ -402,6 +408,7 @@ func buildReviewPayload(root, baseRef, headRef, baseSHA, headSHA string, baseGra
 	return payload
 }
 
+// ensureContextNode ensures context node is available for the local CLI graph runtime.
 func ensureContextNode(nodes map[string]models.GraphNode, id string, obj graphNodeObject, lineChanges map[string]int) {
 	if _, ok := nodes[id]; ok {
 		return
@@ -411,10 +418,12 @@ func ensureContextNode(nodes map[string]models.GraphNode, id string, obj graphNo
 	lineChanges[id] = 0
 }
 
+// changedNode reports whether a graph node represents a semantic change.
 func changedNode(node models.GraphNode) bool {
 	return node.ChangeType != nil
 }
 
+// visibleEdges selects graph edges that should appear in a local review graph.
 func visibleEdges(headGraph, baseGraph treeGraph, changedRefs map[string]bool, nodes map[string]models.GraphNode) []semanticEdge {
 	seen := map[string]bool{}
 	var out []semanticEdge
@@ -433,6 +442,7 @@ func visibleEdges(headGraph, baseGraph treeGraph, changedRefs map[string]bool, n
 	return out
 }
 
+// resolveEdgeNodeID resolves edge node ID for the local CLI graph runtime.
 func resolveEdgeNodeID(ref string, headGraph, baseGraph treeGraph) string {
 	if node, ok := headGraph.nodesByRef[ref]; ok {
 		return nodeID(nodeKindFromObject(node), node.FullName, node.FilePath, derefBlob(node.GitBlobSHA))
@@ -443,6 +453,7 @@ func resolveEdgeNodeID(ref string, headGraph, baseGraph treeGraph) string {
 	return ""
 }
 
+// graphNodeByFullName finds a cached graph node by full symbol name.
 func graphNodeByFullName(nodes []graphNodeObject, fullName string) graphNodeObject {
 	for _, node := range nodes {
 		if node.FullName == fullName {
@@ -452,6 +463,7 @@ func graphNodeByFullName(nodes []graphNodeObject, fullName string) graphNodeObje
 	return graphNodeObject{}
 }
 
+// nodeKindFromObject returns the visible graph kind for a cached node object.
 func nodeKindFromObject(obj graphNodeObject) string {
 	if obj.IsTest {
 		return "test"
@@ -459,6 +471,7 @@ func nodeKindFromObject(obj graphNodeObject) string {
 	return obj.Kind
 }
 
+// derefBlob returns the blob SHA behind an optional pointer.
 func derefBlob(value *string) string {
 	if value == nil {
 		return ""
@@ -466,6 +479,7 @@ func derefBlob(value *string) string {
 	return *value
 }
 
+// degree counts the number of graph edges touching a node.
 func degree(id string, edges []models.GraphEdge) int {
 	count := 0
 	for _, e := range edges {
@@ -476,6 +490,7 @@ func degree(id string, edges []models.GraphEdge) int {
 	return count
 }
 
+// max returns the larger of two integers.
 func max(a, b int) int {
 	if a > b {
 		return a

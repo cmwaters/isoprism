@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// BetaHandler groups dependencies for the pilot admin and feedback API.
 type BetaHandler struct {
 	FeedbackToken  string
 	FeedbackRepo   string
@@ -33,6 +34,7 @@ type BetaHandler struct {
 	DB             *pgxpool.Pool
 }
 
+// FeedbackRequest describes an inbound request for the pilot admin and feedback API.
 type FeedbackRequest struct {
 	Type            string `json:"type"`
 	Title           string `json:"title"`
@@ -49,12 +51,14 @@ type FeedbackRequest struct {
 	SourceCommitSHA string `json:"source_commit_sha"`
 }
 
+// createIssueRequest describes an inbound request for the pilot admin and feedback API.
 type createIssueRequest struct {
 	Title  string   `json:"title"`
 	Body   string   `json:"body"`
 	Labels []string `json:"labels"`
 }
 
+// CreateBetaTesterRequest describes an inbound request for the pilot admin and feedback API.
 type CreateBetaTesterRequest struct {
 	Name          string `json:"name"`
 	Email         string `json:"email"`
@@ -62,12 +66,14 @@ type CreateBetaTesterRequest struct {
 	PublicRepoURL string `json:"public_repo_url"`
 }
 
+// CreateBetaTesterResponse describes an outbound response for the pilot admin and feedback API.
 type CreateBetaTesterResponse struct {
 	BetaTester
 	Token string `json:"token"`
 	Link  string `json:"link"`
 }
 
+// BetaTester stores the fields used by the pilot admin and feedback API.
 type BetaTester struct {
 	ID                       string                  `json:"id"`
 	Name                     string                  `json:"name"`
@@ -92,6 +98,7 @@ type BetaTester struct {
 	Link                     string                  `json:"link"`
 }
 
+// BetaQuestionnaireAdmin describes pilot form data used by the pilot admin and feedback API.
 type BetaQuestionnaireAdmin struct {
 	WouldKeepUsing        *string `json:"would_keep_using"`
 	KeepUsingReason       *string `json:"keep_using_reason"`
@@ -101,6 +108,7 @@ type BetaQuestionnaireAdmin struct {
 	OpenToFollowUp        *string `json:"open_to_follow_up"`
 }
 
+// PilotRegistrationRequest describes an inbound request for the pilot admin and feedback API.
 type PilotRegistrationRequest struct {
 	SoftwareExperience   string `json:"software_experience"`
 	AISoftwareExceptions string `json:"ai_software_exceptions"`
@@ -118,6 +126,7 @@ type PilotRegistrationRequest struct {
 	PublicRepoURL        string `json:"public_repo_url"`
 }
 
+// PilotReviewRequest describes an inbound request for the pilot admin and feedback API.
 type PilotReviewRequest struct {
 	WouldKeepUsing        string `json:"would_keep_using,omitempty"`
 	KeepUsingReason       string `json:"keep_using_reason"`
@@ -127,15 +136,18 @@ type PilotReviewRequest struct {
 	OpenToFollowUp        string `json:"open_to_follow_up"`
 }
 
+// PilotReviewInfo stores the fields used by the pilot admin and feedback API.
 type PilotReviewInfo struct {
 	Name       string `json:"name"`
 	IssueCount int    `json:"issue_count"`
 }
 
+// AcceptPilotInviteRequest describes an inbound request for the pilot admin and feedback API.
 type AcceptPilotInviteRequest struct {
 	UserID string `json:"user_id"`
 }
 
+// PilotForm describes pilot form data used by the pilot admin and feedback API.
 type PilotForm struct {
 	ID          string          `json:"id"`
 	PilotUserID *string         `json:"pilot_user_id"`
@@ -436,6 +448,7 @@ func (h *BetaHandler) SendReviewEmail(w http.ResponseWriter, r *http.Request) {
 	h.sendPilotEmail(w, r, "review")
 }
 
+// sendPilotEmail sends pilot email for the pilot admin and feedback API.
 func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kind string) {
 	if !h.authorizedAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -512,10 +525,12 @@ func (h *BetaHandler) sendPilotEmail(w http.ResponseWriter, r *http.Request, kin
 	})
 }
 
+// pilotInviteEmailHTML renders the pilot invite email body.
 func pilotInviteEmailHTML(name, link string) string {
 	return fmt.Sprintf(`<p>Hey %s,</p><p>Thanks for your interest in the <strong>Isoprism</strong> pilot. We'd love to have you help us out.</p><p><a href="%s">Click this link to get started.</a> You will be asked to connect your Github and select a repository to work from.</p><p>At the end of the week, you should receive another email to fill out a quick survey to tell us how it went. Feel free to submit any feature requests or bugs along the way.</p><p>All the best,</p><p>Callum</p>`, htmlEscape(name), htmlEscape(link))
 }
 
+// pilotReviewEmailHTML renders the pilot review email body.
 func pilotReviewEmailHTML(name, link string) string {
 	return fmt.Sprintf(`<p>Hi %s,</p><p>Thanks for piloting the <strong>Isoprism</strong> prototype. We'd love if you could take a moment to answer a few questions so we can learn how to best improve this product.</p><p><a href="%s">Complete the pilot review</a></p><p>Best Regards,</p><p>Callum</p>`, htmlEscape(name), htmlEscape(link))
 }
@@ -696,6 +711,7 @@ func (h *BetaHandler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// feedbackIssueBody formats beta feedback as a GitHub issue body.
 func feedbackIssueBody(req FeedbackRequest, userID string) string {
 	pr := "none"
 	if req.PRNumber != nil {
@@ -734,6 +750,7 @@ func feedbackIssueBody(req FeedbackRequest, userID string) string {
 	)
 }
 
+// valueOrUnknown returns a fallback label for blank feedback values.
 func valueOrUnknown(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return "unknown"
@@ -741,6 +758,7 @@ func valueOrUnknown(value string) string {
 	return value
 }
 
+// authorizedAdmin checks the admin password header.
 func (h *BetaHandler) authorizedAdmin(r *http.Request) bool {
 	if h.AdminPassword == "" {
 		return false
@@ -752,10 +770,12 @@ func (h *BetaHandler) authorizedAdmin(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(h.AdminPassword)) == 1
 }
 
+// betaTesterScanner defines the interface required by the pilot admin and feedback API.
 type betaTesterScanner interface {
 	Scan(dest ...interface{}) error
 }
 
+// scanBetaTester scans a pilot user row into the admin API shape.
 func scanBetaTester(row betaTesterScanner, frontendURL string) (BetaTester, error) {
 	var tester BetaTester
 	var submittedAt *time.Time
@@ -783,6 +803,7 @@ func scanBetaTester(row betaTesterScanner, frontendURL string) (BetaTester, erro
 	return tester, nil
 }
 
+// newInviteToken generates a URL-safe pilot invite token.
 func newInviteToken() (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -791,6 +812,7 @@ func newInviteToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+// sendMailtrapEmail sends mailtrap email for the pilot admin and feedback API.
 func (h *BetaHandler) sendMailtrapEmail(ctx context.Context, to, subject, htmlBody string) error {
 	from, err := mail.ParseAddress(h.EmailFrom)
 	if err != nil {
@@ -830,6 +852,7 @@ func (h *BetaHandler) sendMailtrapEmail(ctx context.Context, to, subject, htmlBo
 	return nil
 }
 
+// inviteLink builds the pilot invite URL.
 func inviteLink(frontendURL, token string) string {
 	base := strings.TrimRight(frontendURL, "/")
 	if token == "" {
@@ -838,6 +861,7 @@ func inviteLink(frontendURL, token string) string {
 	return base + "/pilot/" + token
 }
 
+// reviewLink builds the pilot review URL.
 func reviewLink(frontendURL, token string) string {
 	base := strings.TrimRight(frontendURL, "/")
 	if token == "" {
@@ -846,6 +870,7 @@ func reviewLink(frontendURL, token string) string {
 	return base + "/pilot/review/" + token
 }
 
+// valueFromPtr dereferences optional string values for display.
 func valueFromPtr(value *string) string {
 	if value == nil {
 		return ""
@@ -853,6 +878,7 @@ func valueFromPtr(value *string) string {
 	return *value
 }
 
+// htmlEscape escapes text for safe email HTML.
 func htmlEscape(value string) string {
 	return html.EscapeString(value)
 }

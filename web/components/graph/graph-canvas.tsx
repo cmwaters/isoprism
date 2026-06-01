@@ -31,10 +31,15 @@ import { expansionOptionsForVisibleSelection, isTypeNode } from "./graph-selecti
 export const nodeTypes = { graphNode: GraphNodeComponent };
 export const edgeTypes = { smartBezier: SmartBezierEdge };
 
+// Point stores the fields used by the graph review UI.
 type Point = { x: number; y: number };
+// Rect stores the fields used by the graph review UI.
 type Rect = Point & { width: number; height: number };
+// AnchorSide stores the fields used by the graph review UI.
 type AnchorSide = "top" | "right" | "bottom" | "left";
+// Anchor stores the fields used by the graph review UI.
 type Anchor = Point & { normal: Point; side: AnchorSide; offset: number };
+// MeasuredNode describes a graph node used by the graph review UI.
 type MeasuredNode = {
   internals: { positionAbsolute: Point };
   measured: { width?: number; height?: number };
@@ -42,12 +47,14 @@ type MeasuredNode = {
   height?: number;
   data?: { node?: APIGraphNode };
 };
+// PanelMode stores the fields used by the graph review UI.
 export type PanelMode = "overview" | "contents" | "code";
 
 const DIFF_PILLS_HEIGHT = 28;
 const CARD_CORNER_MARGIN = 20;
 const MIN_ANCHOR_SPACING = 20;
 
+// cardRect returns the measured card rectangle used for edge anchoring.
 function cardRect(node: MeasuredNode): Rect {
   const measuredHeight = node.measured.height ?? node.height ?? 120;
   const hasDiffPills = Boolean(node.data?.node?.change_type);
@@ -60,10 +67,12 @@ function cardRect(node: MeasuredNode): Rect {
   };
 }
 
+// rectCenter returns the center point of a rectangle.
 function rectCenter(rect: Rect): Point {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
 
+// anchorFromSide returns an anchor on a specific side of a node card.
 function anchorFromSide(rect: Rect, side: AnchorSide, offset: number): Anchor {
   const horizontal = side === "top" || side === "bottom";
   const length = horizontal ? rect.width : rect.height;
@@ -82,6 +91,7 @@ function anchorFromSide(rect: Rect, side: AnchorSide, offset: number): Anchor {
   }
 }
 
+// anchorAtAngle chooses the card side anchor that best matches an edge angle.
 function anchorAtAngle(rect: Rect, angle: number): Anchor {
   const center = rectCenter(rect);
   const dx = Math.cos(angle);
@@ -109,6 +119,7 @@ function anchorAtAngle(rect: Rect, angle: number): Anchor {
   }
 }
 
+// faceCenterAnchor returns the midpoint anchor on the face closest to an edge.
 function faceCenterAnchor(rect: Rect, normal: Point): Anchor {
   if (Math.abs(normal.x) > Math.abs(normal.y)) {
     return anchorFromSide(rect, normal.x > 0 ? "right" : "left", rect.height / 2);
@@ -117,6 +128,7 @@ function faceCenterAnchor(rect: Rect, normal: Point): Anchor {
   return anchorFromSide(rect, normal.y > 0 ? "bottom" : "top", rect.width / 2);
 }
 
+// edgeAngleFromNode calculates the angle from one node to the other end of an edge.
 function edgeAngleFromNode(nodeID: string, nodeRect: Rect, edge: Edge, nodeRects: Map<string, Rect>): number {
   const otherID = edge.source === nodeID ? edge.target : edge.source;
   const otherRect = nodeRects.get(otherID);
@@ -127,6 +139,7 @@ function edgeAngleFromNode(nodeID: string, nodeRect: Rect, edge: Edge, nodeRects
   return Math.atan2(to.y - from.y, to.x - from.x);
 }
 
+// lineAnchor returns a fallback edge anchor based on the neighboring node position.
 function lineAnchor(nodeID: string, rect: Rect, edge: Edge, nodeRects: Map<string, Rect>): Anchor {
   const otherID = edge.source === nodeID ? edge.target : edge.source;
   const otherRect = nodeRects.get(otherID);
@@ -135,6 +148,7 @@ function lineAnchor(nodeID: string, rect: Rect, edge: Edge, nodeRects: Map<strin
   return anchorAtAngle(rect, edgeAngleFromNode(nodeID, rect, edge, nodeRects));
 }
 
+// spacedFaceAnchors spreads anchors along a card face so parallel edges do not overlap.
 function spacedFaceAnchors(rect: Rect, anchors: Anchor[]): Anchor[] {
   if (anchors.length <= 1) return anchors;
 
@@ -178,6 +192,7 @@ function spacedFaceAnchors(rect: Rect, anchors: Anchor[]): Anchor[] {
   return result;
 }
 
+// endpointAnchor chooses a stable per-edge endpoint anchor for a node card.
 function endpointAnchor(nodeID: string, edgeID: string, rect: Rect, edges: Edge[], nodeRects: Map<string, Rect>): Anchor {
   const incidentEdges = edges.filter((edge) => edge.source === nodeID || edge.target === nodeID);
 
@@ -205,6 +220,7 @@ function endpointAnchor(nodeID: string, edgeID: string, rect: Rect, edges: Edge[
   return anchorsByEdge.find(({ edge }) => edge.id === edgeID)?.anchor ?? lineAnchor(nodeID, rect, incidentEdges[0], nodeRects);
 }
 
+// smartBezierPath builds the curved SVG path between two anchored graph nodes.
 function smartBezierPath(sourceAnchor: Anchor, targetAnchor: Anchor): string {
   const distance = Math.hypot(targetAnchor.x - sourceAnchor.x, targetAnchor.y - sourceAnchor.y);
   const controlDistance = Math.max(36, Math.min(180, distance * 0.36));
@@ -220,6 +236,7 @@ function smartBezierPath(sourceAnchor: Anchor, targetAnchor: Anchor): string {
   return `M ${sourceAnchor.x},${sourceAnchor.y} C ${sourceControl.x},${sourceControl.y} ${targetControl.x},${targetControl.y} ${targetAnchor.x},${targetAnchor.y}`;
 }
 
+// SmartBezierEdge renders a React Flow edge with weighted styling and smart anchors.
 function SmartBezierEdge({
   id,
   source,
@@ -288,6 +305,7 @@ const COMPONENT_PANEL_MIN_WIDTH = 320;
 const COMPONENT_PANEL_MAX_WIDTH = 720;
 const COMPONENT_PANEL_DEFAULT_WIDTH = 430;
 
+// LayoutOptions configures the graph review UI.
 type LayoutOptions = {
   previousPositions?: Record<string, Point>;
   anchor?: Point;
@@ -295,15 +313,18 @@ type LayoutOptions = {
   iterations?: number;
 };
 
+// edgeWeight returns the visual weight for a graph edge.
 function edgeWeight(edge: Edge): number {
   const data = edge.data as { weight?: number; underlyingEdgeCount?: number } | undefined;
   return Math.min(5, Math.max(1, data?.underlyingEdgeCount ?? data?.weight ?? 1));
 }
 
+// undirectedEdgeKey returns a direction-independent key for a pair of graph nodes.
 function undirectedEdgeKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
+// initialPosition places a node in the initial radial layout.
 function initialPosition(index: number, total: number, anchor?: Point): Point {
   const radius = Math.max(280, Math.sqrt(Math.max(total, 1)) * 135);
   const angle = (index / Math.max(total, 1)) * Math.PI * 2;
@@ -314,6 +335,7 @@ function initialPosition(index: number, total: number, anchor?: Point): Point {
   };
 }
 
+// edgeLengthLayout relaxes node positions toward readable graph edge lengths.
 export function edgeLengthLayout(nodes: Node[], edges: Edge[], options: LayoutOptions = {}): Node[] {
   if (nodes.length === 0) return [];
 
@@ -435,6 +457,7 @@ export function edgeLengthLayout(nodes: Node[], edges: Edge[], options: LayoutOp
   }));
 }
 
+// hexGridLayout keeps the legacy layout export pointed at the edge-length layout.
 export function hexGridLayout(nodes: Node[], edges: Edge[], ...rest: unknown[]): Node[] {
   void rest;
   return edgeLengthLayout(nodes, edges);
@@ -443,18 +466,22 @@ export function hexGridLayout(nodes: Node[], edges: Edge[], ...rest: unknown[]):
 // ── Inner canvas ──────────────────────────────────────────────────────────────
 type UnifiedGraph = GraphResponse | RepoGraphResponse;
 
+// graphContextKey returns the cache key for the active repo or PR graph context.
 function graphContextKey(graph: UnifiedGraph): string {
   return isPRGraph(graph) ? `pr:${graph.pr.id}` : "repo";
 }
 
+// edgeKey returns the stable identity for a graph edge.
 function edgeKey(edge: { source_id: string; destination_id: string; edge_kind?: string }): string {
   return `${edge.source_id}|${edge.destination_id}|${edge.edge_kind ?? "calls"}`;
 }
 
+// graphNodeSemanticKey returns the semantic identity shared by renamed graph nodes.
 function graphNodeSemanticKey(node: APIGraphNode): string {
   return `${node.file_path}|${node.full_name}`;
 }
 
+// mergeGraphNode merges graph node into the graph review UI.
 function mergeGraphNode(existing: APIGraphNode, incoming: APIGraphNode): APIGraphNode {
   if (incoming.change_type && !existing.change_type) {
     return { ...incoming, id: existing.id };
@@ -469,6 +496,7 @@ function mergeGraphNode(existing: APIGraphNode, incoming: APIGraphNode): APIGrap
   };
 }
 
+// mergeExpansionGraph merges expansion graph into the graph review UI.
 function mergeExpansionGraph(graph: UnifiedGraph, response: GraphExpansionResponse): UnifiedGraph {
   const responseNodes = Array.isArray(response.nodes) ? response.nodes : [];
   const responseEdges = Array.isArray(response.edges) ? response.edges : [];
@@ -521,10 +549,12 @@ function mergeExpansionGraph(graph: UnifiedGraph, response: GraphExpansionRespon
   };
 }
 
+// isPRGraph reports whether PR graph matches the expected condition.
 function isPRGraph(graph: UnifiedGraph): graph is GraphResponse {
   return "pr" in graph;
 }
 
+// positionsFromNodes extracts saved canvas positions from React Flow nodes.
 function positionsFromNodes(nodes: Node[]): Record<string, Point> {
   const positions: Record<string, Point> = {};
   nodes.forEach((node) => {
@@ -533,11 +563,13 @@ function positionsFromNodes(nodes: Node[]): Record<string, Point> {
   return positions;
 }
 
+// nodeMatchesRenameSource reports whether a visible node matches rename metadata.
 function nodeMatchesRenameSource(node: APIGraphNode, oldFullName: string, oldFilePath: string): boolean {
   if (node.file_path !== oldFilePath) return false;
   return node.full_name === oldFullName || node.full_name.endsWith(`.${oldFullName}`);
 }
 
+// collapseRenamedGraphNodes merges renamed PR nodes back into their canonical visual node.
 function collapseRenamedGraphNodes(graph: UnifiedGraph): UnifiedGraph {
   if (!isPRGraph(graph)) return graph;
 
@@ -579,10 +611,12 @@ function collapseRenamedGraphNodes(graph: UnifiedGraph): UnifiedGraph {
   };
 }
 
+// sameTestEntry reports whether a test node matches a production test reference.
 function sameTestEntry(test: APIGraphNode, ref: { full_name: string; file_path: string }): boolean {
   return test.full_name === ref.full_name && test.file_path === ref.file_path;
 }
 
+// buildTestFocusedGraph builds test focused graph for the graph review UI.
 function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | null, extraNodeIDs: Set<string> = new Set()): UnifiedGraph {
   if (!isPRGraph(graph) || !testNode) return graph;
 
@@ -647,6 +681,7 @@ function buildTestFocusedGraph(graph: UnifiedGraph, testNode: APIGraphNode | nul
   };
 }
 
+// InnerCanvas renders the inner canvas for the graph review UI.
 function InnerCanvas({
   graph,
   repoID,
@@ -1276,6 +1311,7 @@ function InnerCanvas({
   );
 }
 
+// ZoomControls renders zoom buttons for the graph canvas.
 function ZoomControls({ onFit }: { onFit: () => void }) {
   const { zoomIn, zoomOut } = useReactFlow();
   const btnStyle: React.CSSProperties = {
@@ -1300,6 +1336,7 @@ function ZoomControls({ onFit }: { onFit: () => void }) {
   );
 }
 
+// GraphCanvas renders the graph canvas for the graph review UI.
 export default function GraphCanvas({
   graph,
   repoID,
@@ -1335,6 +1372,7 @@ export default function GraphCanvas({
   );
 }
 
+// fallbackRepo builds placeholder repo metadata when a PR graph lacks a repo object.
 function fallbackRepo(repoID: string): Repository {
   return {
     id: repoID,
@@ -1349,6 +1387,7 @@ function fallbackRepo(repoID: string): Repository {
   };
 }
 
+// uniqueGraphNodes deduplicates graph nodes.
 function uniqueGraphNodes(nodes: APIGraphNode[]): APIGraphNode[] {
   const seen = new Set<string>();
   const seenSemantic = new Set<string>();
@@ -1363,6 +1402,7 @@ function uniqueGraphNodes(nodes: APIGraphNode[]): APIGraphNode[] {
   return result;
 }
 
+// uniqueGraphEdges deduplicates graph edges.
 function uniqueGraphEdges(edges: GraphEdge[]): GraphEdge[] {
   const seen = new Set<string>();
   const result: GraphEdge[] = [];

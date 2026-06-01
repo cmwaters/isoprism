@@ -8,11 +8,13 @@ import { symbolContextLabel, symbolTitle } from "./symbol-format";
 
 const CARD_PADDING = 10;
 
+// Props describes the props consumed by this component.
 interface Props {
   data: { node: GraphNode; onSelectType?: (nodeID: string) => void };
   selected?: boolean;
 }
 
+// darken darkens a hex color for graph card dividers.
 function darken(hex: string, amount = 0.13): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -21,6 +23,7 @@ function darken(hex: string, amount = 0.13): string {
   return `#${d(r)}${d(g)}${d(b)}`;
 }
 
+// Divider renders the node-card divider line.
 function Divider({ color }: { color: string }) {
   return (
     <div style={{
@@ -31,6 +34,7 @@ function Divider({ color }: { color: string }) {
   );
 }
 
+// DiffPills renders the diff pills for the graph review UI.
 function DiffPills({ node }: { node: GraphNode }) {
   if (!node.change_type) return null;
   const pillBase: React.CSSProperties = {
@@ -64,6 +68,7 @@ function DiffPills({ node }: { node: GraphNode }) {
   );
 }
 
+// GraphNodeComponent renders a semantic graph node card.
 function GraphNodeComponent({ data, selected }: Props) {
   const { node, onSelectType } = data;
   const bg = selected ? "#F5F5F5" : cardColorByKind(node.kind);
@@ -141,6 +146,7 @@ function GraphNodeComponent({ data, selected }: Props) {
   );
 }
 
+// TypeRef renders a linked or plain type reference.
 function TypeRef({
   refInfo,
   color,

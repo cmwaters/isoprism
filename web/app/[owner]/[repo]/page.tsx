@@ -6,10 +6,12 @@ import GraphCanvas from "@/components/graph/graph-canvas";
 
 export const dynamic = "force-dynamic";
 
+// Props describes the props consumed by this component.
 interface Props {
   params: Promise<{ owner: string; repo: string }>;
 }
 
+// CanonicalRepoPage renders the canonical repo page for canonical repository routing.
 export default async function CanonicalRepoPage({ params }: Props) {
   const { owner, repo: repoName } = await params;
   if (repoName.toLowerCase() === "settings") redirect("/settings");
@@ -45,6 +47,7 @@ export default async function CanonicalRepoPage({ params }: Props) {
   return <GraphCanvas graph={graph} prs={queue.prs} repoID={repo.id} repo={repo} token={token} />;
 }
 
+// findRepoByFullName finds repo by full name for canonical repository routing.
 async function findRepoByFullName(fullName: string, token: string): Promise<Repository | null> {
   const { repos } = await apiFetch<{ repos: Repository[] }>("/api/v1/me/repos", token);
   return repos.find((repo) => repo.full_name.toLowerCase() === fullName.toLowerCase()) ?? null;

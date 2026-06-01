@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// RepoHandler groups dependencies for the repository API.
 type RepoHandler struct {
 	DB *pgxpool.Pool
 }
@@ -331,6 +332,7 @@ func (h *RepoHandler) GetRepoStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// indexPercent calculates coarse indexing progress from job counters.
 func indexPercent(status, phase string, filesTotal, filesDone, nodesTotal, nodesDone, edgesTotal, edgesDone int) int {
 	if status == "ready" {
 		return 100
@@ -356,6 +358,7 @@ func indexPercent(status, phase string, filesTotal, filesDone, nodesTotal, nodes
 	}
 }
 
+// scaledPercent scales a completed counter into a progress range.
 func scaledPercent(done, total, width int) int {
 	if total <= 0 {
 		return 0
@@ -366,6 +369,7 @@ func scaledPercent(done, total, width int) int {
 	return done * width / total
 }
 
+// indexETASeconds estimates remaining indexing time from elapsed progress.
 func indexETASeconds(status string, percent int, startedAt sql.NullTime) *int {
 	if status != "running" || !startedAt.Valid || percent < 5 || percent >= 100 {
 		return nil
@@ -378,6 +382,7 @@ func indexETASeconds(status string, percent int, startedAt sql.NullTime) *int {
 	return &remaining
 }
 
+// nullTimePtr converts nullable database times into optional API times.
 func nullTimePtr(value sql.NullTime) *time.Time {
 	if !value.Valid {
 		return nil
@@ -385,6 +390,7 @@ func nullTimePtr(value sql.NullTime) *time.Time {
 	return &value.Time
 }
 
+// isRepoSelected reports whether repo selected matches the expected condition.
 func isRepoSelected(ctx context.Context, db *pgxpool.Pool, userID, repoID string) bool {
 	var selected bool
 	_ = db.QueryRow(ctx, `
@@ -393,6 +399,7 @@ func isRepoSelected(ctx context.Context, db *pgxpool.Pool, userID, repoID string
 	return selected
 }
 
+// userClass returns the account class for a user.
 func userClass(ctx context.Context, db *pgxpool.Pool, userID string) string {
 	if hasPilotUser(ctx, db, userID) {
 		return "pilot"
@@ -405,16 +412,19 @@ func userClass(ctx context.Context, db *pgxpool.Pool, userID string) string {
 	return class
 }
 
+// hasPilotUser reports whether pilot user is present.
 func hasPilotUser(ctx context.Context, db *pgxpool.Pool, userID string) bool {
 	var isPilot bool
 	_ = db.QueryRow(ctx, `select exists(select 1 from pilot_users where user_id = $1)`, userID).Scan(&isPilot)
 	return isPilot
 }
 
+// HasPilotUser reports whether pilot user is present.
 func HasPilotUser(ctx context.Context, db *pgxpool.Pool, userID string) bool {
 	return hasPilotUser(ctx, db, userID)
 }
 
+// selectRepository selects repository for the repository API.
 func selectRepository(ctx context.Context, db *pgxpool.Pool, userID, repoID string) error {
 	var previousRepoID sql.NullString
 	_ = db.QueryRow(ctx, `select selected_repo_id from users where id = $1`, userID).Scan(&previousRepoID)
@@ -450,6 +460,7 @@ func selectRepository(ctx context.Context, db *pgxpool.Pool, userID, repoID stri
 	return nil
 }
 
+// markRepoUnused marks repo unused in the repository API.
 func markRepoUnused(ctx context.Context, db *pgxpool.Pool, userID, repoID string) error {
 	if err := scheduleUnusedRepoCleanup(ctx, db, userID, repoID); err != nil {
 		return err
@@ -459,6 +470,7 @@ func markRepoUnused(ctx context.Context, db *pgxpool.Pool, userID, repoID string
 	return nil
 }
 
+// scheduleUnusedRepoCleanup marks an unselected repo for later cleanup.
 func scheduleUnusedRepoCleanup(ctx context.Context, db *pgxpool.Pool, userID, repoID string) error {
 	_, err := db.Exec(ctx, `
 		update repositories
@@ -470,6 +482,7 @@ func scheduleUnusedRepoCleanup(ctx context.Context, db *pgxpool.Pool, userID, re
 	return err
 }
 
+// cleanupExpiredRepositories deletes repository data after the unused grace period.
 func cleanupExpiredRepositories(ctx context.Context, db *pgxpool.Pool) {
 	_, _ = db.Exec(ctx, `
 		delete from repositories
@@ -510,10 +523,12 @@ func cleanupExpiredRepositories(ctx context.Context, db *pgxpool.Pool) {
 	}
 }
 
+// CleanupExpiredRepositories runs repository cleanup for expired unused repos.
 func CleanupExpiredRepositories(ctx context.Context, db *pgxpool.Pool) {
 	cleanupExpiredRepositories(ctx, db)
 }
 
+// SelectRepository selects repository for the repository API.
 func SelectRepository(ctx context.Context, db *pgxpool.Pool, userID, repoID string) error {
 	return selectRepository(ctx, db, userID, repoID)
 }
@@ -539,6 +554,7 @@ func ensureUserExists(ctx context.Context, db *pgxpool.Pool, userID string) {
 	`, userID)
 }
 
+// EnsureUserExists ensures user exists is available for the repository API.
 func EnsureUserExists(ctx context.Context, db *pgxpool.Pool, userID string) {
 	ensureUserExists(ctx, db, userID)
 }

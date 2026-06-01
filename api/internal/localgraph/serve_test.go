@@ -14,6 +14,7 @@ import (
 	"github.com/isoprism/api/internal/models"
 )
 
+// TestLocalMuxRootServesEmbeddedViewer renders the test local mux root serves embedded viewer for the local CLI graph runtime.
 func TestLocalMuxRootServesEmbeddedViewer(t *testing.T) {
 	mux := localMux(t.TempDir(), t.TempDir(), "http://127.0.0.1:3717", true)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -29,6 +30,7 @@ func TestLocalMuxRootServesEmbeddedViewer(t *testing.T) {
 	}
 }
 
+// TestLocalMuxRootReportsAPIWhenWebViewerDisabled verifies local mux root reports API when web viewer disabled.
 func TestLocalMuxRootReportsAPIWhenWebViewerDisabled(t *testing.T) {
 	mux := localMux(t.TempDir(), t.TempDir(), "", false)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -41,6 +43,7 @@ func TestLocalMuxRootReportsAPIWhenWebViewerDisabled(t *testing.T) {
 	}
 }
 
+// TestLocalMuxServesEmbeddedViewer renders the test local mux serves embedded viewer for the local CLI graph runtime.
 func TestLocalMuxServesEmbeddedViewer(t *testing.T) {
 	mux := localMux(t.TempDir(), t.TempDir(), "http://127.0.0.1:3717", true)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -56,6 +59,7 @@ func TestLocalMuxServesEmbeddedViewer(t *testing.T) {
 	}
 }
 
+// TestLocalMuxServesEmbeddedViewerAssets verifies local mux serves embedded viewer assets.
 func TestLocalMuxServesEmbeddedViewerAssets(t *testing.T) {
 	matches, err := fs.Glob(embeddedViewer, "viewer/assets/*.js")
 	if err != nil {
@@ -76,6 +80,7 @@ func TestLocalMuxServesEmbeddedViewerAssets(t *testing.T) {
 	}
 }
 
+// TestLocalMuxReviewItemsUsesGH verifies local mux review items uses GitHub.
 func TestLocalMuxReviewItemsUsesGH(t *testing.T) {
 	root := initLocalGraphTestRepo(t)
 	installFakeGH(t, `[{"number":7,"title":"Improve graph","body":"PR body","url":"https://github.com/acme/repo/pull/7","author":{"login":"octo"},"baseRefName":"main","baseRefOid":"base","headRefName":"feature","headRefOid":"head","additions":12,"deletions":3,"state":"OPEN","isDraft":false,"createdAt":"2026-01-02T03:04:05Z","updatedAt":"2026-01-03T03:04:05Z"}]`, `{}`)
@@ -107,6 +112,7 @@ func TestLocalMuxReviewItemsUsesGH(t *testing.T) {
 	}
 }
 
+// TestLoadGHPullRequestGraphFetchesHiddenPRRef verifies load GitHub pull request graph fetches hidden PR ref.
 func TestLoadGHPullRequestGraphFetchesHiddenPRRef(t *testing.T) {
 	root := initLocalGraphTestRepo(t)
 	bare := filepath.Join(t.TempDir(), "origin.git")
@@ -154,6 +160,7 @@ func TestLoadGHPullRequestGraphFetchesHiddenPRRef(t *testing.T) {
 	}
 }
 
+// TestResolveWebDirUsesExplicitPath verifies resolve web dir uses explicit path.
 func TestResolveWebDirUsesExplicitPath(t *testing.T) {
 	webDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(webDir, "package.json"), []byte(`{"name":"web"}`), 0o644); err != nil {
@@ -169,6 +176,7 @@ func TestResolveWebDirUsesExplicitPath(t *testing.T) {
 	}
 }
 
+// installFakeGH installs a fake GitHub CLI for local daemon tests.
 func installFakeGH(t *testing.T, listJSON, viewJSON string) {
 	t.Helper()
 
@@ -191,6 +199,7 @@ func installFakeGH(t *testing.T, listJSON, viewJSON string) {
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+// gitOutputTestCommand builds a shell command that proxies git output in tests.
 func gitOutputTestCommand(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 
@@ -203,6 +212,7 @@ func gitOutputTestCommand(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// TestResolveWebDirUsesEnvPath verifies resolve web dir uses env path.
 func TestResolveWebDirUsesEnvPath(t *testing.T) {
 	webDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(webDir, "package.json"), []byte(`{"name":"web"}`), 0o644); err != nil {

@@ -2,6 +2,7 @@ package parser
 
 import "testing"
 
+// TestGoTestCodeIsClassifiedAndEdgesReachProduction verifies go test code is classified and edges reach production.
 func TestGoTestCodeIsClassifiedAndEdgesReachProduction(t *testing.T) {
 	src := []byte(`package service
 
@@ -40,6 +41,7 @@ func helper() {
 	}
 }
 
+// TestTypeScriptTestCallIsParsedAsEntrypoint verifies type script test call is parsed as entrypoint.
 func TestTypeScriptTestCallIsParsedAsEntrypoint(t *testing.T) {
 	src := []byte(`import { saveUser } from "./users";
 
@@ -72,6 +74,7 @@ describe("users", () => {
 	}
 }
 
+// TestJavaScriptSpecFileIsTestFile verifies java script spec file is test file.
 func TestJavaScriptSpecFileIsTestFile(t *testing.T) {
 	if !IsTestFile("__tests__/users.spec.js") {
 		t.Fatal("expected __tests__/users.spec.js to be classified as a test file")
@@ -81,6 +84,7 @@ func TestJavaScriptSpecFileIsTestFile(t *testing.T) {
 	}
 }
 
+// TestGoDocCommentAboveComponentIsCaptured verifies go doc comment above component is captured.
 func TestGoDocCommentAboveComponentIsCaptured(t *testing.T) {
 	src := []byte(`package service
 
@@ -99,6 +103,7 @@ func CreateUser() {}
 	}
 }
 
+// TestBlankLineSeparatedCommentIsIgnored verifies blank line separated comment is ignored.
 func TestBlankLineSeparatedCommentIsIgnored(t *testing.T) {
 	src := []byte(`package service
 
@@ -116,6 +121,7 @@ func CreateUser() {}
 	}
 }
 
+// TestTypeScriptBlockDocCommentAboveComponentIsCaptured verifies type script block doc comment above component is captured.
 func TestTypeScriptBlockDocCommentAboveComponentIsCaptured(t *testing.T) {
 	src := []byte(`/**
  * Saves the user.
@@ -134,6 +140,7 @@ export function saveUser() {}
 	}
 }
 
+// hasCallEdge reports whether call edge is present.
 func hasCallEdge(edges []CallEdge, caller, callee string) bool {
 	for _, edge := range edges {
 		if edge.CallerFullName == caller && edge.CalleeFullName == callee {

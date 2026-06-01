@@ -2,6 +2,7 @@ package parser
 
 import "testing"
 
+// TestGoSelectorExternalPackageDoesNotResolveByBareSelector verifies go selector external package does not resolve by bare selector.
 func TestGoSelectorExternalPackageDoesNotResolveByBareSelector(t *testing.T) {
 	src := []byte(`package hash
 
@@ -31,6 +32,7 @@ func hashFromByteSlices(h hash.Hash, items [][]byte) []byte {
 	}
 }
 
+// TestGoDuplicateNewFunctionsDoNotCollide verifies go duplicate new functions do not collide.
 func TestGoDuplicateNewFunctionsDoNotCollide(t *testing.T) {
 	clientSrc := []byte(`package client
 
@@ -57,6 +59,7 @@ type Server struct{}
 	}
 }
 
+// TestGoFunctionAndMethodExtraction verifies go function and method extraction.
 func TestGoFunctionAndMethodExtraction(t *testing.T) {
 	src := []byte(`package service
 
@@ -81,6 +84,7 @@ type User struct{}
 	}
 }
 
+// TestGoStructFieldsAreExtracted verifies go struct fields are extracted.
 func TestGoStructFieldsAreExtracted(t *testing.T) {
 	src := []byte(`package coregrpc
 
@@ -119,6 +123,7 @@ type BlockAPI struct {
 	}
 }
 
+// TestGoFieldChainResolvesThroughImportedStructFields verifies go field chain resolves through imported struct fields.
 func TestGoFieldChainResolvesThroughImportedStructFields(t *testing.T) {
 	files := map[string][]byte{
 		"rpc/grpc/api.go": []byte(`package coregrpc
@@ -164,6 +169,7 @@ func (b *EventBus) Unsubscribe(ctx context.Context, subscriber string, query str
 	}
 }
 
+// TestGoImportedSelectorResolvesWhenDeclaredPackageDiffersFromImportBase verifies go imported selector resolves when declared package differs from import base.
 func TestGoImportedSelectorResolvesWhenDeclaredPackageDiffersFromImportBase(t *testing.T) {
 	files := map[string][]byte{
 		"node/node.go": []byte(`package node
@@ -188,6 +194,7 @@ func StartGRPCServer() {}
 	}
 }
 
+// TestGoReceiverCallResolvesFromParameterType verifies go receiver call resolves from parameter type.
 func TestGoReceiverCallResolvesFromParameterType(t *testing.T) {
 	files := map[string][]byte{
 		"service/service.go": []byte(`package service
@@ -210,6 +217,7 @@ func Run(client *Client) {
 	}
 }
 
+// TestGoReceiverCallResolvesFromConstructorReturnType verifies Go receiver calls resolve from constructor return types.
 func TestGoReceiverCallResolvesFromConstructorReturnType(t *testing.T) {
 	files := map[string][]byte{
 		"rpc/grpc/api.go": []byte(`package coregrpc
@@ -255,6 +263,7 @@ func TestStop_DoesNotDeadlock() {
 	}
 }
 
+// TestGoFieldChainDoesNotResolveAmbiguousImportedType verifies go field chain does not resolve ambiguous imported type.
 func TestGoFieldChainDoesNotResolveAmbiguousImportedType(t *testing.T) {
 	files := map[string][]byte{
 		"app/app.go": []byte(`package app
@@ -289,6 +298,7 @@ func (s *Store) Save() {}
 	}
 }
 
+// TestGoFieldChainRequiresKnownFieldType verifies go field chain requires known field type.
 func TestGoFieldChainRequiresKnownFieldType(t *testing.T) {
 	files := map[string][]byte{
 		"service/service.go": []byte(`package service
@@ -315,6 +325,7 @@ func Save() {}
 	}
 }
 
+// TestScriptFunctionExtractionAndCallEdges verifies script function extraction and call edges.
 func TestScriptFunctionExtractionAndCallEdges(t *testing.T) {
 	src := []byte(`export function saveUser(user: User) {
   return normalizeUser(user);
@@ -350,6 +361,7 @@ class UserService {
 	}
 }
 
+// TestScriptMemberCallsDoNotResolveByPropertyName verifies script member calls do not resolve by property name.
 func TestScriptMemberCallsDoNotResolveByPropertyName(t *testing.T) {
 	src := []byte(`export function run(client: Client) {
   return client.save();
@@ -366,6 +378,7 @@ func TestScriptMemberCallsDoNotResolveByPropertyName(t *testing.T) {
 	}
 }
 
+// hasNode reports whether node is present.
 func hasNode(nodes []Node, fullName string) bool {
 	for _, node := range nodes {
 		if node.FullName == fullName {
@@ -375,6 +388,7 @@ func hasNode(nodes []Node, fullName string) bool {
 	return false
 }
 
+// hasKind reports whether kind is present.
 func hasKind(nodes []Node, fullName, kind string) bool {
 	for _, node := range nodes {
 		if node.FullName == fullName && node.Kind == kind {
@@ -384,6 +398,7 @@ func hasKind(nodes []Node, fullName, kind string) bool {
 	return false
 }
 
+// hasEdge reports whether edge is present.
 func hasEdge(edges []CallEdge, caller, callee string) bool {
 	for _, edge := range edges {
 		if edge.CallerFullName == caller && edge.CalleeFullName == callee {
@@ -393,6 +408,7 @@ func hasEdge(edges []CallEdge, caller, callee string) bool {
 	return false
 }
 
+// nodesByName builds a lookup map for parser test nodes.
 func nodesByName(files map[string][]byte) map[string]bool {
 	out := map[string]bool{}
 	for filePath, src := range files {

@@ -14,6 +14,7 @@ const latestMigrationVersionQuery = `
 	from supabase_migrations.schema_migrations
 `
 
+// VerifyMigrationVersion verifies migration version for database migration checks.
 func VerifyMigrationVersion(ctx context.Context, pool *pgxpool.Pool) error {
 	var latest string
 	if err := pool.QueryRow(ctx, latestMigrationVersionQuery).Scan(&latest); err != nil {

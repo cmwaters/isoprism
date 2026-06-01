@@ -6,6 +6,7 @@ import (
 	"github.com/isoprism/api/internal/parser"
 )
 
+// semanticEdge describes a graph edge used by semantic edge extraction.
 type semanticEdge struct {
 	SourceFullName      string
 	DestinationFullName string
@@ -18,16 +19,19 @@ const (
 	edgeKindUsesType   = "uses_type"
 )
 
+// semanticTypeEdges derives ownership and type-usage edges from parsed nodes.
 func semanticTypeEdges(nodes []parser.Node) []semanticEdge {
 	return semanticTypeEdgesWithKnownTypes(nodes, nodes)
 }
 
+// semanticTypeEdgesWithKnownTypes derives type edges using both visible nodes and known repository types.
 func semanticTypeEdgesWithKnownTypes(nodes []parser.Node, knownTypes []parser.Node) []semanticEdge {
 	edges := receiverOwnershipEdges(nodes)
 	edges = append(edges, typeUsageEdges(nodes, knownTypes)...)
 	return edges
 }
 
+// receiverOwnershipEdges connects Go receiver types to their methods.
 func receiverOwnershipEdges(nodes []parser.Node) []semanticEdge {
 	typeNames := map[string]bool{}
 	for _, node := range nodes {
@@ -57,6 +61,7 @@ func receiverOwnershipEdges(nodes []parser.Node) []semanticEdge {
 	return edges
 }
 
+// methodOwnerFullName resolves the owning type name for a method symbol.
 func methodOwnerFullName(methodFullName string, typeNames map[string]bool) (string, bool) {
 	for {
 		idx := strings.LastIndex(methodFullName, ".")
@@ -70,6 +75,7 @@ func methodOwnerFullName(methodFullName string, typeNames map[string]bool) (stri
 	}
 }
 
+// typeUsageEdges connects struct types to referenced field types.
 func typeUsageEdges(nodes []parser.Node, knownTypes []parser.Node) []semanticEdge {
 	typeNames := map[string]bool{}
 	byShortName := map[string]string{}
@@ -121,6 +127,7 @@ func typeUsageEdges(nodes []parser.Node, knownTypes []parser.Node) []semanticEdg
 	return edges
 }
 
+// typeSegments extracts candidate named type segments from a Go type expression.
 func typeSegments(typeName string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -142,6 +149,7 @@ func typeSegments(typeName string) []string {
 	return out
 }
 
+// isBuiltinGoTypeSegment reports whether builtin go type segment matches the expected condition.
 func isBuiltinGoTypeSegment(segment string) bool {
 	switch segment {
 	case "any", "bool", "byte", "comparable", "complex64", "complex128", "error",
@@ -154,6 +162,7 @@ func isBuiltinGoTypeSegment(segment string) bool {
 	}
 }
 
+// lastTypeSegment returns the final named segment of a Go type expression.
 func lastTypeSegment(typeName string) string {
 	t := strings.TrimSpace(typeName)
 	for strings.HasPrefix(t, "*") {

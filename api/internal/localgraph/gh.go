@@ -15,10 +15,12 @@ import (
 
 const ghPRJSONFields = "number,title,body,url,author,baseRefName,baseRefOid,headRefName,headRefOid,additions,deletions,state,isDraft,createdAt,updatedAt"
 
+// ghAuthor stores the fields used by the local CLI graph runtime.
 type ghAuthor struct {
 	Login string `json:"login"`
 }
 
+// ghPullRequest describes an inbound request for the local CLI graph runtime.
 type ghPullRequest struct {
 	Number      int       `json:"number"`
 	Title       string    `json:"title"`
@@ -37,11 +39,13 @@ type ghPullRequest struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+// ghAvailable reports whether the GitHub CLI is installed and usable.
 func ghAvailable() bool {
 	_, err := exec.LookPath("gh")
 	return err == nil
 }
 
+// listGHReviewItems lists GitHub review items for the local CLI graph runtime.
 func listGHReviewItems(ctx context.Context, opts Options) ([]models.QueuePR, error) {
 	root, err := repoRoot(ctx, opts.RepoDir)
 	if err != nil {
@@ -65,6 +69,7 @@ func listGHReviewItems(ctx context.Context, opts Options) ([]models.QueuePR, err
 	return items, nil
 }
 
+// loadGHPullRequestGraph loads GitHub pull request graph for the local CLI graph runtime.
 func loadGHPullRequestGraph(ctx context.Context, opts Options, reviewItemID string) (ReviewGraphPayload, error) {
 	number, ok := ghReviewItemNumber(reviewItemID)
 	if !ok {
@@ -98,6 +103,7 @@ func loadGHPullRequestGraph(ctx context.Context, opts Options, reviewItemID stri
 	return payload, nil
 }
 
+// loadGHPullRequest loads GitHub pull request for the local CLI graph runtime.
 func loadGHPullRequest(ctx context.Context, root string, number int) (ghPullRequest, error) {
 	out, err := runGH(ctx, root, "pr", "view", strconv.Itoa(number), "--json", ghPRJSONFields)
 	if err != nil {
@@ -113,6 +119,7 @@ func loadGHPullRequest(ctx context.Context, root string, number int) (ghPullRequ
 	return pr, nil
 }
 
+// ensureGHPullRequestRefs fetches hidden local refs for a GitHub pull request.
 func ensureGHPullRequestRefs(ctx context.Context, g gitClient, pr ghPullRequest) (string, string, error) {
 	headRef := ghPullRequestHeadRef(pr.Number)
 	if err := g.fetch(ctx, fmt.Sprintf("+pull/%d/head:%s", pr.Number, headRef)); err != nil {
@@ -146,6 +153,7 @@ func ensureGHPullRequestRefs(ctx context.Context, g gitClient, pr ghPullRequest)
 	return mergeBase, headRef, nil
 }
 
+// runGH runs GitHub for the local CLI graph runtime.
 func runGH(ctx context.Context, root string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	cmd.Dir = root
@@ -162,6 +170,7 @@ func runGH(ctx context.Context, root string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
+// ghPullRequestQueueItem maps a GitHub CLI PR response into a queue card.
 func ghPullRequestQueueItem(pr ghPullRequest) models.QueuePR {
 	body := localStringPtr(strings.TrimSpace(pr.Body))
 	updatedAt := pr.UpdatedAt
@@ -194,6 +203,7 @@ func ghPullRequestQueueItem(pr ghPullRequest) models.QueuePR {
 	}
 }
 
+// applyGHPullRequestMetadata applies GitHub pull request metadata to the local CLI graph runtime.
 func applyGHPullRequestMetadata(payload *ReviewGraphPayload, pr ghPullRequest, reviewItemID string) {
 	payload.Mode = "pull_request"
 	payload.Graph.PR = models.GraphPR{
@@ -225,10 +235,12 @@ func applyGHPullRequestMetadata(payload *ReviewGraphPayload, pr ghPullRequest, r
 	}
 }
 
+// ghReviewItemID builds the local review-item ID for a GitHub PR.
 func ghReviewItemID(number int) string {
 	return fmt.Sprintf("gh-pr-%d", number)
 }
 
+// ghReviewItemNumber parses a GitHub PR number from a review-item ID.
 func ghReviewItemNumber(id string) (int, bool) {
 	value, ok := strings.CutPrefix(id, "gh-pr-")
 	if !ok {
@@ -238,10 +250,12 @@ func ghReviewItemNumber(id string) (int, bool) {
 	return number, err == nil && number > 0
 }
 
+// ghPullRequestHeadRef returns the hidden local ref used for a GitHub PR head.
 func ghPullRequestHeadRef(number int) string {
 	return fmt.Sprintf("refs/isoprism/pr/%d/head", number)
 }
 
+// normalizeGHPRState normalizes ghpr state for the local CLI graph runtime.
 func normalizeGHPRState(state string) string {
 	switch strings.ToLower(state) {
 	case "closed":
@@ -253,6 +267,7 @@ func normalizeGHPRState(state string) string {
 	}
 }
 
+// firstNonEmpty returns the first matching non empty.
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -262,6 +277,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// localStringPtr returns a pointer to a local string value.
 func localStringPtr(value string) *string {
 	if strings.TrimSpace(value) == "" {
 		return nil

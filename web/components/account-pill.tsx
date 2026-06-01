@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+// AccountUser describes user data used by Isoprism.
 type AccountUser = {
   name: string;
   login: string;
@@ -21,6 +22,7 @@ const nonRepoRoutePrefixes = new Set([
   "repos",
 ]);
 
+// AccountPill renders the signed-in account control.
 export default function AccountPill({ variant = "fixed" }: { variant?: "fixed" | "panel" }) {
   const pathname = usePathname();
   const showOnThisRoute = variant === "panel" || isRepoRoute(pathname);
@@ -35,6 +37,7 @@ export default function AccountPill({ variant = "fixed" }: { variant?: "fixed" |
 
     let active = true;
 
+    // loadUser loads user for Isoprism.
     async function loadUser() {
       const { data } = await supabase.auth.getUser();
       if (!active) return;
@@ -157,6 +160,7 @@ export default function AccountPill({ variant = "fixed" }: { variant?: "fixed" |
   );
 }
 
+// isRepoRoute reports whether repo route matches the expected condition.
 function isRepoRoute(pathname: string | null) {
   if (!pathname) return false;
   const segments = pathname.split("/").filter(Boolean);

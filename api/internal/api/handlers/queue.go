@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// QueueHandler groups dependencies for the PR queue API.
 type QueueHandler struct {
 	DB *pgxpool.Pool
 }
@@ -60,6 +61,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	// queueRow stores the fields used by the PR queue API.
 	type queueRow struct {
 		pr           models.PullRequest
 		summary      string
@@ -144,6 +146,7 @@ func (h *QueueHandler) GetQueue(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"prs": prs})
 }
 
+// nilStrPtr returns nil for blank strings and a pointer otherwise.
 func nilStrPtr(s string) *string {
 	if s == "" {
 		return nil
@@ -151,6 +154,7 @@ func nilStrPtr(s string) *string {
 	return &s
 }
 
+// derivedRiskLabel maps a numeric risk score onto the legacy queue label.
 func derivedRiskLabel(score *int) *string {
 	if score == nil {
 		return nil

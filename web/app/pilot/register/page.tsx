@@ -7,6 +7,7 @@ import { registrationQuestions } from "@/lib/pilot-form-questions";
 
 const questionLabel = Object.fromEntries(registrationQuestions.map((question) => [question.key, question.label])) as Record<string, string>;
 
+// PilotRegisterPage renders the pilot register page for pilot forms.
 export default function PilotRegisterPage() {
   const [form, setForm] = useState({
     software_experience: "",
@@ -29,6 +30,7 @@ export default function PilotRegisterPage() {
 
   const interested = form.interested_in_pilot === "yes";
 
+  // submit submits the current form or feedback request.
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setStatus("submitting");
@@ -133,14 +135,17 @@ export default function PilotRegisterPage() {
   );
 }
 
+// Field renders a labeled form field.
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label style={fieldStyle}><span style={labelStyle}>{label}</span>{children}</label>;
 }
 
+// Textarea renders a labeled textarea field.
 function Textarea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <Field label={label}><textarea style={textareaStyle} value={value} onChange={(event) => onChange(event.target.value)} /></Field>;
 }
 
+// Segmented renders a segmented choice control.
 function Segmented({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
   return <div style={segmentedStyle}>{options.map((option) => <button key={option} type="button" style={value.toLowerCase() === option.toLowerCase() ? activeSegmentStyle : segmentStyle} onClick={() => onChange(option)}>{option}</button>)}</div>;
 }

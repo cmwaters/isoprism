@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "@/lib/api";
 import { questionsForForm } from "@/lib/pilot-form-questions";
 
+// PilotUser describes user data used by pilot administration.
 type PilotUser = {
   id: string;
   name: string;
@@ -26,6 +27,7 @@ type PilotUser = {
   questionnaire_submitted_at?: string | null;
 };
 
+// PilotForm describes pilot form data used by pilot administration.
 type PilotForm = {
   id: string;
   pilot_user_id?: string | null;
@@ -36,12 +38,14 @@ type PilotForm = {
   submitted_at: string;
 };
 
+// AdminRequestInit stores the fields used by pilot administration.
 type AdminRequestInit = RequestInit & {
   local?: boolean;
 };
 
 const PASSWORD_STORAGE_KEY = "isoprism_admin_password";
 
+// AdminPage renders the admin page for pilot administration.
 export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [savedPassword, setSavedPassword] = useState("");
@@ -66,6 +70,7 @@ export default function AdminPage() {
     }
   }, []);
 
+  // adminFetch sends an authenticated pilot-admin API request.
   async function adminFetch<T>(path: string, options?: AdminRequestInit, explicitPassword = activePassword): Promise<T> {
     const { local, ...fetchOptions } = options ?? {};
     const response = await fetch(local ? path : `${API_URL}${path}`, {
@@ -84,6 +89,7 @@ export default function AdminPage() {
     return response.json() as Promise<T>;
   }
 
+  // loadAll loads all for pilot administration.
   async function loadAll(explicitPassword = activePassword) {
     if (!explicitPassword) return;
     setLoading(true);
@@ -106,6 +112,7 @@ export default function AdminPage() {
     }
   }
 
+  // createManualUser creates manual user for pilot administration.
   async function createManualUser(event: React.FormEvent) {
     event.preventDefault();
     if (!manual.name.trim()) return;
@@ -130,6 +137,7 @@ export default function AdminPage() {
     }
   }
 
+  // runUserAction runs user action for pilot administration.
   async function runUserAction(user: PilotUser, action: "invite" | "review-email" | "delete") {
     const label = `${action}:${user.id}`;
     if (action === "delete" && !window.confirm(`Delete ${user.name}?`)) return;
@@ -262,6 +270,7 @@ export default function AdminPage() {
   );
 }
 
+// UserSection renders the user section for pilot administration.
 function UserSection({ title, users, forms, expanded, setExpanded, busy, onAction, onSelectForm }: {
   title: string;
   users: PilotUser[];
@@ -345,9 +354,11 @@ function UserSection({ title, users, forms, expanded, setExpanded, busy, onActio
   );
 }
 
+// CopyButton renders the copy button for pilot administration.
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
 
+  // copy copies a generated value to the clipboard.
   async function copy() {
     try {
       await navigator.clipboard.writeText(value);
@@ -365,10 +376,12 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
+// Info renders a labeled admin metadata row.
 function Info({ label, value }: { label: string; value: React.ReactNode }) {
   return <div><div style={smallLabelStyle}>{label}</div><div style={valueStyle}>{value}</div></div>;
 }
 
+// FormAnswers renders stored pilot form answers.
 function FormAnswers({ form }: { form: PilotForm }) {
   const answers = form.answers ?? {};
   const knownQuestions = questionsForForm(form.form_type);
@@ -388,6 +401,7 @@ function FormAnswers({ form }: { form: PilotForm }) {
   );
 }
 
+// AnswerBlock renders the answer block for pilot administration.
 function AnswerBlock({ label, value }: { label: string; value: unknown }) {
   return (
     <div style={answerBlockStyle}>
@@ -397,6 +411,7 @@ function AnswerBlock({ label, value }: { label: string; value: unknown }) {
   );
 }
 
+// formatAnswer formats answer for display.
 function formatAnswer(value: unknown) {
   if (value === null || value === undefined || value === "") return <span style={mutedStyle}>No response.</span>;
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -406,6 +421,7 @@ function formatAnswer(value: unknown) {
   return String(value);
 }
 
+// formatPlainValue formats plain value for display.
 function formatPlainValue(value: unknown) {
   if (value === null || value === undefined || value === "") return "No response";
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -413,32 +429,39 @@ function formatPlainValue(value: unknown) {
   return String(value);
 }
 
+// humanizeKey turns stored answer keys into readable labels.
 function humanizeKey(key: string) {
   return key
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+// Shell renders the shell for pilot administration.
 function Shell({ children }: { children: React.ReactNode }) {
   return <div style={{ minHeight: "100vh", background: "#EBE9E9", color: "#111111" }}>{children}</div>;
 }
 
+// Notice renders a status notice.
 function Notice({ children, tone }: { children: React.ReactNode; tone: "success" | "error" }) {
   return <div style={tone === "success" ? successStyle : errorStyle}>{children}</div>;
 }
 
+// Empty renders an empty-state message.
 function Empty({ children }: { children: React.ReactNode }) {
   return <div style={emptyStyle}>{children}</div>;
 }
 
+// formatDate formats date for display.
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+// titleCase capitalizes each word in a label.
 function titleCase(value: string) {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
+// repoDisplayName normalizes repository URLs into display names.
 function repoDisplayName(value?: string | null) {
   if (!value) return "No repo yet";
   return value
@@ -447,6 +470,7 @@ function repoDisplayName(value?: string | null) {
     .replace(/\/$/, "");
 }
 
+// repoLink returns the admin or GitHub URL for a pilot repository.
 function repoLink(user: PilotUser) {
   if (user.selected_repo_id && user.user_id) {
     return `/admin/repos/${encodeURIComponent(user.selected_repo_id)}?user=${encodeURIComponent(user.user_id)}`;
@@ -456,6 +480,7 @@ function repoLink(user: PilotUser) {
   return `https://github.com/${repoName}`;
 }
 
+// reviewFormLink builds the review-form URL from an invite link and token.
 function reviewFormLink(inviteLink: string, token: string) {
   if (inviteLink) {
     try {

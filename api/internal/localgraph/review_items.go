@@ -14,6 +14,7 @@ const (
 	localWorktreePRReviewID  = "local-worktree-pr"
 )
 
+// listReviewItems lists review items for the local CLI graph runtime.
 func listReviewItems(ctx context.Context, opts Options) ([]models.QueuePR, error) {
 	var items []models.QueuePR
 	localItems, err := listLocalReviewItems(ctx, opts)
@@ -30,6 +31,7 @@ func listReviewItems(ctx context.Context, opts Options) ([]models.QueuePR, error
 	return items, nil
 }
 
+// listLocalReviewItems lists local review items for the local CLI graph runtime.
 func listLocalReviewItems(ctx context.Context, opts Options) ([]models.QueuePR, error) {
 	root, err := repoRoot(ctx, opts.RepoDir)
 	if err != nil {
@@ -63,6 +65,7 @@ func listLocalReviewItems(ctx context.Context, opts Options) ([]models.QueuePR, 
 	return items, nil
 }
 
+// loadLocalReviewItemGraph loads local review item graph for the local CLI graph runtime.
 func loadLocalReviewItemGraph(ctx context.Context, opts Options, reviewItemID string) (ReviewGraphPayload, error) {
 	root, err := repoRoot(ctx, opts.RepoDir)
 	if err != nil {
@@ -129,6 +132,7 @@ func loadLocalReviewItemGraph(ctx context.Context, opts Options, reviewItemID st
 	return payload, nil
 }
 
+// localReviewItem builds a queue-compatible card for a local diff review.
 func localReviewItem(ctx context.Context, g gitClient, id, title, baseRef, headRef, baseBranch, headBranch, baseSHA, headSHA string) (models.QueuePR, bool) {
 	stats, err := g.diffNumstat(ctx, baseRef, headRef)
 	if err != nil {
@@ -165,6 +169,7 @@ func localReviewItem(ctx context.Context, g gitClient, id, title, baseRef, headR
 	}, true
 }
 
+// sumDiffStats totals additions and deletions across file stats.
 func sumDiffStats(stats map[string][2]int) (int, int) {
 	additions := 0
 	deletions := 0
@@ -175,6 +180,7 @@ func sumDiffStats(stats map[string][2]int) (int, int) {
 	return additions, deletions
 }
 
+// isLocalReviewItem reports whether local review item matches the expected condition.
 func isLocalReviewItem(id string) bool {
 	return id == localUncommittedReviewID || id == localWorktreePRReviewID
 }

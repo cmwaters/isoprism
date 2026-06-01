@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestBuildPRAnalysisPromptIncludesOtherFilesAsContextOnly verifies build PR analysis prompt includes other files as context only.
 func TestBuildPRAnalysisPromptIncludesOtherFilesAsContextOnly(t *testing.T) {
 	prompt := BuildPRAnalysisPrompt(PRAnalysisInput{
 		Title:       "Fix checkout handling",
@@ -43,6 +44,7 @@ func TestBuildPRAnalysisPromptIncludesOtherFilesAsContextOnly(t *testing.T) {
 	}
 }
 
+// TestParsePRAnalysisOutputValidatesShape verifies parse PR analysis output validates shape.
 func TestParsePRAnalysisOutputValidatesShape(t *testing.T) {
 	raw := "```json\n{\"changes\":[{\"full_name\":\"api.Handle\",\"change_summary\":\"Validates the checkout before sending mail.\"}],\"test_assertions\":[{\"name\":\"api.TestHandle\",\"assertion_summary\":\"Asserts checkout mail is sent.\"}],\"pr_summary\":\"This updates checkout handling and its tests.\",\"risk_score\":4}\n```"
 
@@ -61,6 +63,7 @@ func TestParsePRAnalysisOutputValidatesShape(t *testing.T) {
 	}
 }
 
+// TestParsePRAnalysisOutputRejectsInvalidRiskScore verifies parse PR analysis output rejects invalid risk score.
 func TestParsePRAnalysisOutputRejectsInvalidRiskScore(t *testing.T) {
 	_, err := ParsePRAnalysisOutput(`{"changes":[],"test_assertions":[],"pr_summary":"Summary.","risk_score":11}`)
 	if err == nil {
@@ -68,6 +71,7 @@ func TestParsePRAnalysisOutputRejectsInvalidRiskScore(t *testing.T) {
 	}
 }
 
+// TestParsePRAnalysisOutputRejectsMissingSummary verifies parse PR analysis output rejects missing summary.
 func TestParsePRAnalysisOutputRejectsMissingSummary(t *testing.T) {
 	_, err := ParsePRAnalysisOutput(`{"changes":[],"test_assertions":[],"risk_score":5}`)
 	if err == nil {

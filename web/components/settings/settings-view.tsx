@@ -10,12 +10,14 @@ import { getCachedSettingsRepos, warmSettingsRepos } from "@/lib/settings-cache"
 import { createClient } from "@/lib/supabase/client";
 import { RepoStatus, Repository } from "@/lib/types";
 
+// GitHubUser describes user data used by settings.
 type GitHubUser = {
   login: string;
   name: string;
   avatarURL?: string;
 };
 
+// IndexingStatus stores the fields used by settings.
 type IndexingStatus = RepoStatus & {
   index_phase?: string;
   index_message?: string;
@@ -39,6 +41,7 @@ type IndexingStatus = RepoStatus & {
   };
 };
 
+// SettingsView renders the settings view for settings.
 export function SettingsView({
   account,
 }: {
@@ -59,6 +62,7 @@ export function SettingsView({
   useEffect(() => {
     let active = true;
 
+    // loadSettings loads settings for settings.
     async function loadSettings() {
       setLoading(true);
       setError("");
@@ -131,6 +135,7 @@ export function SettingsView({
   const indexingRepo = repos.find((repo) => repo.id === indexingRepoID) ?? null;
   const filteredRepos = repos.filter((repo) => repo.full_name.toLowerCase().includes(search.toLowerCase()));
 
+  // selectRepo selects repo for settings.
   async function selectRepo(repo: Repository) {
     const { data: sessionData } = await supabase.auth.getSession();
     const nextToken = sessionData.session?.access_token;
@@ -171,6 +176,7 @@ export function SettingsView({
     }
   }
 
+  // markRepoReady marks repo ready in settings.
   function markRepoReady(repoID: string) {
     setRepos((current) => current.map((candidate) => candidate.id === repoID
       ? { ...candidate, index_status: "ready", is_selected: true, unused_at: undefined, purge_after: undefined }
@@ -179,6 +185,7 @@ export function SettingsView({
     setIndexingRepoID(null);
   }
 
+  // markRepoFailed marks repo failed in settings.
   function markRepoFailed(repoID: string) {
     setRepos((current) => current.map((candidate) => candidate.id === repoID
       ? { ...candidate, index_status: "failed" }
@@ -330,6 +337,7 @@ export function SettingsView({
   );
 }
 
+// SettingsShell renders the settings shell for settings.
 function SettingsShell({ children }: { children: React.ReactNode }) {
   return (
     <div style={shellStyle}>
@@ -338,6 +346,7 @@ function SettingsShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Notice renders a status notice.
 function Notice({ children, tone }: { children: React.ReactNode; tone: "error" | "neutral" }) {
   return (
     <div style={{
@@ -355,11 +364,13 @@ function Notice({ children, tone }: { children: React.ReactNode; tone: "error" |
   );
 }
 
+// repoStatusLabel returns the human label for a repository indexing state.
 function repoStatusLabel(repo: Repository) {
   if (repo.index_status === "ready" && !repo.unused_at) return "Indexed";
   return "Not indexed";
 }
 
+// InlineIndexingProgress renders compact indexing progress inside settings.
 function InlineIndexingProgress({
   repoID,
   token,
@@ -450,6 +461,7 @@ function InlineIndexingProgress({
   );
 }
 
+// stageCounter returns the current indexing counter text.
 function stageCounter(status: IndexingStatus | null) {
   const job = status?.index_job;
   if (!job) return "Starting";
@@ -469,6 +481,7 @@ function stageCounter(status: IndexingStatus | null) {
   return "Resolving default branch";
 }
 
+// formatETA formats ETA for display.
 function formatETA(seconds?: number) {
   if (!seconds || seconds < 20) return "Estimating time remaining";
   const minutes = Math.max(1, Math.round(seconds / 60));
@@ -661,6 +674,7 @@ const listStyle: React.CSSProperties = {
   gap: 8,
 };
 
+// repoButtonStyle returns the selectable repository row styles for settings.
 const repoButtonStyle = (selected: boolean): React.CSSProperties => ({
   width: "100%",
   minHeight: 58,

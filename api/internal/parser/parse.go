@@ -33,11 +33,13 @@ type Node struct {
 	IsEntrypoint bool
 }
 
+// Param stores the fields used by semantic parsing.
 type Param struct {
 	Name string `json:"name,omitempty"`
 	Type string `json:"type"`
 }
 
+// parsedFile stores the fields used by semantic parsing.
 type parsedFile struct {
 	tree *sitter.Tree
 	root *sitter.Node
@@ -63,6 +65,7 @@ func Parse(src []byte, filePath string) []Node {
 	}
 }
 
+// languageFor returns the parser language for a file path.
 func languageFor(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".go":
@@ -101,11 +104,13 @@ func IsTestFile(path string) bool {
 	}
 }
 
+// bodyHash hashes a component body for semantic change detection.
 func bodyHash(src []byte) string {
 	h := sha256.Sum256(src)
 	return fmt.Sprintf("%x", h)[:16]
 }
 
+// parseTree parses tree for semantic parsing.
 func parseTree(src []byte, filePath string) (parsedFile, bool) {
 	var lang *sitter.Language
 	switch strings.ToLower(filepath.Ext(filePath)) {
@@ -133,6 +138,7 @@ func parseTree(src []byte, filePath string) (parsedFile, bool) {
 	return parsedFile{tree: tree, root: tree.RootNode()}, true
 }
 
+// parseGoTree parses go tree for semantic parsing.
 func parseGoTree(src []byte, filePath string, root *sitter.Node) []Node {
 	pkg := goPackageName(src, root)
 	prefix := goPackagePrefix(filePath, pkg)
@@ -192,6 +198,7 @@ func parseGoTree(src []byte, filePath string, root *sitter.Node) []Node {
 	return nodes
 }
 
+// makeGoNode builds a parser node for a Go declaration.
 func makeGoNode(src []byte, filePath string, n *sitter.Node, name, fullName, kind string, isTest bool) Node {
 	return Node{
 		Name:         name,
@@ -211,6 +218,7 @@ func makeGoNode(src []byte, filePath string, n *sitter.Node, name, fullName, kin
 	}
 }
 
+// makeBaseNode builds the common parser node fields.
 func makeBaseNode(src []byte, filePath string, n *sitter.Node, name, fullName, lang, kind string, isTest, isEntrypoint bool) Node {
 	return Node{
 		Name:         name,
@@ -228,6 +236,7 @@ func makeBaseNode(src []byte, filePath string, n *sitter.Node, name, fullName, l
 	}
 }
 
+// goPackageName returns the Go package declared by a parsed file.
 func goPackageName(src []byte, root *sitter.Node) string {
 	var pkg string
 	walk(root, func(n *sitter.Node) bool {
@@ -246,6 +255,7 @@ func goPackageName(src []byte, root *sitter.Node) string {
 	return pkg
 }
 
+// goPackagePrefix builds the fully qualified symbol prefix for a Go file.
 func goPackagePrefix(filePath, pkg string) string {
 	dir := filepath.ToSlash(filepath.Dir(filePath))
 	if dir == "." || dir == "" {
@@ -254,6 +264,7 @@ func goPackagePrefix(filePath, pkg string) string {
 	return dir + ":" + pkg
 }
 
+// goReceiverName returns the receiver type name for a Go method.
 func goReceiverName(src []byte, receiver *sitter.Node) string {
 	if receiver == nil {
 		return ""
@@ -271,6 +282,7 @@ func goReceiverName(src []byte, receiver *sitter.Node) string {
 	return strings.TrimPrefix(names[len(names)-1], "*")
 }
 
+// goParams extracts Go function parameters.
 func goParams(src []byte, params *sitter.Node) []Param {
 	if params == nil {
 		return nil
@@ -294,6 +306,7 @@ func goParams(src []byte, params *sitter.Node) []Param {
 	return out
 }
 
+// goOutputs extracts Go function result parameters.
 func goOutputs(src []byte, result *sitter.Node) []Param {
 	if result == nil {
 		return nil
@@ -304,6 +317,7 @@ func goOutputs(src []byte, result *sitter.Node) []Param {
 	return goParams(src, result)
 }
 
+// goStructFields extracts named fields from a Go struct type.
 func goStructFields(src []byte, structNode *sitter.Node) []Param {
 	if structNode == nil {
 		return nil
@@ -327,6 +341,7 @@ func goStructFields(src []byte, structNode *sitter.Node) []Param {
 	return out
 }
 
+// parseScriptTree parses script tree for semantic parsing.
 func parseScriptTree(src []byte, filePath, lang string, root *sitter.Node) []Node {
 	prefix := scriptModulePrefix(filePath)
 	isTestFile := IsTestFile(filePath)
@@ -393,18 +408,21 @@ func parseScriptTree(src []byte, filePath, lang string, root *sitter.Node) []Nod
 	return nodes
 }
 
+// makeScriptNode builds a parser node for a script declaration.
 func makeScriptNode(src []byte, filePath string, n *sitter.Node, name, fullName, lang, kind string, isTest bool) Node {
 	node := makeBaseNode(src, filePath, n, name, fullName, lang, kind, isTest, false)
 	node.Inputs = scriptParams(src, n.ChildByFieldName("parameters"))
 	return node
 }
 
+// scriptModulePrefix builds the module prefix for a JavaScript or TypeScript file.
 func scriptModulePrefix(filePath string) string {
 	ext := filepath.Ext(filePath)
 	noExt := strings.TrimSuffix(filepath.ToSlash(filePath), ext)
 	return noExt
 }
 
+// scriptParams extracts script function parameters.
 func scriptParams(src []byte, params *sitter.Node) []Param {
 	if params == nil {
 		return nil
@@ -430,6 +448,7 @@ func scriptParams(src []byte, params *sitter.Node) []Param {
 	return out
 }
 
+// enclosingClassName returns the nearest enclosing class name.
 func enclosingClassName(src []byte, n *sitter.Node) string {
 	for p := n.Parent(); p != nil; p = p.Parent() {
 		if p.Kind() == "class_declaration" {
@@ -439,6 +458,7 @@ func enclosingClassName(src []byte, n *sitter.Node) string {
 	return ""
 }
 
+// childText returns the text of a named child field.
 func childText(src []byte, n *sitter.Node, field string) string {
 	child := n.ChildByFieldName(field)
 	if child == nil {
@@ -447,6 +467,7 @@ func childText(src []byte, n *sitter.Node, field string) string {
 	return text(src, child)
 }
 
+// childTextsByKinds returns child node texts that match requested kinds.
 func childTextsByKinds(src []byte, n *sitter.Node, kinds ...string) []string {
 	allowed := map[string]bool{}
 	for _, kind := range kinds {
@@ -462,6 +483,7 @@ func childTextsByKinds(src []byte, n *sitter.Node, kinds ...string) []string {
 	return out
 }
 
+// nodeBytes returns the source bytes covered by a tree-sitter node.
 func nodeBytes(src []byte, n *sitter.Node) []byte {
 	start, end := int(n.StartByte()), int(n.EndByte())
 	if start < 0 || end > len(src) || start > end {
@@ -470,10 +492,12 @@ func nodeBytes(src []byte, n *sitter.Node) []byte {
 	return src[start:end]
 }
 
+// text returns the source text covered by a tree-sitter node.
 func text(src []byte, n *sitter.Node) string {
 	return string(nodeBytes(src, n))
 }
 
+// docCommentAbove extracts the contiguous doc comment above a declaration.
 func docCommentAbove(src []byte, startLine int) string {
 	if startLine <= 1 {
 		return ""
@@ -517,6 +541,7 @@ func docCommentAbove(src []byte, startLine int) string {
 	return cleanDocComment(raw)
 }
 
+// cleanDocComment strips comment markers from captured documentation.
 func cleanDocComment(lines []string) string {
 	cleaned := make([]string, 0, len(lines))
 	for _, line := range lines {
@@ -537,6 +562,7 @@ func cleanDocComment(lines []string) string {
 	return strings.TrimSpace(strings.Join(cleaned, "\n"))
 }
 
+// walk visits a tree-sitter subtree until a visitor stops descent.
 func walk(n *sitter.Node, visit func(*sitter.Node) bool) {
 	if n == nil {
 		return
@@ -549,6 +575,7 @@ func walk(n *sitter.Node, visit func(*sitter.Node) bool) {
 	}
 }
 
+// forEachDescendant visits descendants of a requested tree-sitter kind.
 func forEachDescendant(n *sitter.Node, kind string, fn func(*sitter.Node)) {
 	walk(n, func(child *sitter.Node) bool {
 		if child.Kind() == kind {
@@ -559,6 +586,7 @@ func forEachDescendant(n *sitter.Node, kind string, fn func(*sitter.Node)) {
 	})
 }
 
+// leafName returns the final segment of a qualified symbol name.
 func leafName(name string) string {
 	if idx := strings.LastIndex(name, "."); idx >= 0 {
 		return name[idx+1:]

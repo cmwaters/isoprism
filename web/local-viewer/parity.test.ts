@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+// read reads a local file as UTF-8 text for the parity test.
 function read(path: string) {
   return readFileSync(new URL(path, import.meta.url), "utf8");
 }

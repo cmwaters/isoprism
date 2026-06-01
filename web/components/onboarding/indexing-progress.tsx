@@ -6,11 +6,13 @@ import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/api";
 import { RepoStatus } from "@/lib/types";
 
+// Props describes the props consumed by this component.
 interface Props {
   repoID: string;
   repoName: string;
 }
 
+// IndexingStatus stores the fields used by onboarding.
 type IndexingStatus = RepoStatus & {
   index_phase?: string;
   index_message?: string;
@@ -34,6 +36,7 @@ type IndexingStatus = RepoStatus & {
   };
 };
 
+// IndexingProgress renders the indexing progress card during onboarding.
 export default function IndexingProgress({ repoID, repoName }: Props) {
   const router = useRouter();
   const supabase = createClient();
@@ -142,6 +145,7 @@ export default function IndexingProgress({ repoID, repoName }: Props) {
   );
 }
 
+// stageCounter returns the current indexing counter text.
 function stageCounter(status: IndexingStatus | null) {
   const job = status?.index_job;
   if (!job) return "Starting";
@@ -161,6 +165,7 @@ function stageCounter(status: IndexingStatus | null) {
   return "Resolving default branch";
 }
 
+// formatETA formats ETA for display.
 function formatETA(seconds?: number) {
   if (!seconds || seconds < 20) return "Estimating time remaining";
   const minutes = Math.max(1, Math.round(seconds / 60));
@@ -168,6 +173,7 @@ function formatETA(seconds?: number) {
   return `About ${minutes} minutes remaining`;
 }
 
+// GitHubIcon renders the GitHub icon for onboarding.
 function GitHubIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="#888888">

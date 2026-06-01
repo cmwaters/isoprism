@@ -1,6 +1,7 @@
 import { API_URL } from "@/lib/api";
 import { NextRequest, NextResponse } from "next/server";
 
+// RouteContext stores the fields used by Isoprism.
 type RouteContext = {
   params: Promise<{
     userID: string;
@@ -8,6 +9,7 @@ type RouteContext = {
   }>;
 };
 
+// POST proxies pilot admin actions from Next.js to the Go API.
 export async function POST(request: NextRequest, context: RouteContext) {
   const { userID, action } = await context.params;
   if (action !== "invite" && action !== "review-email") {

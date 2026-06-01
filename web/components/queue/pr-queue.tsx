@@ -4,11 +4,13 @@ import { useRouter } from "next/navigation";
 import { QueuePR } from "@/lib/types";
 import { useEffect, useState } from "react";
 
+// Props describes the props consumed by this component.
 interface Props {
   prs: QueuePR[];
   repoID: string;
 }
 
+// PRQueue renders the PR queue for the PR queue.
 export default function PRQueue({ prs, repoID }: Props) {
   const router = useRouter();
 
@@ -26,6 +28,7 @@ export default function PRQueue({ prs, repoID }: Props) {
   );
 }
 
+// PRCard renders the PR card for the PR queue.
 function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: () => void }) {
   const timeLabel = useOpenTimeLabel(pr.opened_at);
 
@@ -78,6 +81,7 @@ function PRCard({ pr, isTop, onClick }: { pr: QueuePR; isTop: boolean; onClick: 
   );
 }
 
+// Badge renders a compact metadata badge.
 function Badge({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <span style={{
@@ -97,14 +101,17 @@ function Badge({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
+// Dot renders a colored status dot.
 function Dot({ color }: { color: string }) {
   return <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block" }} />;
 }
 
+// capitalize capitalizes a short display label.
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// useOpenTimeLabel keeps open time label current for React rendering.
 function useOpenTimeLabel(openedAt: string): string {
   const [nowMs, setNowMs] = useState<number | null>(null);
 

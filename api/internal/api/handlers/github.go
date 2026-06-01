@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// GitHubHandler groups dependencies for GitHub webhook and installation handling.
 type GitHubHandler struct {
 	DB            *pgxpool.Pool
 	AppClient     *github.AppClient
@@ -386,6 +387,7 @@ func (h *GitHubHandler) HandleInstallationCallback(w http.ResponseWriter, r *htt
 	http.Redirect(w, r, redirectBaseURL+redirectPath, http.StatusFound)
 }
 
+// userIDForInstallation finds the user currently associated with a GitHub installation.
 func (h *GitHubHandler) userIDForInstallation(ctx context.Context, dbInstallationID string) string {
 	var userID string
 	_ = h.DB.QueryRow(ctx, `
@@ -404,6 +406,7 @@ func (h *GitHubHandler) userIDForInstallation(ctx context.Context, dbInstallatio
 	return userID
 }
 
+// installationCallbackRedirectPath chooses where GitHub should redirect after installation.
 func (h *GitHubHandler) installationCallbackRedirectPath(ctx context.Context, userID string) (string, bool) {
 	if userID == "" {
 		return "/onboarding/repos", false
@@ -441,6 +444,7 @@ func (h *GitHubHandler) installationCallbackRedirectPath(ctx context.Context, us
 	return "/onboarding/repos", false
 }
 
+// callbackQueryKeys returns sorted callback query keys for diagnostics.
 func callbackQueryKeys(r *http.Request) []string {
 	keys := make([]string, 0, len(r.URL.Query()))
 	for key := range r.URL.Query() {
@@ -450,11 +454,13 @@ func callbackQueryKeys(r *http.Request) []string {
 	return keys
 }
 
+// installState represents UI or workflow state for GitHub webhook and installation handling.
 type installState struct {
 	UserID      string `json:"user_id"`
 	FrontendURL string `json:"frontend_url"`
 }
 
+// parseInstallState parses install state for GitHub webhook and installation handling.
 func (h *GitHubHandler) parseInstallState(raw string) (string, string) {
 	redirectBaseURL := h.FrontendURL
 	if raw == "" {
@@ -476,6 +482,7 @@ func (h *GitHubHandler) parseInstallState(raw string) (string, string) {
 	return state.UserID, redirectBaseURL
 }
 
+// isAllowedFrontendURL reports whether allowed frontend URL matches the expected condition.
 func (h *GitHubHandler) isAllowedFrontendURL(frontendURL string) bool {
 	for _, allowed := range h.FrontendURLs {
 		if frontendURL == allowed {
@@ -485,6 +492,7 @@ func (h *GitHubHandler) isAllowedFrontendURL(frontendURL string) bool {
 	return false
 }
 
+// splitRepoName splits repo name into usable parts.
 func splitRepoName(fullName string) []string {
 	parts := strings.SplitN(fullName, "/", 2)
 	if len(parts) != 2 {

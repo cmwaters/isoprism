@@ -6,6 +6,7 @@ import { API_URL } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
+// RootPage renders the root page for Isoprism.
 export default async function RootPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -36,6 +37,7 @@ export default async function RootPage() {
   redirect(redirectPath);
 }
 
+// WorkInProgressPage renders the work in progress page for Isoprism.
 function WorkInProgressPage() {
   return (
     <main style={pageStyle}>

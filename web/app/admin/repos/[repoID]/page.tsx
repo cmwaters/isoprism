@@ -8,6 +8,7 @@ import GraphCanvas from "@/components/graph/graph-canvas";
 import { API_URL } from "@/lib/api";
 import type { QueueResponse, RepoGraphResponse, RepoProgramsResponse, Repository } from "@/lib/types";
 
+// PilotUser describes user data used by pilot administration.
 type PilotUser = {
   id: string;
   name: string;
@@ -18,6 +19,7 @@ type PilotUser = {
 
 const PASSWORD_STORAGE_KEY = "isoprism_admin_password";
 
+// AdminRepoPage renders the admin repo page for pilot administration.
 export default function AdminRepoPage() {
   const params = useParams<{ repoID: string }>();
   const searchParams = useSearchParams();
@@ -33,6 +35,7 @@ export default function AdminRepoPage() {
   useEffect(() => {
     let cancelled = false;
 
+    // load loads data for the enclosing route or component.
     async function load() {
       const password = window.localStorage.getItem(PASSWORD_STORAGE_KEY) ?? "";
       if (!password) {
@@ -107,12 +110,14 @@ export default function AdminRepoPage() {
   return <GraphCanvas graph={graph} prs={prs} repoID={repo.id} repo={repo} token={token} />;
 }
 
+// adminViewToken builds an unsigned admin-view token for viewing a pilot repo.
 function adminViewToken(userID: string) {
   const header = base64URL(JSON.stringify({ alg: "none", typ: "JWT" }));
   const payload = base64URL(JSON.stringify({ sub: userID }));
   return `${header}.${payload}.`;
 }
 
+// base64URL encodes a string with base64url characters.
 function base64URL(value: string) {
   return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
