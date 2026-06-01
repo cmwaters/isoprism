@@ -1,0 +1,4 @@
+interface:
+  display_name: "Isoprism"
+  short_description: "Use Isoprism for semantic PR review"
+  default_prompt: "Use $isoprism to review my current changes with Isoprism."
