@@ -135,3 +135,5 @@ The adapter maps that interface to the local API. The shared components should n
 ## Performance Rule
 
 The daemon should not rebuild the full semantic tree separately for every metadata endpoint. Session/repo/program/review requests should share a generated snapshot keyed by repo root, cache directory, and git SHA. This is especially important for `/local`, where startup currently performs multiple graph-building requests.
+
+The current embedded viewer startup path should fetch `GET /api/v1/repos/local/programs` as the single graph-building boot request because that response includes both repo metadata and programs. Cheap ancillary requests, such as the empty local queue, may run in parallel.

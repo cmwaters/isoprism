@@ -26,15 +26,16 @@ function LocalViewer() {
 
     async function load() {
       try {
-        const repo = await localFetch<Repository>("/api/v1/local/repo");
-        const queue = await localFetch<QueueResponse>("/api/v1/repos/local/queue").catch(() => ({ prs: [] }));
-        const programs = await localFetch<RepoProgramsResponse>("/api/v1/repos/local/programs").catch(() => ({ repo, programs: [] }));
+        const [programs, queue] = await Promise.all([
+          localFetch<RepoProgramsResponse>("/api/v1/repos/local/programs"),
+          localFetch<QueueResponse>("/api/v1/repos/local/queue").catch(() => ({ prs: [] })),
+        ]);
         if (cancelled) return;
         setState({
           status: "ready",
-          repo,
+          repo: programs.repo,
           prs: queue.prs,
-          graph: { repo, programs: programs.programs, nodes: [], edges: [] },
+          graph: { repo: programs.repo, programs: programs.programs, nodes: [], edges: [] },
         });
       } catch (error) {
         if (cancelled) return;
