@@ -87,6 +87,42 @@ func TestLoadTreeGraphSkipsFilesOverSemanticSizeCap(t *testing.T) {
 	}
 }
 
+func TestGenerateDiffIncludesUntrackedWorktreeFiles(t *testing.T) {
+	ctx := context.Background()
+	root := initLocalGraphTestRepo(t)
+	writeTestFile(t, root, "new.go", "package main\n\nfunc untracked() {}\n")
+
+	payload, err := GenerateDiff(ctx, Options{RepoDir: root, Args: []string{"HEAD", "worktree"}, CacheDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundFile := false
+	for _, file := range payload.Graph.Files {
+		if file.Filename == "new.go" {
+			foundFile = true
+			if file.Status != "added" {
+				t.Fatalf("status = %q, want added", file.Status)
+			}
+			if file.Additions != 3 || file.Deletions != 0 {
+				t.Fatalf("stats = +%d/-%d, want +3/-0", file.Additions, file.Deletions)
+			}
+		}
+	}
+	if !foundFile {
+		t.Fatal("new.go not included in worktree diff files")
+	}
+	foundNode := false
+	for _, node := range payload.Graph.Nodes {
+		if node.FilePath == "new.go" && node.ChangeType != nil && *node.ChangeType == "added" {
+			foundNode = true
+		}
+	}
+	if !foundNode {
+		t.Fatal("untracked function node not included as added")
+	}
+}
+
 func initLocalGraphTestRepo(t *testing.T) string {
 	t.Helper()
 

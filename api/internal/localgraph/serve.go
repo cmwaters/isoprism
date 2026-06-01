@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/isoprism/api/internal/models"
 )
@@ -47,7 +48,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	apiBase := "http://" + host + ":" + strconv.Itoa(port)
 	webURL := ""
 	if !opts.NoWeb {
-		webURL = apiBase + "/local"
+		webURL = apiBase
 	}
 
 	if opts.NoWeb {
@@ -135,6 +136,8 @@ func validWebDir(candidate string) (string, bool) {
 func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Handler {
 	mux := http.NewServeMux()
 	opts := Options{RepoDir: root, CacheDir: cacheDir}
+	var reviewPayloadMu sync.RWMutex
+	reviewPayloads := map[string]ReviewGraphPayload{}
 
 	if serveEmbeddedViewer {
 		handleEmbeddedViewer(mux)
@@ -147,6 +150,10 @@ func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Hand
 		}
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
+			return
+		}
+		if serveEmbeddedViewer {
+			embeddedIndex(w, r)
 			return
 		}
 		if webURL != "" {
@@ -164,7 +171,26 @@ func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Hand
 		payload, err := GenerateDiff(r.Context(), opts)
 		writeJSON(w, payload, err)
 	})
-	mux.HandleFunc("/api/v1/local/review/compare", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/session", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		repo, err := LoadRepoMetadata(r.Context(), opts)
+		if err != nil {
+			writeJSON(w, nil, err)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"id":   "local",
+			"mode": "local",
+			"repo": repo,
+			"capabilities": map[string]any{
+				"canCompareRefs":     true,
+				"canReadWorkingTree": true,
+				"canReadGitIndex":    true,
+				"canUseGh":           ghAvailable(),
+			},
+		}, nil)
+	})
+	mux.HandleFunc("/api/review/compare", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
 		if r.Method == http.MethodOptions {
 			return
@@ -200,34 +226,66 @@ func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Hand
 			writeJSON(w, nil, err)
 			return
 		}
+		reviewPayloadMu.Lock()
+		reviewPayloads[payload.Graph.PR.ID] = payload
+		reviewPayloadMu.Unlock()
 		writeJSON(w, payload.Graph, nil)
 	})
-	mux.HandleFunc("/api/v1/local/repo", func(w http.ResponseWriter, r *http.Request) {
+	handleRepo := func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
-		data, err := GenerateRepo(r.Context(), opts)
-		writeJSON(w, data.Repo, err)
+		repo, err := LoadRepoMetadata(r.Context(), opts)
+		writeJSON(w, repo, err)
+	}
+	mux.HandleFunc("/api/repo", handleRepo)
+	mux.HandleFunc("/api/review-items", func(w http.ResponseWriter, r *http.Request) {
+		withCORS(w)
+		items, err := listReviewItems(r.Context(), opts)
+		if err != nil {
+			items = []models.QueuePR{}
+		}
+		writeJSON(w, map[string]any{"review_items": items}, nil)
 	})
-	mux.HandleFunc("/api/v1/repos/local/queue", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/review-items/", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
-		writeJSON(w, map[string]any{"prs": []models.QueuePR{}}, nil)
+		id := strings.TrimPrefix(r.URL.Path, "/api/review-items/")
+		id = strings.TrimSuffix(id, "/graph")
+		reviewPayloadMu.RLock()
+		payload, exists := reviewPayloads[id]
+		reviewPayloadMu.RUnlock()
+		if !exists {
+			var err error
+			if isLocalReviewItem(id) {
+				payload, err = loadLocalReviewItemGraph(r.Context(), opts, id)
+			} else {
+				payload, err = loadGHPullRequestGraph(r.Context(), opts, id)
+			}
+			if err != nil {
+				writeJSON(w, nil, err)
+				return
+			}
+			reviewPayloadMu.Lock()
+			reviewPayloads[id] = payload
+			reviewPayloadMu.Unlock()
+		}
+		writeJSON(w, payload.Graph, nil)
 	})
-	mux.HandleFunc("/api/v1/repos/local/programs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/programs", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
-		data, err := GenerateRepo(r.Context(), opts)
+		data, err := LoadCommitGraph(r.Context(), opts)
 		if err != nil {
 			writeJSON(w, nil, err)
 			return
 		}
 		writeJSON(w, models.RepoProgramsResponse{Repo: data.Repo, Programs: data.Programs}, nil)
 	})
-	mux.HandleFunc("/api/v1/repos/local/programs/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/programs/", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
-		id := strings.TrimPrefix(r.URL.Path, "/api/v1/repos/local/programs/")
+		id := strings.TrimPrefix(r.URL.Path, "/api/programs/")
 		id = strings.TrimSuffix(id, "/graph")
 		graph, _, err := ProgramGraph(r.Context(), opts, id)
 		writeJSON(w, graph, err)
 	})
-	mux.HandleFunc("/api/v1/repos/local/graph/expand", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/graph/expand", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
 		if r.Method == http.MethodOptions {
 			return
@@ -240,11 +298,28 @@ func localMux(root, cacheDir, webURL string, serveEmbeddedViewer bool) http.Hand
 		response, _, err := ExpandGraph(r.Context(), opts, req.NodeID, req.VisibleNodeIDs)
 		writeJSON(w, response, err)
 	})
-	mux.HandleFunc("/api/v1/repos/local/nodes/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/nodes/", func(w http.ResponseWriter, r *http.Request) {
 		withCORS(w)
-		id := strings.TrimPrefix(r.URL.Path, "/api/v1/repos/local/nodes/")
+		id := strings.TrimPrefix(r.URL.Path, "/api/nodes/")
 		id = strings.TrimSuffix(id, "/code")
-		data, err := GenerateRepo(r.Context(), opts)
+		reviewItemID := strings.TrimSpace(r.URL.Query().Get("review_item_id"))
+		if reviewItemID != "" {
+			reviewPayloadMu.RLock()
+			payload, exists := reviewPayloads[reviewItemID]
+			reviewPayloadMu.RUnlock()
+			if !exists {
+				http.NotFound(w, r)
+				return
+			}
+			code, ok := localReviewNodeCode(payload, id)
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			writeJSON(w, code, nil)
+			return
+		}
+		data, err := LoadCommitGraph(r.Context(), opts)
 		if err != nil {
 			writeJSON(w, nil, err)
 			return
@@ -264,9 +339,7 @@ func handleEmbeddedViewer(mux *http.ServeMux) {
 		panic(err)
 	}
 	assets := http.FileServer(http.FS(viewerFS))
-	mux.Handle("/local/assets/", http.StripPrefix("/local/", assets))
-	mux.HandleFunc("/local", embeddedIndex)
-	mux.HandleFunc("/local/", embeddedIndex)
+	mux.Handle("/assets/", assets)
 }
 
 func embeddedIndex(w http.ResponseWriter, r *http.Request) {
@@ -291,6 +364,61 @@ func withCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+}
+
+func localReviewNodeCode(payload ReviewGraphPayload, nodeID string) (models.NodeCodeResponse, bool) {
+	node, ok := findReviewNode(payload.Graph, nodeID)
+	if !ok {
+		return models.NodeCodeResponse{}, false
+	}
+	sources, _ := payload.Metadata["sources"].(map[string]string)
+	source := sources[nodeID]
+	patch := node.DiffHunk
+	if source == "" && patch == nil {
+		return models.NodeCodeResponse{}, false
+	}
+
+	response := models.NodeCodeResponse{
+		NodeID:     node.ID,
+		FilePath:   node.FilePath,
+		Language:   node.Language,
+		DiffHunk:   patch,
+		ChangeType: node.ChangeType,
+	}
+	if source != "" {
+		segment := &models.NodeCodeSegment{
+			CommitSHA: payload.Graph.PR.HeadCommitSHA,
+			StartLine: node.LineStart,
+			EndLine:   node.LineEnd,
+			Source:    source,
+		}
+		if node.ChangeType != nil && *node.ChangeType == "deleted" {
+			segment.CommitSHA = payload.Graph.PR.BaseCommitSHA
+			response.Base = segment
+		} else {
+			response.Head = segment
+		}
+	}
+	return response, true
+}
+
+func findReviewNode(graph models.GraphResponse, nodeID string) (models.GraphNode, bool) {
+	for _, node := range graph.Nodes {
+		if node.ID == nodeID {
+			return node, true
+		}
+	}
+	for _, node := range graph.TestChanges {
+		if node.ID == nodeID {
+			return node, true
+		}
+	}
+	for _, node := range graph.TestContext {
+		if node.ID == nodeID {
+			return node, true
+		}
+	}
+	return models.GraphNode{}, false
 }
 
 func writeJSON(w http.ResponseWriter, value any, err error) {

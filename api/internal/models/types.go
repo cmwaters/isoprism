@@ -279,6 +279,8 @@ type GraphPR struct {
 	Number        int    `json:"number"`
 	Title         string `json:"title"`
 	HTMLURL       string `json:"html_url"`
+	BaseBranch    string `json:"base_branch,omitempty"`
+	HeadBranch    string `json:"head_branch,omitempty"`
 	BaseCommitSHA string `json:"base_commit_sha"`
 	HeadCommitSHA string `json:"head_commit_sha"`
 	Body          string `json:"body"`

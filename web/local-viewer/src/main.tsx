@@ -10,6 +10,10 @@ type LoadState =
   | { status: "error"; message: string }
   | { status: "ready"; graph: RepoGraphResponse; prs: QueueResponse["prs"]; repo: Repository };
 
+type ReviewItemsResponse = {
+  review_items: QueueResponse["prs"];
+};
+
 async function localFetch<T>(path: string): Promise<T> {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) {
@@ -27,14 +31,14 @@ function LocalViewer() {
     async function load() {
       try {
         const [programs, queue] = await Promise.all([
-          localFetch<RepoProgramsResponse>("/api/v1/repos/local/programs"),
-          localFetch<QueueResponse>("/api/v1/repos/local/queue").catch(() => ({ prs: [] })),
+          localFetch<RepoProgramsResponse>("/api/programs"),
+          localFetch<ReviewItemsResponse>("/api/review-items").catch(() => ({ review_items: [] })),
         ]);
         if (cancelled) return;
         setState({
           status: "ready",
           repo: programs.repo,
-          prs: queue.prs,
+          prs: queue.review_items,
           graph: { repo: programs.repo, programs: programs.programs, nodes: [], edges: [] },
         });
       } catch (error) {

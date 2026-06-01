@@ -132,6 +132,8 @@ export interface GraphPR {
   number: number;
   title: string;
   html_url: string;
+  base_branch?: string;
+  head_branch?: string;
   base_commit_sha: string;
   head_commit_sha: string;
   body: string;

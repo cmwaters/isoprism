@@ -6,13 +6,13 @@ export const dynamic = "force-dynamic";
 
 export default async function LocalRepoPage() {
   const [programs, queue] = await Promise.all([
-    localFetch<RepoProgramsResponse>("/api/v1/repos/local/programs"),
-    localFetch<QueueResponse>("/api/v1/repos/local/queue").catch(() => ({ prs: [] })),
+    localFetch<RepoProgramsResponse>("/api/programs"),
+    localFetch<{ review_items: QueueResponse["prs"] }>("/api/review-items").catch(() => ({ review_items: [] })),
   ]);
   const repo = programs.repo;
   const graph: RepoGraphResponse = { repo, programs: programs.programs, nodes: [], edges: [] };
 
-  return <LocalRepoGraph graph={graph} prs={queue.prs} repo={repo} />;
+  return <LocalRepoGraph graph={graph} prs={queue.review_items} repo={repo} />;
 }
 
 async function localFetch<T>(path: string): Promise<T> {

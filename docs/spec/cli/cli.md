@@ -88,6 +88,22 @@ The CLI detects the default branch in this order:
 4. local `master`
 5. fail loudly and ask for explicit refs
 
-## Future `gh` Integration
+## `gh` Pull Request Integration
 
-Future CLI work should use `gh` from the daemon process, not from React. `gh` can provide PR metadata and issue context for local `reviewItems` while keeping the API local-specific and the UI product-neutral.
+`isoprism serve` uses `gh` from the daemon process when the GitHub CLI is installed and authenticated for the current checkout. React never shells out to `gh`.
+
+The daemon uses:
+
+```bash
+gh pr list --state open --limit 50 --json ...
+gh pr view <number> --json ...
+```
+
+Open PRs are exposed as local review items in the browser side panel. Selecting a PR fetches its head ref into a hidden local ref under `refs/isoprism/pr/<number>/head`, compares the PR merge base against that hidden head ref, and returns the same PR graph data shape used by the cloud product.
+
+The Review section also includes local cards when relevant:
+
+- `Uncommitted changes`: compares `HEAD -> worktree`.
+- `Worktree as PR`: compares the default-branch merge base against `worktree`, matching the shape of a GitHub PR opened from the current checkout.
+
+The integration must not check out the PR branch or mutate the user’s working tree. If `gh` is unavailable, unauthenticated, or not in a GitHub-backed checkout, the local review cards and repo/program graph still work.

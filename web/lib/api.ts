@@ -14,12 +14,19 @@ function apiURL() {
   return API_URL;
 }
 
+export function apiBaseURL(token: string): string {
+  if (token === "local" && typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  return apiURL();
+}
+
 export async function apiFetch<T>(
   path: string,
   token: string,
   options?: RequestInit
 ): Promise<T> {
-  const res = await fetch(`${apiURL()}${path}`, {
+  const res = await fetch(`${apiBaseURL(token)}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",

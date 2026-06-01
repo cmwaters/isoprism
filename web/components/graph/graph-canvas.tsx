@@ -470,7 +470,9 @@ function mergeGraphNode(existing: APIGraphNode, incoming: APIGraphNode): APIGrap
 }
 
 function mergeExpansionGraph(graph: UnifiedGraph, response: GraphExpansionResponse): UnifiedGraph {
-  const incomingNodeIDs = new Set(response.nodes.map((node) => node.id));
+  const responseNodes = Array.isArray(response.nodes) ? response.nodes : [];
+  const responseEdges = Array.isArray(response.edges) ? response.edges : [];
+  const incomingNodeIDs = new Set(responseNodes.map((node) => node.id));
   const nodeByID = new Map<string, APIGraphNode>();
   const idBySemanticKey = new Map<string, string>();
   const canonicalIDByIncomingID = new Map<string, string>();
@@ -486,7 +488,7 @@ function mergeExpansionGraph(graph: UnifiedGraph, response: GraphExpansionRespon
       idBySemanticKey.set(graphNodeSemanticKey(updated), node.id);
     }
   }
-  for (const node of response.nodes) {
+  for (const node of responseNodes) {
     const semanticKey = graphNodeSemanticKey(node);
     const existingID = idBySemanticKey.get(semanticKey);
     if (existingID) {
@@ -504,7 +506,7 @@ function mergeExpansionGraph(graph: UnifiedGraph, response: GraphExpansionRespon
   for (const edge of graph.edges) {
     edgeByKey.set(edgeKey(edge), edge);
   }
-  for (const edge of response.edges) {
+  for (const edge of responseEdges) {
     const sourceID = canonicalIDByIncomingID.get(edge.source_id) ?? edge.source_id;
     const destinationID = canonicalIDByIncomingID.get(edge.destination_id) ?? edge.destination_id;
     if (sourceID === destinationID) continue;
@@ -666,14 +668,10 @@ function InnerCanvas({
 }) {
   const { fitView, getNode, getZoom, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
-  const [prGraphCache, setPRGraphCache] = useState<Record<number, GraphResponse>>({});
+  const [prGraphCache, setPRGraphCache] = useState<Record<string, GraphResponse>>({});
   const [programGraphCache, setProgramGraphCache] = useState<Record<string, RepoGraphResponse>>({});
-  const [loadingPRNumber, setLoadingPRNumber] = useState<number | null>(null);
+  const [loadingReviewItemID, setLoadingReviewItemID] = useState<string | null>(null);
   const [loadingProgramID, setLoadingProgramID] = useState<string | null>(null);
-  const [reviewBaseRef, setReviewBaseRef] = useState(repo?.default_branch || "main");
-  const [reviewHeadRef, setReviewHeadRef] = useState("worktree");
-  const [loadingReview, setLoadingReview] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<APIGraphNode | null>(null);
   const [selectedPRChange, setSelectedPRChange] = useState<SelectedPRChange | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("overview");
@@ -861,7 +859,8 @@ function InnerCanvas({
   }, [baseVisibleGraph.nodes, selectGraphNode]);
 
   const requestNodeExpansion = useCallback((nodeID: string) => {
-    return apiFetch<GraphExpansionResponse>(`/api/v1/repos/${repoID}/graph/expand`, token, {
+    const path = token === "local" ? "/api/graph/expand" : `/api/v1/repos/${repoID}/graph/expand`;
+    return apiFetch<GraphExpansionResponse>(path, token, {
       method: "POST",
       body: JSON.stringify({
         node_id: nodeID,
@@ -922,6 +921,13 @@ function InnerCanvas({
   }, [activeGraph, baseVisibleGraph.nodes, detailExpansion.nodes, expandedNodeIDs, expandingNodeIDs, getNode, mergeDetailExpansion, mergeExpansionIntoActiveGraph, requestNodeExpansion]);
 
   const selectAndPopulateGraphNode = useCallback((id: string) => {
+    if (!id) {
+      setSelectedNode(null);
+      setSelectedPRChange(null);
+      setPanelMode("overview");
+      return;
+    }
+
     const node = visibleGraph.nodes.find((n) => n.id === id)
       ?? baseVisibleGraph.nodes.find((n) => n.id === id)
       ?? detailExpansion.nodes.find((n) => n.id === id)
@@ -938,6 +944,14 @@ function InnerCanvas({
     selectAfterMergeRef.current = id;
     void expandGraphNode(id, { forceGraphMerge: true });
   }, [baseVisibleGraph.nodes, detailExpansion.nodes, expandGraphNode, focusedTestNodeID, selectGraphNode, visibleGraph.nodes]);
+
+  const selectGraphNodeAfterGraphLoad = useCallback((id: string) => {
+    selectAfterMergeRef.current = id;
+    if (!baseVisibleGraph.nodes.some((node) => node.id === id)) return;
+
+    selectAfterMergeRef.current = null;
+    selectGraphNode(id);
+  }, [baseVisibleGraph.nodes, selectGraphNode]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
@@ -970,7 +984,7 @@ function InnerCanvas({
     setExpandingEdgeKey(key);
     try {
       const visibleNodeIDs = baseVisibleGraph.nodes.map((node) => node.id);
-      const requestExpansion = (nodeID: string) => apiFetch<GraphExpansionResponse>(`/api/v1/repos/${repoID}/graph/expand`, token, {
+      const requestExpansion = (nodeID: string) => apiFetch<GraphExpansionResponse>(token === "local" ? "/api/graph/expand" : `/api/v1/repos/${repoID}/graph/expand`, token, {
         method: "POST",
         body: JSON.stringify({
           node_id: nodeID,
@@ -1025,7 +1039,7 @@ function InnerCanvas({
     setIssueDescriptionCache((current) => current[key] ? current : { ...current, [key]: issue });
   }, []);
 
-  const onSelectPR = useCallback(async (prNumber: number) => {
+  const onSelectPR = useCallback(async (pr: QueuePR) => {
     setSelectedNode(null);
     setSelectedPRChange(null);
     setExpandedEdgeKeys(new Set());
@@ -1034,19 +1048,21 @@ function InnerCanvas({
     setDetailExpansion({ nodes: [], edges: [] });
     layoutPositionsRef.current = {};
     setLayoutPositions({});
-    const cached = prGraphCache[prNumber];
+    const cacheKey = pr.id || String(pr.number);
+    const cached = prGraphCache[cacheKey];
     if (cached) {
       setActiveGraph(cached);
       return;
     }
 
-    setLoadingPRNumber(prNumber);
+    setLoadingReviewItemID(cacheKey);
     try {
-      const prGraph = await apiFetch<GraphResponse>(`/api/v1/repos/${repoID}/prs/number/${prNumber}/graph`, token);
-      setPRGraphCache((current) => ({ ...current, [prNumber]: prGraph }));
+      const path = token === "local" ? `/api/review-items/${cacheKey}/graph` : `/api/v1/repos/${repoID}/prs/number/${pr.number}/graph`;
+      const prGraph = await apiFetch<GraphResponse>(path, token);
+      setPRGraphCache((current) => ({ ...current, [cacheKey]: prGraph }));
       setActiveGraph(prGraph);
     } finally {
-      setLoadingPRNumber(null);
+      setLoadingReviewItemID(null);
     }
   }, [prGraphCache, repoID, token]);
 
@@ -1062,6 +1078,7 @@ function InnerCanvas({
     setDetailExpansion({ nodes: [], edges: [] });
     layoutPositionsRef.current = {};
     setLayoutPositions({});
+    selectGraphNodeAfterGraphLoad(programID);
     const cached = programGraphCache[programID];
     if (cached) {
       setActiveGraph(cached);
@@ -1070,43 +1087,14 @@ function InnerCanvas({
 
     setLoadingProgramID(programID);
     try {
-      const programGraph = await apiFetch<RepoGraphResponse>(`/api/v1/repos/${repoID}/programs/${programID}/graph`, token);
+      const path = token === "local" ? `/api/programs/${programID}/graph` : `/api/v1/repos/${repoID}/programs/${programID}/graph`;
+      const programGraph = await apiFetch<RepoGraphResponse>(path, token);
       setProgramGraphCache((current) => ({ ...current, [programID]: programGraph }));
       setActiveGraph(programGraph);
     } finally {
       setLoadingProgramID(null);
     }
-  }, [programGraphCache, repoID, token]);
-
-  const onCompareLocalReview = useCallback(async () => {
-    setSelectedNode(null);
-    setSelectedPRChange(null);
-    setExpandedEdgeKeys(new Set());
-    setExpandingNodeIDs({});
-    setExpandedNodeIDs({});
-    setPanelMode("overview");
-    setFocusedTestNodeID(null);
-    setTestFocusExtraNodeIDs(new Set());
-    setDetailExpansion({ nodes: [], edges: [] });
-    layoutPositionsRef.current = {};
-    setLayoutPositions({});
-    setReviewError(null);
-    setLoadingReview(true);
-    try {
-      const reviewGraph = await apiFetch<GraphResponse>("/api/v1/local/review/compare", token, {
-        method: "POST",
-        body: JSON.stringify({
-          base_ref: reviewBaseRef.trim() || repo?.default_branch || "main",
-          head_ref: reviewHeadRef.trim() || "worktree",
-        }),
-      });
-      setActiveGraph(reviewGraph);
-    } catch (error) {
-      setReviewError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoadingReview(false);
-    }
-  }, [repo?.default_branch, reviewBaseRef, reviewHeadRef, token]);
+  }, [programGraphCache, repoID, selectGraphNodeAfterGraphLoad, token]);
 
   const onBackToRepo = useCallback(() => {
     setSelectedNode(null);
@@ -1124,6 +1112,7 @@ function InnerCanvas({
   }, [graph]);
 
   useEffect(() => {
+    if (token === "local") return;
     void warmSettingsRepos(token);
   }, [token]);
 
@@ -1175,17 +1164,8 @@ function InnerCanvas({
         testChanges={activePRTestChanges}
         prs={prs}
         programs={repoPrograms}
-        loadingPRNumber={loadingPRNumber}
+        loadingPRNumber={loadingReviewItemID}
         loadingProgramID={loadingProgramID}
-        reviewCompare={enableLocalReview ? {
-          baseRef: reviewBaseRef,
-          headRef: reviewHeadRef,
-          loading: loadingReview,
-          error: reviewError,
-          onBaseRefChange: setReviewBaseRef,
-          onHeadRefChange: setReviewHeadRef,
-          onCompare: onCompareLocalReview,
-        } : undefined}
         onSelectPR={onSelectPR}
         onSelectProgram={onSelectProgram}
         onBackToRepo={onBackToRepo}

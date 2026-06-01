@@ -9,7 +9,7 @@ const repoRoot = path.resolve(webRoot, "..");
 
 export default defineConfig({
   root: __dirname,
-  base: "/local/",
+  base: "/",
   plugins: [react()],
   resolve: {
     alias: {

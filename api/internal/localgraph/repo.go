@@ -9,7 +9,7 @@ import (
 	"github.com/isoprism/api/internal/models"
 )
 
-type RepoData struct {
+type CommitGraph struct {
 	Repo      models.Repository
 	Programs  []models.GraphProgram
 	Graph     models.RepoGraphResponse
@@ -17,35 +17,49 @@ type RepoData struct {
 	treeGraph treeGraph
 }
 
-func GenerateRepo(ctx context.Context, opts Options) (RepoData, error) {
+func LoadRepoMetadata(ctx context.Context, opts Options) (models.Repository, error) {
 	root, err := repoRoot(ctx, opts.RepoDir)
 	if err != nil {
-		return RepoData{}, err
+		return models.Repository{}, err
 	}
 	g := gitClient{root: root}
 	defaultBranch, err := g.resolveDefaultBranch(ctx)
 	if err != nil {
-		return RepoData{}, err
+		return models.Repository{}, err
 	}
 	sha, err := g.resolveCommit(ctx, "HEAD")
 	if err != nil {
-		return RepoData{}, err
+		return models.Repository{}, err
 	}
-	cacheDir := opts.CacheDir
-	if cacheDir == "" {
-		cacheDir = filepath.Join(root, ".isoprism")
-	}
-	graph, err := loadTreeGraph(ctx, g, cacheDir, "HEAD", sha)
-	if err != nil {
-		return RepoData{}, err
-	}
-	repo := models.Repository{
+
+	return models.Repository{
 		ID:            "local",
 		FullName:      "local/" + filepath.Base(root),
 		DefaultBranch: defaultBranch,
 		MainCommitSHA: &sha,
 		IndexStatus:   "ready",
 		IsActive:      true,
+	}, nil
+}
+
+func LoadCommitGraph(ctx context.Context, opts Options) (CommitGraph, error) {
+	root, err := repoRoot(ctx, opts.RepoDir)
+	if err != nil {
+		return CommitGraph{}, err
+	}
+	g := gitClient{root: root}
+	repo, err := LoadRepoMetadata(ctx, opts)
+	if err != nil {
+		return CommitGraph{}, err
+	}
+	sha := derefString(repo.MainCommitSHA)
+	cacheDir := opts.CacheDir
+	if cacheDir == "" {
+		cacheDir = filepath.Join(root, ".isoprism")
+	}
+	graph, err := loadTreeGraph(ctx, g, cacheDir, "HEAD", sha)
+	if err != nil {
+		return CommitGraph{}, err
 	}
 	nodesByID, sources := graphNodesAndSources(graph, sha)
 	programs := localPrograms(nodesByID)
@@ -55,11 +69,11 @@ func GenerateRepo(ctx context.Context, opts Options) (RepoData, error) {
 		Nodes:    []models.GraphNode{},
 		Edges:    []models.GraphEdge{},
 	}
-	return RepoData{Repo: repo, Programs: programs, Graph: repoGraph, Sources: sources, treeGraph: graph}, nil
+	return CommitGraph{Repo: repo, Programs: programs, Graph: repoGraph, Sources: sources, treeGraph: graph}, nil
 }
 
 func ProgramGraph(ctx context.Context, opts Options, programID string) (models.RepoGraphResponse, map[string]models.NodeCodeResponse, error) {
-	data, err := GenerateRepo(ctx, opts)
+	data, err := LoadCommitGraph(ctx, opts)
 	if err != nil {
 		return models.RepoGraphResponse{}, nil, err
 	}
@@ -84,7 +98,7 @@ func ProgramGraph(ctx context.Context, opts Options, programID string) (models.R
 }
 
 func ExpandGraph(ctx context.Context, opts Options, nodeID string, visibleIDs []string) (models.GraphExpansionResponse, map[string]models.NodeCodeResponse, error) {
-	data, err := GenerateRepo(ctx, opts)
+	data, err := LoadCommitGraph(ctx, opts)
 	if err != nil {
 		return models.GraphExpansionResponse{}, nil, err
 	}
@@ -241,7 +255,7 @@ func boundedNodeIDs(seed string, edges []models.GraphEdge, depth int) map[string
 }
 
 func filterGraphEdges(edges []models.GraphEdge, selected map[string]bool) []models.GraphEdge {
-	var out []models.GraphEdge
+	out := []models.GraphEdge{}
 	for _, edge := range edges {
 		if selected[edge.SourceID] && selected[edge.DestinationID] {
 			out = append(out, edge)

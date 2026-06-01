@@ -8,9 +8,9 @@ This folder is the documentation source of truth for Isoprism.
 docs/
   infrastructure.md
   spec/
-    CLI/
-    Cloud/
-    Common/
+    cli/
+    cloud/
+    common/
   adr/
 ```
 
@@ -18,9 +18,9 @@ docs/
 
 `docs/spec/` contains the current product and technical contracts.
 
-- `CLI/`: local-first command, daemon, storage, API, and UI behavior.
-- `Cloud/`: hosted GitHub App product, storage, API, UI, and AI behavior.
-- `Common/`: shared semantic graph and React UI contracts.
+- `cli/`: local-first command, daemon, storage, API, and UI behavior.
+- `cloud/`: hosted GitHub App product, storage, API, UI, and AI behavior.
+- `common/`: shared semantic graph and React UI contracts.
 
 ## ADR
 

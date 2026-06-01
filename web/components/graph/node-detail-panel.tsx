@@ -16,16 +16,6 @@ export type SelectedPRChange =
   | { type: "pr-description"; body: string; htmlURL: string }
   | { type: "issue"; issue: GitHubIssueReference };
 
-export interface ReviewCompareControls {
-  baseRef: string;
-  headRef: string;
-  loading: boolean;
-  error?: string | null;
-  onBaseRefChange: (value: string) => void;
-  onHeadRefChange: (value: string) => void;
-  onCompare: () => void;
-}
-
 interface Props {
   node: GraphNode | null;
   allNodes: GraphNode[];
@@ -39,10 +29,9 @@ interface Props {
   testChanges?: GraphNode[];
   prs?: QueuePR[];
   programs?: GraphProgram[];
-  loadingPRNumber?: number | null;
+  loadingPRNumber?: string | null;
   loadingProgramID?: string | null;
-  reviewCompare?: ReviewCompareControls;
-  onSelectPR: (prNumber: number) => void;
+  onSelectPR: (pr: QueuePR) => void;
   onSelectProgram: (programID: string) => void;
   onBackToRepo: () => void;
   token: string;
@@ -93,7 +82,6 @@ export default function NodeDetailPanel({
   programs,
   loadingPRNumber,
   loadingProgramID,
-  reviewCompare,
   onSelectPR,
   onSelectProgram,
   onBackToRepo,
@@ -161,7 +149,6 @@ export default function NodeDetailPanel({
               allNodes={allNodes}
               loadingPRNumber={loadingPRNumber}
               loadingProgramID={loadingProgramID}
-              reviewCompare={reviewCompare}
               onSelectPR={onSelectPR}
               onSelectProgram={onSelectProgram}
             />
@@ -244,7 +231,6 @@ function RepoSummaryPanel({
   allNodes,
   loadingPRNumber,
   loadingProgramID,
-  reviewCompare,
   onSelectPR,
   onSelectProgram,
 }: {
@@ -252,10 +238,9 @@ function RepoSummaryPanel({
   prs: QueuePR[];
   programs: GraphProgram[];
   allNodes: GraphNode[];
-  loadingPRNumber?: number | null;
+  loadingPRNumber?: string | null;
   loadingProgramID?: string | null;
-  reviewCompare?: ReviewCompareControls;
-  onSelectPR: (prNumber: number) => void;
+  onSelectPR: (pr: QueuePR) => void;
   onSelectProgram: (programID: string) => void;
 }) {
   const { owner, name } = splitRepoFullName(repo.full_name);
@@ -271,89 +256,37 @@ function RepoSummaryPanel({
         {name}
       </h1>
 
-      {reviewCompare && (
-        <>
-          <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, marginTop: 20 }}>
-            Review
-          </p>
-          <div style={{ background: "#FFFFFF", border: "1px solid #D4D4D4", borderRadius: 6, display: "flex", flexDirection: "column", gap: 10, marginBottom: 20, padding: 12 }}>
-            <label style={reviewLabelStyle}>
-              <span>Base</span>
-              <input
-                value={reviewCompare.baseRef}
-                onChange={(event) => reviewCompare.onBaseRefChange(event.target.value)}
-                placeholder="main"
-                style={reviewInputStyle}
-              />
-            </label>
-            <label style={reviewLabelStyle}>
-              <span>Compare</span>
-              <input
-                value={reviewCompare.headRef}
-                onChange={(event) => reviewCompare.onHeadRefChange(event.target.value)}
-                placeholder="worktree"
-                style={reviewInputStyle}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={reviewCompare.onCompare}
-              disabled={reviewCompare.loading}
-              style={{
-                background: reviewCompare.loading ? "#D8D8D8" : "#111111",
-                border: "none",
-                borderRadius: 6,
-                color: "#FFFFFF",
-                cursor: reviewCompare.loading ? "wait" : "pointer",
-                fontFamily: "inherit",
-                fontSize: 13,
-                fontWeight: 650,
-                height: 36,
-                padding: "0 12px",
-              }}
-            >
-              {reviewCompare.loading ? "Indexing states..." : "Compare changes"}
-            </button>
-            <p style={{ color: "#888888", fontSize: 12, lineHeight: 1.45, margin: 0 }}>
-              Defaults to comparing the working tree against the default branch. You can enter branches, commits, staged, or worktree.
-            </p>
-            {reviewCompare.error && (
-              <p style={{ color: "#AA2222", fontSize: 12, lineHeight: 1.45, margin: 0 }}>
-                {reviewCompare.error}
-              </p>
-            )}
-          </div>
-        </>
-      )}
-
       {prs.length > 0 && (
         <>
           <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, marginTop: 20 }}>
-            Pull requests
+            Review
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
             {prs.map((pr) => (
               <button
                 key={pr.id}
                 type="button"
-                onClick={() => onSelectPR(pr.number)}
-                disabled={loadingPRNumber === pr.number}
+                onClick={() => onSelectPR(pr)}
+                disabled={loadingPRNumber === pr.id}
                 style={{
                   background: "#FFFFFF",
                   border: "1px solid #D4D4D4",
                   borderRadius: 6,
                   color: "#111111",
                   display: "block",
-                  cursor: loadingPRNumber === pr.number ? "wait" : "pointer",
+                  cursor: loadingPRNumber === pr.id ? "wait" : "pointer",
                   fontFamily: "inherit",
                   padding: 12,
                   textAlign: "left",
                   width: "100%",
                 }}
               >
-                <span style={{ color: "#EF5DA8", fontSize: 12, fontWeight: 600, marginRight: 6 }}>#{pr.number}</span>
+                <span style={{ color: "#EF5DA8", fontSize: 12, fontWeight: 600, marginRight: 6 }}>{reviewItemBadge(pr)}</span>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{pr.title}</span>
-                {loadingPRNumber === pr.number && (
+                <span style={{ color: "#888888", display: "block", fontSize: 12, lineHeight: 1.4, marginTop: 4, overflowWrap: "anywhere" }}>
+                  {reviewItemBranchLabel(pr)}
+                </span>
+                {loadingPRNumber === pr.id && (
                   <span style={{ color: "#888888", display: "block", fontSize: 12, marginTop: 6 }}>
                     Loading graph...
                   </span>
@@ -375,7 +308,7 @@ function RepoSummaryPanel({
                     </span>
                   )}
                   <span style={repoPRBadgeStyle}>
-                    {openTimeLabels.get(pr.id) || "open"}
+                    {isLocalReviewItem(pr) ? "local" : openTimeLabels.get(pr.id) || "open"}
                   </span>
                 </span>
               </button>
@@ -443,29 +376,30 @@ function RepoSummaryPanel({
   );
 }
 
-const reviewLabelStyle: CSSProperties = {
-  color: "#666666",
-  display: "flex",
-  flexDirection: "column",
-  fontSize: 11,
-  fontWeight: 650,
-  gap: 4,
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-};
+function isLocalReviewItem(pr: QueuePR): boolean {
+  return pr.id.startsWith("local-");
+}
 
-const reviewInputStyle: CSSProperties = {
-  background: "#F5F5F5",
-  border: "1px solid #D4D4D4",
-  borderRadius: 6,
-  color: "#111111",
-  fontFamily: "inherit",
-  fontSize: 13,
-  height: 34,
-  padding: "0 9px",
-  textTransform: "none",
-  letterSpacing: 0,
-};
+function reviewItemBadge(pr: QueuePR): string {
+  return pr.number > 0 ? `#${pr.number}` : "Local";
+}
+
+function reviewItemBranchLabel(pr: QueuePR): string {
+  const head = pr.head_branch || "worktree";
+  const base = displayReviewBaseBranch(pr);
+  return `${head} -> ${base}`;
+}
+
+function displayReviewBaseBranch(pr: QueuePR): string {
+  if (!pr.base_branch) return "main";
+  if ((pr.id.startsWith("gh-pr-") || pr.id === "local-worktree-pr") && !pr.base_branch.includes("/")) {
+    if (pr.base_branch === pr.head_branch) {
+      return pr.base_branch;
+    }
+    return `origin/${pr.base_branch}`;
+  }
+  return pr.base_branch;
+}
 
 function splitRepoFullName(fullName: string): { owner: string; name: string } {
   const [owner, name] = fullName.split("/");
@@ -665,13 +599,23 @@ function PRSummaryPanel({
     && !testFilePaths.has(file.filename)
     && !documentationFilePaths.has(file.filename)
   ));
+  const branchLabel = pr.head_branch && pr.base_branch
+    ? `${pr.head_branch} -> ${displayPRBaseBranch(pr)}`
+    : "";
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
       <PanelToolbar backOnClick={onBackToRepo} />
 
       {/* PR number + title */}
-      <p style={{ fontSize: 11, color: "#AAAAAA", marginBottom: 4 }}>#{pr.number}</p>
+      <p style={{ alignItems: "center", color: "#AAAAAA", display: "flex", flexWrap: "wrap", fontSize: 11, gap: 6, marginBottom: 4 }}>
+        <span>{pr.number > 0 ? `#${pr.number}` : "Local"}</span>
+        {branchLabel && (
+          <span style={{ color: "#777777", overflowWrap: "anywhere" }}>
+            {branchLabel}
+          </span>
+        )}
+      </p>
       <h2 style={{ fontSize: 15, fontWeight: 600, color: "#111111", margin: "0 0 12px 0", lineHeight: 1.4 }}>
         {pr.title}
       </h2>
@@ -799,6 +743,14 @@ function PRSummaryPanel({
   );
 }
 
+function displayPRBaseBranch(pr: GraphPR): string {
+  if (!pr.base_branch) return "";
+  if (pr.id.startsWith("gh-pr-") && !pr.base_branch.includes("/")) {
+    return `origin/${pr.base_branch}`;
+  }
+  return pr.base_branch;
+}
+
 function ChangeSection({
   title,
   emptyText,
@@ -885,6 +837,16 @@ function fileTitle(path: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(" ");
+}
+
+function nodeCodePath(repoID: string, nodeID: string, token: string, prID?: string): string {
+  if (token === "local") {
+    const reviewParam = prID ? `?review_item_id=${encodeURIComponent(prID)}` : "";
+    return `/api/nodes/${nodeID}/code${reviewParam}`;
+  }
+  return prID
+    ? `/api/v1/repos/${repoID}/prs/${prID}/nodes/${nodeID}/code`
+    : `/api/v1/repos/${repoID}/nodes/${nodeID}/code`;
 }
 
 export function ComponentChangePanel({
@@ -1048,9 +1010,7 @@ function NodeChangeDetailPanel({
 
     let cancelled = false;
 
-    const path = prID
-      ? `/api/v1/repos/${repoID}/prs/${prID}/nodes/${node.id}/code`
-      : `/api/v1/repos/${repoID}/nodes/${node.id}/code`;
+    const path = nodeCodePath(repoID, node.id, token, prID);
 
     apiFetch<NodeCodeResponse>(path, token)
       .then((response) => {
@@ -1480,9 +1440,7 @@ function NodeDetail({
     if (cachedCode?.node_id === node.id) return;
 
     let cancelled = false;
-    const path = prID
-      ? `/api/v1/repos/${repoID}/prs/${prID}/nodes/${node.id}/code`
-      : `/api/v1/repos/${repoID}/nodes/${node.id}/code`;
+    const path = nodeCodePath(repoID, node.id, token, prID);
 
     apiFetch<NodeCodeResponse>(path, token)
       .then((response) => {
@@ -1673,9 +1631,7 @@ function CodePanel({
 
     let cancelled = false;
 
-    const path = prID
-      ? `/api/v1/repos/${repoID}/prs/${prID}/nodes/${node.id}/code`
-      : `/api/v1/repos/${repoID}/nodes/${node.id}/code`;
+    const path = nodeCodePath(repoID, node.id, token, prID);
 
     apiFetch<NodeCodeResponse>(path, token)
       .then((response) => {

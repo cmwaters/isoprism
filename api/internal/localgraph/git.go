@@ -68,6 +68,31 @@ func (g gitClient) resolveDefaultBranch(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("could not detect the default branch; pass an explicit ref")
 }
 
+func (g gitClient) defaultBranchRef(ctx context.Context, branch string) string {
+	if branch == "" || strings.Contains(branch, "/") {
+		return branch
+	}
+	remoteBranch := "origin/" + branch
+	if _, err := g.run(ctx, "rev-parse", "--verify", "--quiet", remoteBranch+"^{commit}"); err == nil {
+		return remoteBranch
+	}
+	return branch
+}
+
+func (g gitClient) currentBranch(ctx context.Context) string {
+	if out, err := g.run(ctx, "branch", "--show-current"); err == nil {
+		if branch := strings.TrimSpace(out); branch != "" {
+			return branch
+		}
+	}
+	if out, err := g.run(ctx, "rev-parse", "--short", "HEAD"); err == nil {
+		if sha := strings.TrimSpace(out); sha != "" {
+			return sha
+		}
+	}
+	return "HEAD"
+}
+
 func (g gitClient) resolveCommit(ctx context.Context, ref string) (string, error) {
 	if ref == worktreeTreeRef {
 		head, err := g.resolveCommit(ctx, "HEAD")
@@ -91,6 +116,26 @@ func (g gitClient) resolveCommit(ctx context.Context, ref string) (string, error
 
 func (g gitClient) resolveObject(ctx context.Context, ref string) (string, error) {
 	out, err := g.run(ctx, "rev-parse", "--verify", ref)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func (g gitClient) commitExists(ctx context.Context, ref string) bool {
+	_, err := g.run(ctx, "cat-file", "-e", ref+"^{commit}")
+	return err == nil
+}
+
+func (g gitClient) fetch(ctx context.Context, refspecs ...string) error {
+	args := append([]string{"fetch", "--quiet", "origin"}, refspecs...)
+	_, err := g.run(ctx, args...)
+	return err
+}
+
+func (g gitClient) mergeBase(ctx context.Context, refs ...string) (string, error) {
+	args := append([]string{"merge-base"}, refs...)
+	out, err := g.run(ctx, args...)
 	if err != nil {
 		return "", err
 	}
@@ -151,6 +196,20 @@ func (g gitClient) listWorktree(ctx context.Context) (map[string]string, error) 
 		tree[path] = "worktree-" + hex.EncodeToString(sum[:])
 	}
 	return tree, nil
+}
+
+func (g gitClient) listUntracked(ctx context.Context) ([]string, error) {
+	out, err := g.run(ctx, "ls-files", "-z", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, path := range strings.Split(out, "\x00") {
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
 }
 
 func (g gitClient) listIndex(ctx context.Context) (map[string]string, error) {
@@ -268,7 +327,18 @@ func (g gitClient) diffNameStatus(ctx context.Context, from, to string) ([]fileC
 		return g.diffNameStatusArgs(ctx, "diff", "--cached", "--name-status", "--find-renames", "-z", from)
 	}
 	if to == worktreeTreeRef {
-		return g.diffNameStatusArgs(ctx, "diff", "--name-status", "--find-renames", "-z", from)
+		changes, err := g.diffNameStatusArgs(ctx, "diff", "--name-status", "--find-renames", "-z", from)
+		if err != nil {
+			return nil, err
+		}
+		untracked, err := g.listUntracked(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range untracked {
+			changes = append(changes, fileChange{Filename: path, Status: "added"})
+		}
+		return changes, nil
 	}
 	return g.diffNameStatusArgs(ctx, "diff", "--name-status", "--find-renames", "-z", from, to)
 }
@@ -348,7 +418,35 @@ func (g gitClient) diffNumstat(ctx context.Context, from, to string) (map[string
 		}
 		stats[path] = [2]int{added, deleted}
 	}
+	if to == worktreeTreeRef {
+		untracked, err := g.listUntracked(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range untracked {
+			additions, err := g.worktreeLineCount(path)
+			if err != nil {
+				continue
+			}
+			stats[path] = [2]int{additions, 0}
+		}
+	}
 	return stats, nil
+}
+
+func (g gitClient) worktreeLineCount(path string) (int, error) {
+	content, err := os.ReadFile(filepath.Join(g.root, filepath.FromSlash(path)))
+	if err != nil {
+		return 0, err
+	}
+	if len(content) == 0 {
+		return 0, nil
+	}
+	lines := bytes.Count(content, []byte("\n"))
+	if content[len(content)-1] != '\n' {
+		lines++
+	}
+	return lines, nil
 }
 
 func parseNumstat(value string) int {

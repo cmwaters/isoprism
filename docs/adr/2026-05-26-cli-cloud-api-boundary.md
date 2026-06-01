@@ -23,9 +23,9 @@ CLI is organized around:
 - local refs and blobs
 - `.isoprism/` cache files
 - daemon-served graph snapshots
-- optional future PR metadata from `gh`
+- optional PR metadata from `gh`
 
-The first local viewer reused cloud-shaped routes such as `/api/v1/repos/local/queue` so it could mount existing graph UI quickly. That route shape is compatibility scaffolding, not the desired long-term local API.
+The first local viewer reused cloud-shaped routes so it could mount existing graph UI quickly. That route shape is compatibility scaffolding, not the desired long-term local API.
 
 ## Decision
 
@@ -44,20 +44,20 @@ type RepoWorkspaceModel = {
 
 `reviewItems` may be empty or omitted. The shared UI must not assume a PR queue exists.
 
-Cloud maps its PR queue to review items. CLI may initially provide no review items, then later populate them from local diffs, staged diffs, unstaged diffs, or `gh` pull requests.
+Cloud maps its PR queue to review items. CLI may provide no review items, populate them from local diffs, staged diffs, unstaged diffs, or populate them from open `gh` pull requests.
 
 ## Consequences
 
 - Cloud routes can stay auth/database/GitHub-App oriented.
 - Local routes can become checkout/daemon/git oriented.
 - React graph and repo components remain shared.
-- The local API no longer needs fake `repos/local` semantics.
+- The local API no longer needs fake cloud repository semantics.
 - Local performance can improve by creating one daemon graph snapshot per session/ref instead of rebuilding graph data for every cloud-shaped endpoint.
 
 ## Follow-Up Work
 
 1. Add a shared `RepoWorkspace` and `GraphClient` interface.
 2. Add cloud and local graph client adapters.
-3. Replace local `/api/v1/repos/local/...` routes with `/api/local/...` routes.
+3. Replace cloud-shaped compatibility routes with canonical CLI routes under `/api/...`.
 4. Keep compatibility routes temporarily only if needed during migration.
-5. Add future `gh` PR discovery behind the local daemon API.
+5. Extend `gh` PR discovery with richer issue context when the local review surface needs it.

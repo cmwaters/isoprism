@@ -29,7 +29,7 @@ isoprism annotate
 
 `isoprism annotate` records human or AI-provided context about the problem, intended outcome, changed nodes, and test assertions. Annotations let tools such as Codex or Claude Code leave reviewable breadcrumbs that the graph UI can show alongside the semantic diff.
 
-Future local review contexts may come from the `gh` CLI. When available, the daemon can use `gh` to discover pull request title, body, URL, base branch, head branch, issue links, and changed files. Those PRs become optional `reviewItems` in the React workspace. A local repo with no active review context may have an empty or omitted `reviewItems` list, and the UI should simply show repo/program graph browsing.
+Local review contexts include current checkout changes and may also come from the `gh` CLI. The daemon exposes local review cards for uncommitted changes (`HEAD -> worktree`) and for the current worktree as it would appear in a GitHub PR against the default branch (`worktree -> origin/<default-branch>`). When available, the daemon also uses `gh` to discover pull request title, body, URL, base branch, head branch, author, and diff stats. Those items share one Review section in the React workspace. Selecting a GitHub PR fetches the PR head into a hidden local ref and visualizes the semantic base..head graph in the same PR review surface used by the cloud product. A local repo with no active review context may have an empty or omitted review item list, and the UI should simply show repo/program graph browsing.
 
 ## User Journey
 
@@ -48,10 +48,9 @@ There are two primary journeys:
 ### Reviewing the AI generated work of others
 
 1. Someone else lands agent-authored changes on a branch and opens a pull request (on GitHub or another host `gh` can talk to).
-2. The reviewer fetches the branch locally, for example with `gh pr checkout <number>` or a normal `git fetch` and checkout of the head ref.
-3. From that checkout, the reviewer runs `isoprism serve` (or opens a snapshot produced earlier with `isoprism diff <base> <head>`).
+2. From a checkout of the repository, the reviewer runs `isoprism serve` (or opens a snapshot produced earlier with `isoprism diff <base> <head>`).
 4. The CLI detects the repository root and builds or reuses a semantic graph for the PR’s base..head range.
-5. When `gh` is installed and authenticated, the daemon discovers the active pull request for the current branch and exposes it as a `reviewItem` with title, summary, base/head refs, and a link back to GitHub. Without `gh`, the reviewer can still inspect the same changes as a local diff review item or by passing explicit refs to `isoprism diff`.
+5. When `gh` is installed and authenticated, the daemon discovers open pull requests for the current repository and exposes them as review items with title, body, author, base/head refs, diff stats, and a link back to GitHub. The reviewer does not need to run `gh pr checkout`; selecting a PR fetches `pull/<number>/head` into `refs/isoprism/pr/<number>/head` without touching the working tree. Without `gh`, the reviewer can still inspect the same changes by passing explicit refs to `isoprism diff` or using the manual compare controls in the local browser.
 6. The reviewer selects that review item in the browser UI. The graph workspace loads a review graph centered on changed semantic components (functions, types, methods) rather than a flat file list.
 7. The reviewer walks the graph: which components were added or modified, how they connect to callers and callees, and which tests moved with the change. They expand nodes and open source details when the card summary is not enough; they drop to the raw diff or GitHub only when they need line-level approval detail.
 8. If the author (or their agent) ran `isoprism annotate`, those breadcrumbs appear alongside the graph so the reviewer can see stated intent, expected outcome, and per-node reasoning without inferring it from the diff alone.
