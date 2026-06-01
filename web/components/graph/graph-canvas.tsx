@@ -691,6 +691,8 @@ function InnerCanvas({
   settingsHref = "/settings",
   showFeedbackBanner = true,
   enableLocalReview = false,
+  loadingReviewItems = false,
+  loadingPrograms = false,
 }: {
   graph: UnifiedGraph;
   repoID: string;
@@ -700,6 +702,8 @@ function InnerCanvas({
   settingsHref?: string | null;
   showFeedbackBanner?: boolean;
   enableLocalReview?: boolean;
+  loadingReviewItems?: boolean;
+  loadingPrograms?: boolean;
 }) {
   const { fitView, getNode, getZoom, setCenter } = useReactFlow();
   const [activeGraph, setActiveGraph] = useState<UnifiedGraph>(graph);
@@ -1199,6 +1203,8 @@ function InnerCanvas({
         testChanges={activePRTestChanges}
         prs={prs}
         programs={repoPrograms}
+        loadingReviewItems={loadingReviewItems}
+        loadingPrograms={loadingPrograms}
         loadingPRNumber={loadingReviewItemID}
         loadingProgramID={loadingProgramID}
         onSelectPR={onSelectPR}
@@ -1346,6 +1352,8 @@ export default function GraphCanvas({
   settingsHref,
   showFeedbackBanner,
   enableLocalReview,
+  loadingReviewItems,
+  loadingPrograms,
 }: {
   graph: UnifiedGraph;
   repoID: string;
@@ -1355,6 +1363,8 @@ export default function GraphCanvas({
   settingsHref?: string | null;
   showFeedbackBanner?: boolean;
   enableLocalReview?: boolean;
+  loadingReviewItems?: boolean;
+  loadingPrograms?: boolean;
 }) {
   return (
     <ReactFlowProvider>
@@ -1367,6 +1377,8 @@ export default function GraphCanvas({
         settingsHref={settingsHref}
         showFeedbackBanner={showFeedbackBanner}
         enableLocalReview={enableLocalReview}
+        loadingReviewItems={loadingReviewItems}
+        loadingPrograms={loadingPrograms}
       />
     </ReactFlowProvider>
   );

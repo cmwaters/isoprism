@@ -8,10 +8,14 @@ export default function LocalRepoGraph({
   graph,
   prs,
   repo,
+  loadingReviewItems = false,
+  loadingPrograms = false,
 }: {
   graph: RepoGraphResponse;
   prs: QueueResponse["prs"];
   repo: Repository;
+  loadingReviewItems?: boolean;
+  loadingPrograms?: boolean;
 }) {
   return (
     <GraphCanvas
@@ -23,6 +27,8 @@ export default function LocalRepoGraph({
       settingsHref={null}
       showFeedbackBanner={false}
       enableLocalReview
+      loadingReviewItems={loadingReviewItems}
+      loadingPrograms={loadingPrograms}
     />
   );
 }

@@ -1,15 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import LocalRepoGraph from "@/components/local/local-repo-graph";
-import type { QueueResponse, RepoGraphResponse, RepoProgramsResponse, Repository } from "@/lib/types";
+import type { GraphProgram, QueueResponse, RepoGraphResponse, RepoProgramsResponse, Repository } from "@/lib/types";
 import "@/app/globals.css";
 import "./shell.css";
 
-// LoadState represents UI or workflow state for the embedded local viewer.
-type LoadState =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; graph: RepoGraphResponse; prs: QueueResponse["prs"]; repo: Repository };
+// LoadStatus represents one async loading state for the embedded local viewer.
+type LoadStatus = "loading" | "ready" | "error";
+
+// LoadState tracks independently loaded programs and review items for the embedded local viewer.
+type LoadState = {
+  repo: Repository;
+  programs: GraphProgram[];
+  prs: QueueResponse["prs"];
+  programsStatus: LoadStatus;
+  reviewStatus: LoadStatus;
+  error?: string;
+};
 
 // ReviewItemsResponse describes an outbound response for the embedded local viewer.
 type ReviewItemsResponse = {
@@ -25,48 +32,98 @@ async function localFetch<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// placeholderRepo provides stable repo metadata while the local daemon responses are loading.
+const placeholderRepo: Repository = {
+  id: "local",
+  user_id: "",
+  installation_id: "",
+  github_repo_id: 0,
+  full_name: "",
+  default_branch: "main",
+  index_status: "ready",
+  is_active: true,
+  created_at: "",
+};
+
 // LocalViewer renders the local viewer for the embedded local viewer.
 function LocalViewer() {
-  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [state, setState] = useState<LoadState>({
+    repo: placeholderRepo,
+    programs: [],
+    prs: [],
+    programsStatus: "loading",
+    reviewStatus: "loading",
+  });
 
   useEffect(() => {
     let cancelled = false;
 
-    // load loads data for the enclosing route or component.
-    async function load() {
+    // loadPrograms loads local repo metadata and program entrypoints.
+    async function loadPrograms() {
       try {
-        const [programs, queue] = await Promise.all([
-          localFetch<RepoProgramsResponse>("/api/programs"),
-          localFetch<ReviewItemsResponse>("/api/review-items").catch(() => ({ review_items: [] })),
-        ]);
+        const programs = await localFetch<RepoProgramsResponse>("/api/programs");
         if (cancelled) return;
-        setState({
-          status: "ready",
+        setState((current) => ({
+          ...current,
           repo: programs.repo,
-          prs: queue.review_items,
-          graph: { repo: programs.repo, programs: programs.programs, nodes: [], edges: [] },
-        });
+          programs: programs.programs,
+          programsStatus: "ready",
+        }));
       } catch (error) {
         if (cancelled) return;
-        setState({ status: "error", message: error instanceof Error ? error.message : String(error) });
+        setState((current) => ({
+          ...current,
+          programsStatus: "error",
+          error: error instanceof Error ? error.message : String(error),
+        }));
       }
     }
 
-    void load();
+    // loadReviewItems loads local and GitHub review cards independently of program data.
+    async function loadReviewItems() {
+      try {
+        const queue = await localFetch<ReviewItemsResponse>("/api/review-items");
+        if (cancelled) return;
+        setState((current) => ({
+          ...current,
+          prs: queue.review_items,
+          reviewStatus: "ready",
+        }));
+      } catch {
+        if (cancelled) return;
+        setState((current) => ({
+          ...current,
+          prs: [],
+          reviewStatus: "error",
+        }));
+      }
+    }
+
+    void loadPrograms();
+    void loadReviewItems();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (state.status === "loading") {
-    return <div style={{ padding: 32, color: "#555555" }}>Loading local graph...</div>;
-  }
+  const graph: RepoGraphResponse = { repo: state.repo, programs: state.programs, nodes: [], edges: [] };
 
-  if (state.status === "error") {
-    return <div style={{ padding: 32, color: "#AA2222" }}>{state.message}</div>;
-  }
-
-  return <LocalRepoGraph graph={state.graph} prs={state.prs} repo={state.repo} />;
+  return (
+    <>
+      <LocalRepoGraph
+        graph={graph}
+        prs={state.prs}
+        repo={state.repo}
+        loadingReviewItems={state.reviewStatus === "loading"}
+        loadingPrograms={state.programsStatus === "loading"}
+      />
+      {state.error && (
+        <div style={{ bottom: 24, color: "#AA2222", fontSize: 12, left: 400, position: "fixed", zIndex: 40 }}>
+          {state.error}
+        </div>
+      )}
+    </>
+  );
 }
 
 createRoot(document.getElementById("root")!).render(

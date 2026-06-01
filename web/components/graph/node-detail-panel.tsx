@@ -31,6 +31,8 @@ interface Props {
   testChanges?: GraphNode[];
   prs?: QueuePR[];
   programs?: GraphProgram[];
+  loadingReviewItems?: boolean;
+  loadingPrograms?: boolean;
   loadingPRNumber?: string | null;
   loadingProgramID?: string | null;
   onSelectPR: (pr: QueuePR) => void;
@@ -83,6 +85,8 @@ export default function NodeDetailPanel({
   testChanges,
   prs,
   programs,
+  loadingReviewItems,
+  loadingPrograms,
   loadingPRNumber,
   loadingProgramID,
   onSelectPR,
@@ -150,6 +154,8 @@ export default function NodeDetailPanel({
               prs={prs ?? []}
               programs={programs ?? []}
               allNodes={allNodes}
+              loadingReviewItems={loadingReviewItems}
+              loadingPrograms={loadingPrograms}
               loadingPRNumber={loadingPRNumber}
               loadingProgramID={loadingProgramID}
               onSelectPR={onSelectPR}
@@ -233,6 +239,8 @@ function RepoSummaryPanel({
   prs,
   programs,
   allNodes,
+  loadingReviewItems = false,
+  loadingPrograms = false,
   loadingPRNumber,
   loadingProgramID,
   onSelectPR,
@@ -242,6 +250,8 @@ function RepoSummaryPanel({
   prs: QueuePR[];
   programs: GraphProgram[];
   allNodes: GraphNode[];
+  loadingReviewItems?: boolean;
+  loadingPrograms?: boolean;
   loadingPRNumber?: string | null;
   loadingProgramID?: string | null;
   onSelectPR: (pr: QueuePR) => void;
@@ -253,19 +263,28 @@ function RepoSummaryPanel({
 
   return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
-      <p style={{ color: "#888888", fontSize: 12, margin: "0 0 6px 0", wordBreak: "break-all" }}>
-        {owner}
-      </p>
-      <h1 style={{ color: "#111111", fontSize: 18, fontWeight: 600, margin: "0 0 8px 0" }}>
-        {name}
-      </h1>
+      {repo.full_name ? (
+        <>
+          <p style={{ color: "#888888", fontSize: 12, margin: "0 0 6px 0", wordBreak: "break-all" }}>
+            {owner}
+          </p>
+          <h1 style={{ color: "#111111", fontSize: 18, fontWeight: 600, margin: "0 0 8px 0" }}>
+            {name}
+          </h1>
+        </>
+      ) : (
+        <div style={{ height: 51 }} />
+      )}
 
-      {prs.length > 0 && (
+      {(loadingReviewItems || prs.length > 0) && (
         <>
           <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, marginTop: 20 }}>
             Review
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+            {loadingReviewItems && (
+              <LoadingPanelRow label="Loading review items..." />
+            )}
             {prs.map((pr) => (
               <button
                 key={pr.id}
@@ -321,12 +340,15 @@ function RepoSummaryPanel({
         </>
       )}
 
-      {programs.length > 0 && (
+      {(loadingPrograms || programs.length > 0) && (
         <>
           <p style={{ fontSize: 11, color: "#AAAAAA", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, marginTop: prs.length > 0 ? 0 : 20 }}>
             Programs
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+            {loadingPrograms && (
+              <LoadingPanelRow label="Loading programs..." />
+            )}
             {programs.map((program) => (
               <button
                 key={program.id}
@@ -371,11 +393,27 @@ function RepoSummaryPanel({
         </>
       )}
 
-      {prs.length === 0 && programs.length === 0 && !hasVisibleGraph && (
+      {!loadingReviewItems && !loadingPrograms && prs.length === 0 && programs.length === 0 && !hasVisibleGraph && (
         <div style={{ color: "#888888", fontSize: 13, textAlign: "center", padding: "48px 0" }}>
           There are no open pull requests or indexed programs yet.
         </div>
       )}
+    </div>
+  );
+}
+
+// LoadingPanelRow renders a placeholder row while local review/program data loads.
+function LoadingPanelRow({ label }: { label: string }) {
+  return (
+    <div style={{
+      background: "#FFFFFF",
+      border: "1px solid #D4D4D4",
+      borderRadius: 6,
+      color: "#888888",
+      fontSize: 12,
+      padding: 12,
+    }}>
+      {label}
     </div>
   );
 }
