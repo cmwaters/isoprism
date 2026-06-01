@@ -29,3 +29,6 @@ Thumbs.db
 
 # Codex local state
 .codex/
+
+# Isoprism local graph/cache state
+.isoprism/
