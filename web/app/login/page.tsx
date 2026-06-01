@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+// LoginPage renders the login page for login.
 export default function LoginPage() {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
@@ -19,6 +20,7 @@ export default function LoginPage() {
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
+  // signInWithGitHub starts GitHub OAuth while preserving pilot invite context.
   async function signInWithGitHub() {
     if (!pilotToken) return;
     setLoading(true);
@@ -126,6 +128,7 @@ export default function LoginPage() {
   );
 }
 
+// GitHubIcon renders the GitHub icon for login.
 function GitHubIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">

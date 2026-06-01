@@ -9,6 +9,7 @@ import (
 	"github.com/isoprism/api/internal/models"
 )
 
+// CommitGraph stores the fields used by the local CLI graph runtime.
 type CommitGraph struct {
 	Repo      models.Repository
 	Programs  []models.GraphProgram
@@ -17,6 +18,7 @@ type CommitGraph struct {
 	treeGraph treeGraph
 }
 
+// LoadRepoMetadata loads repo metadata for the local CLI graph runtime.
 func LoadRepoMetadata(ctx context.Context, opts Options) (models.Repository, error) {
 	root, err := repoRoot(ctx, opts.RepoDir)
 	if err != nil {
@@ -42,6 +44,7 @@ func LoadRepoMetadata(ctx context.Context, opts Options) (models.Repository, err
 	}, nil
 }
 
+// LoadCommitGraph loads commit graph for the local CLI graph runtime.
 func LoadCommitGraph(ctx context.Context, opts Options) (CommitGraph, error) {
 	root, err := repoRoot(ctx, opts.RepoDir)
 	if err != nil {
@@ -72,6 +75,7 @@ func LoadCommitGraph(ctx context.Context, opts Options) (CommitGraph, error) {
 	return CommitGraph{Repo: repo, Programs: programs, Graph: repoGraph, Sources: sources, treeGraph: graph}, nil
 }
 
+// ProgramGraph builds a bounded graph around a local program entrypoint.
 func ProgramGraph(ctx context.Context, opts Options, programID string) (models.RepoGraphResponse, map[string]models.NodeCodeResponse, error) {
 	data, err := LoadCommitGraph(ctx, opts)
 	if err != nil {
@@ -97,6 +101,7 @@ func ProgramGraph(ctx context.Context, opts Options, programID string) (models.R
 	return models.RepoGraphResponse{Repo: data.Repo, Programs: data.Programs, Nodes: nodes, Edges: filteredEdges}, sources, nil
 }
 
+// ExpandGraph expands graph for the local CLI graph runtime.
 func ExpandGraph(ctx context.Context, opts Options, nodeID string, visibleIDs []string) (models.GraphExpansionResponse, map[string]models.NodeCodeResponse, error) {
 	data, err := LoadCommitGraph(ctx, opts)
 	if err != nil {
@@ -136,6 +141,7 @@ func ExpandGraph(ctx context.Context, opts Options, nodeID string, visibleIDs []
 	}, sources, nil
 }
 
+// graphNodesAndSources converts cached local graph nodes into API nodes and code payloads.
 func graphNodesAndSources(graph treeGraph, commitSHA string) (map[string]models.GraphNode, map[string]models.NodeCodeResponse) {
 	nodes := map[string]models.GraphNode{}
 	sources := map[string]models.NodeCodeResponse{}
@@ -158,6 +164,7 @@ func graphNodesAndSources(graph treeGraph, commitSHA string) (map[string]models.
 	return nodes, sources
 }
 
+// graphEdges converts local semantic edges into API graph edges.
 func graphEdges(graph treeGraph) []models.GraphEdge {
 	var edges []models.GraphEdge
 	seen := map[string]bool{}
@@ -177,6 +184,7 @@ func graphEdges(graph treeGraph) []models.GraphEdge {
 	return edges
 }
 
+// localPrograms returns entrypoint programs discovered in the local graph.
 func localPrograms(nodes map[string]models.GraphNode) []models.GraphProgram {
 	var programs []models.GraphProgram
 	for _, node := range nodes {
@@ -220,6 +228,7 @@ func localPrograms(nodes map[string]models.GraphNode) []models.GraphProgram {
 	return programs
 }
 
+// boundedNodeIDs walks graph edges up to a fixed depth from a seed node.
 func boundedNodeIDs(seed string, edges []models.GraphEdge, depth int) map[string]bool {
 	selected := map[string]bool{}
 	if seed == "" {
@@ -254,6 +263,7 @@ func boundedNodeIDs(seed string, edges []models.GraphEdge, depth int) map[string
 	return selected
 }
 
+// filterGraphEdges filters graph edges for the local CLI graph runtime.
 func filterGraphEdges(edges []models.GraphEdge, selected map[string]bool) []models.GraphEdge {
 	out := []models.GraphEdge{}
 	for _, edge := range edges {
@@ -264,6 +274,7 @@ func filterGraphEdges(edges []models.GraphEdge, selected map[string]bool) []mode
 	return out
 }
 
+// resolveLocalTypeRefs resolves local type refs for the local CLI graph runtime.
 func resolveLocalTypeRefs(nodes map[string]models.GraphNode) {
 	typeIDByName := map[string]string{}
 	for id, node := range nodes {
@@ -291,6 +302,7 @@ func resolveLocalTypeRefs(nodes map[string]models.GraphNode) {
 	}
 }
 
+// baseTypeName strips wrappers and selectors down to a comparable type name.
 func baseTypeName(typeName string) string {
 	t := strings.TrimSpace(typeName)
 	t = strings.TrimPrefix(t, "*")
@@ -309,6 +321,7 @@ func baseTypeName(typeName string) string {
 	return t
 }
 
+// derefString returns the string value behind an optional pointer.
 func derefString(value *string) string {
 	if value == nil {
 		return ""
@@ -316,6 +329,7 @@ func derefString(value *string) string {
 	return *value
 }
 
+// lastFullNameSegment returns the final segment of a qualified graph name.
 func lastFullNameSegment(fullName string) string {
 	if dot := strings.LastIndex(fullName, "."); dot >= 0 {
 		return fullName[dot+1:]

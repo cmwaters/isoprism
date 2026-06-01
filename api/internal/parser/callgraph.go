@@ -39,6 +39,7 @@ func ExtractCallEdgesWithResolver(src []byte, filePath string, index ResolverInd
 	}
 }
 
+// extractGoCallEdges extracts go call edges for semantic parsing.
 func extractGoCallEdges(src []byte, filePath string, root *sitter.Node, index ResolverIndex) []CallEdge {
 	pkg := goPackageName(src, root)
 	prefix := goPackagePrefix(filePath, pkg)
@@ -71,6 +72,7 @@ func extractGoCallEdges(src []byte, filePath string, root *sitter.Node, index Re
 	return edges
 }
 
+// goFunctionNodes returns Go function and method declaration nodes.
 func goFunctionNodes(root *sitter.Node) []*sitter.Node {
 	var out []*sitter.Node
 	walk(root, func(n *sitter.Node) bool {
@@ -85,6 +87,7 @@ func goFunctionNodes(root *sitter.Node) []*sitter.Node {
 	return out
 }
 
+// goCallableFullName returns the fully qualified name of a Go callable.
 func goCallableFullName(src []byte, fn *sitter.Node, prefix string) string {
 	name := childText(src, fn, "name")
 	if name == "" {
@@ -98,6 +101,7 @@ func goCallableFullName(src []byte, fn *sitter.Node, prefix string) string {
 	return prefix + "." + name
 }
 
+// resolveGoCall resolves go call for semantic parsing.
 func resolveGoCall(src []byte, fun *sitter.Node, prefix string, imports map[string]string, nodeByName map[string]bool, index ResolverIndex, scope goScope) string {
 	if fun == nil {
 		return ""
@@ -132,6 +136,7 @@ func resolveGoCall(src []byte, fun *sitter.Node, prefix string, imports map[stri
 	}
 }
 
+// resolveImportedGoSelector resolves a selector call through imported Go packages.
 func resolveImportedGoSelector(importPath, selector string, nodeByName map[string]bool) string {
 	cleanPath := strings.Trim(importPath, `"`)
 	dirs := repoRelativeImportDirs(cleanPath)
@@ -148,6 +153,7 @@ func resolveImportedGoSelector(importPath, selector string, nodeByName map[strin
 	return match
 }
 
+// importedSelectorMatches reports whether an imported selector matches a known node.
 func importedSelectorMatches(fullName string, importDirs []string, selector string) bool {
 	dir, qualifiedName, ok := strings.Cut(fullName, ":")
 	if !ok {
@@ -162,6 +168,7 @@ func importedSelectorMatches(fullName string, importDirs []string, selector stri
 	return strings.Count(qualifiedName, ".") == 1
 }
 
+// goImportDirMatches reports whether a node path matches an import directory suffix.
 func goImportDirMatches(nodeDir string, importDirs []string) bool {
 	for _, dir := range importDirs {
 		if nodeDir == dir || strings.HasSuffix(nodeDir, "/"+dir) {
@@ -171,6 +178,7 @@ func goImportDirMatches(nodeDir string, importDirs []string) bool {
 	return false
 }
 
+// goImports parses Go import aliases and paths.
 func goImports(src []byte, root *sitter.Node) map[string]string {
 	imports := map[string]string{}
 	walk(root, func(n *sitter.Node) bool {
@@ -207,6 +215,7 @@ func goImports(src []byte, root *sitter.Node) map[string]string {
 	return imports
 }
 
+// selectorRoot returns the root identifier of a selector expression.
 func selectorRoot(src []byte, n *sitter.Node) string {
 	operand := n.ChildByFieldName("operand")
 	if operand == nil {
@@ -225,6 +234,7 @@ func selectorRoot(src []byte, n *sitter.Node) string {
 	return ""
 }
 
+// selectorName returns the final identifier of a selector expression.
 func selectorName(src []byte, n *sitter.Node) string {
 	field := n.ChildByFieldName("field")
 	if field == nil {
@@ -236,6 +246,7 @@ func selectorName(src []byte, n *sitter.Node) string {
 	return text(src, field)
 }
 
+// extractScriptCallEdges extracts script call edges for semantic parsing.
 func extractScriptCallEdges(src []byte, filePath string, root *sitter.Node, nodeByName map[string]bool) []CallEdge {
 	nodes := parseScriptTree(src, filePath, languageFor(filePath), root)
 	prefix := scriptModulePrefix(filePath)
@@ -253,6 +264,7 @@ func extractScriptCallEdges(src []byte, filePath string, root *sitter.Node, node
 	return edges
 }
 
+// scriptCallNames collects function names called inside a script tree.
 func scriptCallNames(src []byte, root *sitter.Node) []string {
 	seen := map[string]bool{}
 	var names []string
@@ -270,6 +282,7 @@ func scriptCallNames(src []byte, root *sitter.Node) []string {
 	return names
 }
 
+// scriptCallName returns the name represented by a script call expression.
 func scriptCallName(src []byte, fun *sitter.Node) string {
 	if fun == nil {
 		return ""
@@ -282,6 +295,7 @@ func scriptCallName(src []byte, fun *sitter.Node) string {
 	}
 }
 
+// resolveScriptCall resolves script call for semantic parsing.
 func resolveScriptCall(prefix, call string, nodeByName map[string]bool) string {
 	if call == "" {
 		return ""
@@ -304,6 +318,7 @@ func resolveScriptCall(prefix, call string, nodeByName map[string]bool) string {
 	return match
 }
 
+// enclosingBody finds the function or method body enclosing a line range.
 func enclosingBody(root *sitter.Node, lineStart, lineEnd int) *sitter.Node {
 	var found *sitter.Node
 	walk(root, func(n *sitter.Node) bool {
@@ -321,11 +336,13 @@ func enclosingBody(root *sitter.Node, lineStart, lineEnd int) *sitter.Node {
 	return found
 }
 
+// isScriptTestCall reports whether script test call matches the expected condition.
 func isScriptTestCall(src []byte, n *sitter.Node) bool {
 	name := scriptCallName(src, n.ChildByFieldName("function"))
 	return name == "test" || name == "it"
 }
 
+// scriptTestLabel extracts the label from a script test call.
 func scriptTestLabel(src []byte, n *sitter.Node) string {
 	args := n.ChildByFieldName("arguments")
 	if args == nil {

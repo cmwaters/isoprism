@@ -20,6 +20,7 @@ import { edgeTypes, hexGridLayout, nodeTypes } from "./graph-canvas";
 
 const PANEL_WIDTH = 360;
 
+// InnerRepoGraphCanvas renders the inner repo graph canvas for the graph review UI.
 function InnerRepoGraphCanvas({
   graph,
   prs,
@@ -129,6 +130,7 @@ function InnerRepoGraphCanvas({
   );
 }
 
+// RepoGraphCanvas renders the repo graph canvas for the graph review UI.
 export default function RepoGraphCanvas({
   graph,
   prs,

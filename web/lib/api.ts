@@ -7,6 +7,7 @@ export const API_URL =
 
 const LOCAL_API_URL = process.env.NEXT_PUBLIC_ISOPRISM_LOCAL_API_URL;
 
+// apiURL chooses the hosted or local API base URL for web requests.
 function apiURL() {
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/local")) {
     return LOCAL_API_URL ?? window.location.origin ?? API_URL;
@@ -14,6 +15,7 @@ function apiURL() {
   return API_URL;
 }
 
+// apiBaseURL returns the API base URL for the current auth mode.
 export function apiBaseURL(token: string): string {
   if (token === "local" && typeof window !== "undefined") {
     return window.location.origin;
@@ -21,6 +23,7 @@ export function apiBaseURL(token: string): string {
   return apiURL();
 }
 
+// apiFetch performs an authenticated API request and returns typed JSON.
 export async function apiFetch<T>(
   path: string,
   token: string,

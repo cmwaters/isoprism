@@ -59,6 +59,7 @@ export interface QueuePR extends PullRequest {
   urgency_score: number;
 }
 
+// QueueResponse describes an outbound response for web API utilities.
 export interface QueueResponse {
   prs: QueuePR[];
 }
@@ -95,12 +96,14 @@ export interface GraphNode {
   tests: GraphNodeTest[];
 }
 
+// GraphNodeTypeRef describes a graph node used by web API utilities.
 export interface GraphNodeTypeRef {
   name?: string;
   type: string;
   node_id?: string;
 }
 
+// GraphNodeTest describes a graph node used by web API utilities.
 export interface GraphNodeTest {
   name: string;
   full_name: string;
@@ -109,6 +112,7 @@ export interface GraphNodeTest {
   line_end: number;
 }
 
+// GraphEdge describes a graph edge used by web API utilities.
 export interface GraphEdge {
   source_id: string;
   destination_id: string;
@@ -120,6 +124,7 @@ export interface GraphEdge {
   sample_edges?: GraphEdgeSample[];
 }
 
+// GraphEdgeSample describes a graph edge used by web API utilities.
 export interface GraphEdgeSample {
   source_id: string;
   destination_id: string;
@@ -127,6 +132,7 @@ export interface GraphEdgeSample {
   destination_name: string;
 }
 
+// GraphPR describes pull request data used by web API utilities.
 export interface GraphPR {
   id: string;
   number: number;
@@ -141,12 +147,14 @@ export interface GraphPR {
   author_login: string;
 }
 
+// GitHubIssueReference defines the interface required by web API utilities.
 export interface GitHubIssueReference {
   owner: string;
   repo: string;
   number: number;
 }
 
+// GitHubIssueDescription defines the interface required by web API utilities.
 export interface GitHubIssueDescription {
   owner: string;
   repo: string;
@@ -158,6 +166,7 @@ export interface GitHubIssueDescription {
   author_login: string;
 }
 
+// PRFileDiff describes pull request data used by web API utilities.
 export interface PRFileDiff {
   filename: string;
   previous_filename?: string;
@@ -168,6 +177,7 @@ export interface PRFileDiff {
   patch?: string;
 }
 
+// GraphResponse describes an outbound response for web API utilities.
 export interface GraphResponse {
   pr: GraphPR;
   nodes: GraphNode[];
@@ -177,6 +187,7 @@ export interface GraphResponse {
   test_context: GraphNode[];
 }
 
+// RepoGraphResponse describes an outbound response for web API utilities.
 export interface RepoGraphResponse {
   repo: Repository;
   programs?: GraphProgram[];
@@ -184,11 +195,13 @@ export interface RepoGraphResponse {
   edges: GraphEdge[];
 }
 
+// RepoProgramsResponse describes an outbound response for web API utilities.
 export interface RepoProgramsResponse {
   repo: Repository;
   programs: GraphProgram[];
 }
 
+// GraphProgram defines the interface required by web API utilities.
 export interface GraphProgram {
   id: string;
   full_name: string;
@@ -202,17 +215,20 @@ export interface GraphProgram {
   summary?: string;
 }
 
+// GraphExpansionContext defines the interface required by web API utilities.
 export interface GraphExpansionContext {
   mode: "repo" | "pr";
   pr_id?: string;
 }
 
+// GraphExpansionRequest describes an inbound request for web API utilities.
 export interface GraphExpansionRequest {
   node_id: string;
   visible_node_ids: string[];
   graph_context: GraphExpansionContext;
 }
 
+// GraphExpansionResponse describes an outbound response for web API utilities.
 export interface GraphExpansionResponse {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -230,6 +246,7 @@ export interface NodeCodeSegment {
   source: string;
 }
 
+// NodeCodeResponse describes an outbound response for web API utilities.
 export interface NodeCodeResponse {
   node_id: string;
   file_path: string;
@@ -266,6 +283,7 @@ export interface BetaFeedbackPayload {
   source_commit_sha?: string;
 }
 
+// BetaFeedbackResponse describes an outbound response for web API utilities.
 export interface BetaFeedbackResponse {
   status: "submitted";
   issue: number;

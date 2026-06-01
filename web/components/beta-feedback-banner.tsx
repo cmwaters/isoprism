@@ -12,8 +12,10 @@ import {
   Repository,
 } from "@/lib/types";
 
+// FeedbackType stores the fields used by Isoprism.
 type FeedbackType = "bug" | "feature";
 
+// BetaFeedbackBanner renders the beta feedback banner for Isoprism.
 export default function BetaFeedbackBanner({
   token,
   repo,
@@ -43,6 +45,7 @@ export default function BetaFeedbackBanner({
     return parts.filter(Boolean).join(" · ");
   }, [pr, repo.full_name, selectedNode]);
 
+  // open opens the feedback dialog for the selected feedback type.
   function open(type: FeedbackType) {
     setFeedbackType(type);
     setTitle("");
@@ -51,11 +54,13 @@ export default function BetaFeedbackBanner({
     setMessage("");
   }
 
+  // close closes the active feedback dialog.
   function close() {
     if (status === "submitting") return;
     setFeedbackType(null);
   }
 
+  // submit submits the current form or feedback request.
   async function submit() {
     if (!feedbackType || !title.trim() || !details.trim()) return;
 
@@ -172,6 +177,7 @@ export default function BetaFeedbackBanner({
   );
 }
 
+// userIDFromAccessToken extracts the Supabase user ID from a JWT access token.
 function userIDFromAccessToken(token: string) {
   try {
     const payload = token.split(".")[1];

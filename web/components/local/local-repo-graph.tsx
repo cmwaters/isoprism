@@ -3,6 +3,7 @@
 import GraphCanvas from "@/components/graph/graph-canvas";
 import type { QueueResponse, RepoGraphResponse, Repository } from "@/lib/types";
 
+// LocalRepoGraph renders the shared graph UI for local repo data.
 export default function LocalRepoGraph({
   graph,
   prs,

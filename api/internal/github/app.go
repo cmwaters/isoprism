@@ -16,7 +16,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-
 // AppClient handles GitHub App authentication: generating JWTs and
 // fetching/caching per-installation access tokens.
 type AppClient struct {
@@ -27,6 +26,7 @@ type AppClient struct {
 	tokens map[int64]*cachedToken // installation_id → token
 }
 
+// cachedToken stores the fields used by GitHub integration.
 type cachedToken struct {
 	token     string
 	expiresAt time.Time

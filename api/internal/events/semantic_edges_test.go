@@ -6,6 +6,7 @@ import (
 	"github.com/isoprism/api/internal/parser"
 )
 
+// TestReceiverOwnershipEdgesConnectTypeToMethods verifies receiver ownership edges connect type to methods.
 func TestReceiverOwnershipEdgesConnectTypeToMethods(t *testing.T) {
 	nodes := []parser.Node{
 		{FullName: "rpc/grpc:coregrpc.BlockAPI", Kind: "struct"},
@@ -27,6 +28,7 @@ func TestReceiverOwnershipEdgesConnectTypeToMethods(t *testing.T) {
 	}
 }
 
+// TestTypeUsageEdgesConnectStructToResolvableFieldTypes verifies type usage edges connect struct to resolvable field types.
 func TestTypeUsageEdgesConnectStructToResolvableFieldTypes(t *testing.T) {
 	nodes := []parser.Node{
 		{FullName: "rpc/grpc:coregrpc.BlockAPI", Kind: "struct", Fields: []parser.Param{
@@ -61,6 +63,7 @@ func TestTypeUsageEdgesConnectStructToResolvableFieldTypes(t *testing.T) {
 	}
 }
 
+// TestTypeUsageEdgesSkipAmbiguousShortTypeNames verifies type usage edges skip ambiguous short type names.
 func TestTypeUsageEdgesSkipAmbiguousShortTypeNames(t *testing.T) {
 	nodes := []parser.Node{
 		{FullName: "pkg:pkg.Owner", Kind: "struct", Fields: []parser.Param{{Name: "target", Type: "Target"}}},
@@ -75,6 +78,7 @@ func TestTypeUsageEdgesSkipAmbiguousShortTypeNames(t *testing.T) {
 	}
 }
 
+// hasSemanticEdge reports whether semantic edge is present.
 func hasSemanticEdge(edges []semanticEdge, source, destination, kind string) bool {
 	for _, edge := range edges {
 		if edge.SourceFullName == source && edge.DestinationFullName == destination && edge.Kind == kind {

@@ -39,6 +39,7 @@ export const metadata: Metadata = {
   },
 };
 
+// RootLayout wraps every Next route in the shared document shell.
 export default function RootLayout({
   children,
 }: {

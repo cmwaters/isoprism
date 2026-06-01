@@ -6,6 +6,7 @@ import (
 	"github.com/isoprism/api/internal/models"
 )
 
+// TestBaseLookupIdentityUsesOldIdentityForRenames verifies base lookup identity uses old identity for renames.
 func TestBaseLookupIdentityUsesOldIdentityForRenames(t *testing.T) {
 	changeType := "renamed"
 	oldFullName := "BlockAPI.closeAllListeners"
@@ -27,6 +28,7 @@ func TestBaseLookupIdentityUsesOldIdentityForRenames(t *testing.T) {
 	}
 }
 
+// TestBaseLookupIdentityFallsBackWhenRenameMetadataMissing verifies base lookup identity falls back when rename metadata missing.
 func TestBaseLookupIdentityFallsBackWhenRenameMetadataMissing(t *testing.T) {
 	changeType := "renamed"
 
@@ -46,6 +48,7 @@ func TestBaseLookupIdentityFallsBackWhenRenameMetadataMissing(t *testing.T) {
 	}
 }
 
+// TestBaseLookupIdentityIgnoresOldIdentityForNonRenames verifies base lookup identity ignores old identity for non renames.
 func TestBaseLookupIdentityIgnoresOldIdentityForNonRenames(t *testing.T) {
 	changeType := "modified"
 	oldFullName := "BlockAPI.closeAllListeners"
@@ -67,6 +70,7 @@ func TestBaseLookupIdentityIgnoresOldIdentityForNonRenames(t *testing.T) {
 	}
 }
 
+// TestPackagePathForNodeOmitsRootFileDotPath verifies package path for node omits root file dot path.
 func TestPackagePathForNodeOmitsRootFileDotPath(t *testing.T) {
 	got := packagePathForNode(models.GraphNode{FilePath: "main.go"})
 	if got != "" {
@@ -74,6 +78,7 @@ func TestPackagePathForNodeOmitsRootFileDotPath(t *testing.T) {
 	}
 }
 
+// TestAppendTestFocusEdgesKeepsChangedTestHelpersReachable verifies append test focus edges keeps changed test helpers reachable.
 func TestAppendTestFocusEdgesKeepsChangedTestHelpersReachable(t *testing.T) {
 	edges := appendTestFocusEdges(
 		[]models.GraphEdge{{SourceID: "prod-a", DestinationID: "prod-b", EdgeKind: "calls"}},
@@ -106,6 +111,7 @@ func TestAppendTestFocusEdgesKeepsChangedTestHelpersReachable(t *testing.T) {
 	}
 }
 
+// TestEdgeChangesOnlyApplyToChangedProductionEndpoints verifies edge changes only apply to changed production endpoints.
 func TestEdgeChangesOnlyApplyToChangedProductionEndpoints(t *testing.T) {
 	changedNames := map[string]bool{
 		"rpc/grpc:coregrpc.BlockAPI.Stop": true,
@@ -149,6 +155,7 @@ func TestEdgeChangesOnlyApplyToChangedProductionEndpoints(t *testing.T) {
 	}
 }
 
+// TestSelectVisibleGraphIncludesReceiverOwnerEdges verifies select visible graph includes receiver owner edges.
 func TestSelectVisibleGraphIncludesReceiverOwnerEdges(t *testing.T) {
 	selected, edges := selectVisibleGraph(
 		[]string{"stop"},
@@ -169,6 +176,7 @@ func TestSelectVisibleGraphIncludesReceiverOwnerEdges(t *testing.T) {
 	}
 }
 
+// TestSelectVisibleGraphIncludesChangedNodeCallersAndCallees verifies select visible graph includes changed node callers and callees.
 func TestSelectVisibleGraphIncludesChangedNodeCallersAndCallees(t *testing.T) {
 	selected, edges := selectVisibleGraph(
 		[]string{"changed"},
@@ -205,6 +213,7 @@ func TestSelectVisibleGraphIncludesChangedNodeCallersAndCallees(t *testing.T) {
 	}
 }
 
+// TestSelectRankedVisibleGraphLoadsTwoHopProgramNeighborhood verifies select ranked visible graph loads two hop program neighborhood.
 func TestSelectRankedVisibleGraphLoadsTwoHopProgramNeighborhood(t *testing.T) {
 	selected, edges := selectRankedVisibleGraph(
 		[]string{"program"},
@@ -243,6 +252,7 @@ func TestSelectRankedVisibleGraphLoadsTwoHopProgramNeighborhood(t *testing.T) {
 	}
 }
 
+// TestSelectExpansionNeighborsSkipsVisibleAndRanksChangedNodes verifies select expansion neighbors skips visible and ranks changed nodes.
 func TestSelectExpansionNeighborsSkipsVisibleAndRanksChangedNodes(t *testing.T) {
 	changeType := "modified"
 	nodeMap := map[string]models.GraphNode{
@@ -280,6 +290,7 @@ func TestSelectExpansionNeighborsSkipsVisibleAndRanksChangedNodes(t *testing.T) 
 	}
 }
 
+// TestGraphEdgesForVisibleSetIncludesNewAndExistingEdges verifies graph edges for visible set includes new and existing edges.
 func TestGraphEdgesForVisibleSetIncludesNewAndExistingEdges(t *testing.T) {
 	visible := graphVisibleSet([]string{"expanded", "existing"}, "expanded")
 	visible["new"] = true
@@ -301,6 +312,7 @@ func TestGraphEdgesForVisibleSetIncludesNewAndExistingEdges(t *testing.T) {
 	}
 }
 
+// TestGraphHasHiddenNeighborClearsBoundaryWhenFullyVisible verifies graph has hidden neighbor clears boundary when fully visible.
 func TestGraphHasHiddenNeighborClearsBoundaryWhenFullyVisible(t *testing.T) {
 	visible := graphVisibleSet([]string{"expanded", "neighbor"}, "expanded")
 	if graphHasHiddenNeighbor("expanded", visible, []graphEdgeRow{{sourceID: "expanded", destinationID: "neighbor", edgeKind: "calls"}}) {
@@ -311,6 +323,7 @@ func TestGraphHasHiddenNeighborClearsBoundaryWhenFullyVisible(t *testing.T) {
 	}
 }
 
+// hasGraphEdge reports whether graph edge is present.
 func hasGraphEdge(edges []models.GraphEdge, sourceID, destinationID string) bool {
 	for _, edge := range edges {
 		if edge.SourceID == sourceID && edge.DestinationID == destinationID {

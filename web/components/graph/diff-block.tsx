@@ -1,9 +1,11 @@
 "use client";
 
+// Props describes the props consumed by this component.
 interface Props {
   patch: string;
 }
 
+// DiffBlock renders the diff block for the graph review UI.
 export default function DiffBlock({ patch }: Props) {
   const lines = patch.split("\n");
 

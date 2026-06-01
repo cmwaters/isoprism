@@ -2,6 +2,7 @@ package github
 
 import "testing"
 
+// TestParseInstallationReposPayloadCapturesDefaultBranch verifies parse installation repos payload captures default branch.
 func TestParseInstallationReposPayloadCapturesDefaultBranch(t *testing.T) {
 	payload := []byte(`{
 		"action": "added",

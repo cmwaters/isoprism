@@ -2,6 +2,7 @@ package localgraph
 
 import "strings"
 
+// semanticTypeEdges derives ownership and type-usage edges from parsed nodes.
 func semanticTypeEdges(nodes []graphNodeObject) []semanticEdge {
 	typeRefs := map[string]graphNodeObject{}
 	shortRefs := map[string]string{}
@@ -48,6 +49,7 @@ func semanticTypeEdges(nodes []graphNodeObject) []semanticEdge {
 	return edges
 }
 
+// methodOwnerRef returns the local graph reference for a method receiver type.
 func methodOwnerRef(methodFullName string, typeRefs map[string]graphNodeObject) string {
 	for {
 		idx := strings.LastIndex(methodFullName, ".")
@@ -61,6 +63,7 @@ func methodOwnerRef(methodFullName string, typeRefs map[string]graphNodeObject) 
 	}
 }
 
+// typeSegments extracts candidate named type segments from a Go type expression.
 func typeSegments(typeName string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -82,6 +85,7 @@ func typeSegments(typeName string) []string {
 	return out
 }
 
+// isBuiltinGoTypeSegment reports whether builtin go type segment matches the expected condition.
 func isBuiltinGoTypeSegment(segment string) bool {
 	switch segment {
 	case "any", "bool", "byte", "comparable", "complex64", "complex128", "error",
@@ -94,6 +98,7 @@ func isBuiltinGoTypeSegment(segment string) bool {
 	}
 }
 
+// lastTypeSegment returns the final named segment of a Go type expression.
 func lastTypeSegment(typeName string) string {
 	t := strings.TrimSpace(typeName)
 	for strings.HasPrefix(t, "*") {

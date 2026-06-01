@@ -257,6 +257,7 @@ func RepoInit(ctx context.Context, db *pgxpool.Pool, appClient *github.AppClient
 	log.Printf("RepoInit: completed for repo %s (%d nodes)", repoID, len(allNodes))
 }
 
+// splitRepo splits repo into usable parts.
 func splitRepo(fullName string) []string {
 	parts := strings.SplitN(fullName, "/", 2)
 	if len(parts) != 2 {
@@ -265,6 +266,7 @@ func splitRepo(fullName string) []string {
 	return parts
 }
 
+// startIndexJob creates the initial indexing job progress row.
 func startIndexJob(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA, phase, message string) {
 	_, _ = db.Exec(ctx, `
 		insert into indexing_jobs (repo_id, commit_sha, status, phase, message, started_at, updated_at, finished_at, error)
@@ -280,6 +282,7 @@ func startIndexJob(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA, pha
 	`, repoID, commitSHA, phase, message)
 }
 
+// updateIndexJobProgress updates index job progress for repository indexing.
 func updateIndexJobProgress(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA, phase, message string, filesTotal, filesDone, nodesTotal, nodesDone, edgesTotal, edgesDone int) {
 	_, _ = db.Exec(ctx, `
 		update indexing_jobs
@@ -292,6 +295,7 @@ func updateIndexJobProgress(ctx context.Context, db *pgxpool.Pool, repoID, commi
 	`, repoID, commitSHA, phase, message, filesTotal, filesDone, nodesTotal, nodesDone, edgesTotal, edgesDone)
 }
 
+// finishIndexJobReady finishes index job ready for repository indexing.
 func finishIndexJobReady(ctx context.Context, db *pgxpool.Pool, repoID, commitSHA string) {
 	_, _ = db.Exec(ctx, `
 		update indexing_jobs
@@ -304,6 +308,7 @@ func finishIndexJobReady(ctx context.Context, db *pgxpool.Pool, repoID, commitSH
 	`, repoID, commitSHA)
 }
 
+// updateIndexJobFailed updates index job failed for repository indexing.
 func updateIndexJobFailed(ctx context.Context, db *pgxpool.Pool, repoID, msg string, err error) {
 	detail := msg
 	if err != nil {

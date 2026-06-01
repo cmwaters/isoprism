@@ -8,11 +8,13 @@ import { useParams } from "next/navigation";
 
 const questionLabel = Object.fromEntries(reviewQuestions.map((question) => [question.key, question.label])) as Record<string, string>;
 
+// ReviewInfo stores the fields used by pilot forms.
 type ReviewInfo = {
   name: string;
   issue_count: number;
 };
 
+// PilotReviewPage renders the pilot review page for pilot forms.
 export default function PilotReviewPage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
@@ -30,6 +32,7 @@ export default function PilotReviewPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // loadReviewInfo loads review info for pilot forms.
     async function loadReviewInfo() {
       if (!token) return;
       try {
@@ -47,6 +50,7 @@ export default function PilotReviewPage() {
     };
   }, [token]);
 
+  // submit submits the current form or feedback request.
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setStatus("submitting");
@@ -138,6 +142,7 @@ export default function PilotReviewPage() {
   );
 }
 
+// introCopy builds the review-form intro copy from pilot progress.
 function introCopy(reviewInfo: ReviewInfo | null) {
   if (!reviewInfo) {
     return "Thanks for being an early tester. We'd like to ask a few questions about your experience so far.";
@@ -146,6 +151,7 @@ function introCopy(reviewInfo: ReviewInfo | null) {
   return `Thanks for being an early tester ${reviewInfo.name}. You reported ${reviewInfo.issue_count} ${issueLabel}. We'd like to ask a few questions about your experience so far.`;
 }
 
+// Field renders a labeled form field.
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label style={fieldStyle}>

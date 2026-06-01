@@ -105,6 +105,7 @@ type CodeNode struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// CodeEdge describes a graph edge used by the shared API contract.
 type CodeEdge struct {
 	ID            string    `json:"id"`
 	RepoID        string    `json:"repo_id"`
@@ -127,6 +128,7 @@ type PRNodeChange struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// PRAnalysis describes pull request data used by the shared API contract.
 type PRAnalysis struct {
 	ID              string          `json:"id"`
 	PullRequestID   string          `json:"pull_request_id"`
@@ -189,12 +191,14 @@ type GraphNode struct {
 	Tests        []GraphNodeTest `json:"tests"`
 }
 
+// TypeRef renders a linked or plain type reference.
 type TypeRef struct {
 	Name   string  `json:"name,omitempty"`
 	Type   string  `json:"type"`
 	NodeID *string `json:"node_id,omitempty"`
 }
 
+// GraphNodeTest describes a graph node used by the shared API contract.
 type GraphNodeTest struct {
 	Name      string `json:"name"`
 	FullName  string `json:"full_name"`
@@ -203,6 +207,7 @@ type GraphNodeTest struct {
 	LineEnd   int    `json:"line_end"`
 }
 
+// GraphEdge describes a graph edge used by the shared API contract.
 type GraphEdge struct {
 	SourceID            string            `json:"source_id"`
 	DestinationID       string            `json:"destination_id"`
@@ -214,6 +219,7 @@ type GraphEdge struct {
 	SampleEdges         []GraphEdgeSample `json:"sample_edges,omitempty"`
 }
 
+// GraphEdgeSample describes a graph edge used by the shared API contract.
 type GraphEdgeSample struct {
 	SourceID        string `json:"source_id"`
 	DestinationID   string `json:"destination_id"`
@@ -221,6 +227,7 @@ type GraphEdgeSample struct {
 	DestinationName string `json:"destination_name"`
 }
 
+// GraphResponse describes an outbound response for the shared API contract.
 type GraphResponse struct {
 	PR          GraphPR      `json:"pr"`
 	Nodes       []GraphNode  `json:"nodes"`
@@ -230,6 +237,7 @@ type GraphResponse struct {
 	TestContext []GraphNode  `json:"test_context"`
 }
 
+// RepoGraphResponse describes an outbound response for the shared API contract.
 type RepoGraphResponse struct {
 	Repo     Repository     `json:"repo"`
 	Programs []GraphProgram `json:"programs,omitempty"`
@@ -237,11 +245,13 @@ type RepoGraphResponse struct {
 	Edges    []GraphEdge    `json:"edges"`
 }
 
+// RepoProgramsResponse describes an outbound response for the shared API contract.
 type RepoProgramsResponse struct {
 	Repo     Repository     `json:"repo"`
 	Programs []GraphProgram `json:"programs"`
 }
 
+// GraphProgram stores the fields used by the shared API contract.
 type GraphProgram struct {
 	ID           string  `json:"id"`
 	FullName     string  `json:"full_name"`
@@ -255,17 +265,20 @@ type GraphProgram struct {
 	Summary      *string `json:"summary,omitempty"`
 }
 
+// GraphExpansionContext stores the fields used by the shared API contract.
 type GraphExpansionContext struct {
 	Mode string `json:"mode"`
 	PRID string `json:"pr_id,omitempty"`
 }
 
+// GraphExpansionRequest describes an inbound request for the shared API contract.
 type GraphExpansionRequest struct {
 	NodeID         string                `json:"node_id"`
 	VisibleNodeIDs []string              `json:"visible_node_ids"`
 	GraphContext   GraphExpansionContext `json:"graph_context"`
 }
 
+// GraphExpansionResponse describes an outbound response for the shared API contract.
 type GraphExpansionResponse struct {
 	Nodes               []GraphNode `json:"nodes"`
 	Edges               []GraphEdge `json:"edges"`
@@ -274,6 +287,7 @@ type GraphExpansionResponse struct {
 	HiddenNeighborCount int         `json:"hidden_neighbor_count"`
 }
 
+// GraphPR describes pull request data used by the shared API contract.
 type GraphPR struct {
 	ID            string `json:"id"`
 	Number        int    `json:"number"`
@@ -288,6 +302,7 @@ type GraphPR struct {
 	AuthorLogin   string `json:"author_login"`
 }
 
+// GitHubIssueDescription stores the fields used by the shared API contract.
 type GitHubIssueDescription struct {
 	Owner       string `json:"owner"`
 	Repo        string `json:"repo"`
@@ -299,6 +314,7 @@ type GitHubIssueDescription struct {
 	AuthorLogin string `json:"author_login"`
 }
 
+// PRFileDiff describes pull request data used by the shared API contract.
 type PRFileDiff struct {
 	Filename         string  `json:"filename"`
 	PreviousFilename *string `json:"previous_filename,omitempty"`
@@ -318,6 +334,7 @@ type NodeCodeSegment struct {
 	Source    string `json:"source"`
 }
 
+// NodeCodeResponse describes an outbound response for the shared API contract.
 type NodeCodeResponse struct {
 	NodeID     string           `json:"node_id"`
 	FilePath   string           `json:"file_path"`

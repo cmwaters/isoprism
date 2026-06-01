@@ -5,10 +5,12 @@ import { Repository } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+// Props describes the props consumed by this component.
 interface Props {
   params: Promise<{ repoID: string }>;
 }
 
+// RepoQueuePage renders the repo queue page for repository pages.
 export default async function RepoQueuePage({ params }: Props) {
   const { repoID } = await params;
   const supabase = await createClient();

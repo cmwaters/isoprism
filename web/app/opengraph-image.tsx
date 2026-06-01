@@ -7,6 +7,7 @@ export const size = {
 };
 export const contentType = "image/png";
 
+// OpenGraphImage opens graph image for Isoprism.
 export default function OpenGraphImage() {
   return new ImageResponse(
     (

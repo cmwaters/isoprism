@@ -1,5 +1,7 @@
+// PilotFormType describes pilot form data used by web API utilities.
 export type PilotFormType = "registration" | "review";
 
+// PilotFormQuestion describes pilot form data used by web API utilities.
 export type PilotFormQuestion = {
   key: string;
   label: string;
@@ -100,6 +102,7 @@ export const reviewQuestions: PilotFormQuestion[] = [
   },
 ];
 
+// questionsForForm returns the configured question list for a pilot form type.
 export function questionsForForm(type: PilotFormType) {
   return type === "registration" ? registrationQuestions : reviewQuestions;
 }

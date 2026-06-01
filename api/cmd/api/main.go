@@ -16,6 +16,7 @@ import (
 	"github.com/isoprism/api/internal/github"
 )
 
+// main starts the process and reports fatal startup errors.
 func main() {
 	cfg, err := config.Load()
 	if err != nil {

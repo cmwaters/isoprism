@@ -4,12 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+// OnboardingPage renders the onboarding page for onboarding.
 export default function OnboardingPage() {
   const router = useRouter();
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // handleConnectGitHub starts GitHub App installation for onboarding.
   async function handleConnectGitHub() {
     setLoading(true);
     setError("");

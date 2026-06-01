@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestListLocalReviewItemsCollapsesDuplicateMainWorktree verifies list local review items collapses duplicate main worktree.
 func TestListLocalReviewItemsCollapsesDuplicateMainWorktree(t *testing.T) {
 	root := initLocalGraphTestRepo(t)
 	writeTestFile(t, root, "new.go", "package main\n\nfunc localChange() {}\n")
@@ -28,6 +29,7 @@ func TestListLocalReviewItemsCollapsesDuplicateMainWorktree(t *testing.T) {
 	}
 }
 
+// TestListLocalReviewItemsLabelsRemoteDefaultBranch verifies list local review items labels remote default branch.
 func TestListLocalReviewItemsLabelsRemoteDefaultBranch(t *testing.T) {
 	root := initLocalGraphTestRepo(t)
 	bare := t.TempDir() + "/origin.git"
@@ -49,6 +51,7 @@ func TestListLocalReviewItemsLabelsRemoteDefaultBranch(t *testing.T) {
 	}
 }
 
+// TestListLocalReviewItemsShowsUncommittedWhenBranchDiffersFromDefault verifies list local review items shows uncommitted when branch differs from default.
 func TestListLocalReviewItemsShowsUncommittedWhenBranchDiffersFromDefault(t *testing.T) {
 	root := initLocalGraphTestRepo(t)
 	runGitTestCommand(t, root, "checkout", "-b", "feature")

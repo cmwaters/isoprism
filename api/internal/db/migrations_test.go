@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// TestRequiredMigrationVersionMatchesLatestLocalMigration verifies required migration version matches latest local migration.
 func TestRequiredMigrationVersionMatchesLatestLocalMigration(t *testing.T) {
 	files, err := filepath.Glob("../../../supabase/migrations/*.sql")
 	if err != nil {

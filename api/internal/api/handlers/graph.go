@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// GraphHandler groups dependencies for the graph API.
 type GraphHandler struct {
 	DB        *pgxpool.Pool
 	AppClient *github.AppClient
@@ -27,6 +28,7 @@ const (
 	graphExpansionMaxNodes = 40
 )
 
+// graphEdgeRow describes a graph edge used by the graph API.
 type graphEdgeRow struct {
 	sourceID          string
 	destinationID     string
@@ -39,6 +41,7 @@ type graphEdgeRow struct {
 	changeType        string
 }
 
+// graphCandidate stores the fields used by the graph API.
 type graphCandidate struct {
 	id               string
 	seed             bool
@@ -51,11 +54,13 @@ type graphCandidate struct {
 	weight           int
 }
 
+// graphNodeRecord describes a graph node used by the graph API.
 type graphNodeRecord struct {
 	node      models.GraphNode
 	commitSHA string
 }
 
+// rawPRNodeChange describes a graph node used by the graph API.
 type rawPRNodeChange struct {
 	nodeID        string
 	changeType    string
@@ -65,6 +70,7 @@ type rawPRNodeChange struct {
 	oldFilePath   *string
 }
 
+// edgeChangeTypePtr returns nil for unchanged edges and a pointer for changed edges.
 func edgeChangeTypePtr(changeType string) *string {
 	if strings.TrimSpace(changeType) == "" || changeType == "unchanged" {
 		return nil
@@ -72,6 +78,7 @@ func edgeChangeTypePtr(changeType string) *string {
 	return &changeType
 }
 
+// markEdgeChangeType marks edge change type in the graph API.
 func markEdgeChangeType(edge graphEdgeRow, state map[string]bool, changedNames map[string]bool) string {
 	if edge.edgeKind != "calls" {
 		return "unchanged"
@@ -89,6 +96,7 @@ func markEdgeChangeType(edge graphEdgeRow, state map[string]bool, changedNames m
 	}
 }
 
+// relevantProductionEdge reports whether an edge connects changed production nodes.
 func relevantProductionEdge(edge graphEdgeRow, changedNames map[string]bool) bool {
 	if edge.sourceIsTest || edge.destinationIsTest {
 		return false
@@ -102,6 +110,7 @@ func relevantProductionEdge(edge graphEdgeRow, changedNames map[string]bool) boo
 	return changedNames[edge.sourceName] || changedNames[edge.destinationName]
 }
 
+// isTestGraphNode reports whether test graph node matches the expected condition.
 func isTestGraphNode(node models.GraphNode) bool {
 	if node.IsTest {
 		return true
@@ -129,10 +138,12 @@ func isTestGraphNode(node models.GraphNode) bool {
 	return strings.HasPrefix(lastFullNameSegment(node.FullName), "Test")
 }
 
+// semanticGraphKey returns the file-plus-symbol key for a graph node.
 func semanticGraphKey(node models.GraphNode) string {
 	return node.FilePath + "|" + node.FullName
 }
 
+// lastFullNameSegment returns the final segment of a qualified graph name.
 func lastFullNameSegment(fullName string) string {
 	if dot := strings.LastIndex(fullName, "."); dot >= 0 {
 		return fullName[dot+1:]
@@ -140,6 +151,7 @@ func lastFullNameSegment(fullName string) string {
 	return fullName
 }
 
+// decodeTypeRefs decodes type refs for the graph API.
 func decodeTypeRefs(raw []byte) []models.TypeRef {
 	if len(raw) == 0 {
 		return []models.TypeRef{}
@@ -151,6 +163,7 @@ func decodeTypeRefs(raw []byte) []models.TypeRef {
 	return refs
 }
 
+// applyNodeSummary applies node summary to the graph API.
 func applyNodeSummary(node *models.GraphNode, docComment, summary string) {
 	docComment = strings.TrimSpace(docComment)
 	summary = strings.TrimSpace(summary)
@@ -169,6 +182,7 @@ func applyNodeSummary(node *models.GraphNode, docComment, summary string) {
 	}
 }
 
+// resolveGraphTypeRefs resolves graph type refs for the graph API.
 func resolveGraphTypeRefs(nodes map[string]models.GraphNode) {
 	typeIDByName := map[string]string{}
 	for id, node := range nodes {
@@ -196,6 +210,7 @@ func resolveGraphTypeRefs(nodes map[string]models.GraphNode) {
 	}
 }
 
+// baseTypeName strips wrappers and selectors down to a comparable type name.
 func baseTypeName(typeName string) string {
 	t := strings.TrimSpace(typeName)
 	t = strings.TrimPrefix(t, "*")
@@ -214,6 +229,7 @@ func baseTypeName(typeName string) string {
 	return t
 }
 
+// packagePathForNode derives the package path for a graph node.
 func packagePathForNode(node models.GraphNode) string {
 	if node.PackagePath != "" {
 		return node.PackagePath
@@ -228,6 +244,7 @@ func packagePathForNode(node models.GraphNode) string {
 	return ""
 }
 
+// attachTestsFromEdges attaches test references to production graph nodes.
 func (h *GraphHandler) attachTestsFromEdges(ctx context.Context, repoID string, targetIDs []string, commitSHAs []string, canonicalizeID func(string) string, nodes []models.GraphNode) {
 	if len(targetIDs) == 0 || len(commitSHAs) == 0 {
 		return
@@ -288,6 +305,7 @@ func (h *GraphHandler) attachTestsFromEdges(ctx context.Context, repoID string, 
 	}
 }
 
+// nonEmptyStrings filters blank strings from a variadic list.
 func nonEmptyStrings(values ...string) []string {
 	out := make([]string, 0, len(values))
 	for _, value := range values {
@@ -298,6 +316,7 @@ func nonEmptyStrings(values ...string) []string {
 	return out
 }
 
+// mergeGraphCandidate merges graph candidate into the graph API.
 func mergeGraphCandidate(current graphCandidate, next graphCandidate, id string) graphCandidate {
 	if current.id == "" {
 		next.id = id
@@ -323,6 +342,7 @@ func mergeGraphCandidate(current graphCandidate, next graphCandidate, id string)
 	return current
 }
 
+// canonicalizeGraphEdges rewrites graph edges through canonical visual node IDs.
 func canonicalizeGraphEdges(edges []models.GraphEdge, canonicalizeID func(string) string, selected map[string]graphCandidate) []models.GraphEdge {
 	visible := map[string]bool{}
 	for id := range selected {
@@ -350,6 +370,7 @@ func canonicalizeGraphEdges(edges []models.GraphEdge, canonicalizeID func(string
 	return result
 }
 
+// appendTestFocusEdges appends test focus edges to the graph API.
 func appendTestFocusEdges(
 	edges []models.GraphEdge,
 	allEdges []graphEdgeRow,
@@ -401,6 +422,7 @@ func appendTestFocusEdges(
 	return edges
 }
 
+// selectRankedVisibleGraph selects ranked visible graph for the graph API.
 func selectRankedVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
 	adj := map[string]map[string]bool{}
 	sourceCount := map[string]int{}
@@ -540,6 +562,7 @@ func selectRankedVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineCha
 	return selected, visibleEdges
 }
 
+// selectVisibleGraph selects visible graph for the graph API.
 func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges map[string]int) (map[string]graphCandidate, []models.GraphEdge) {
 	adj := map[string]map[string]bool{}
 	sourceCount := map[string]int{}
@@ -646,6 +669,7 @@ func selectVisibleGraph(seedIDs []string, allEdges []graphEdgeRow, lineChanges m
 	return selected, visibleEdges
 }
 
+// sortGraphNodes orders graph nodes deterministically.
 func sortGraphNodes(nodes []models.GraphNode) {
 	sort.SliceStable(nodes, func(i, j int) bool {
 		a, b := nodes[i], nodes[j]
@@ -668,6 +692,7 @@ func sortGraphNodes(nodes []models.GraphNode) {
 	})
 }
 
+// graphVisibleSet builds the set of currently visible graph node IDs.
 func graphVisibleSet(ids []string, expandedID string) map[string]bool {
 	visible := map[string]bool{}
 	for _, id := range ids {
@@ -681,6 +706,7 @@ func graphVisibleSet(ids []string, expandedID string) map[string]bool {
 	return visible
 }
 
+// graphDegreeByNode counts unique neighbors for each graph node.
 func graphDegreeByNode(edges []graphEdgeRow) map[string]int {
 	neighbors := map[string]map[string]bool{}
 	ensure := func(id string) {
@@ -704,6 +730,7 @@ func graphDegreeByNode(edges []graphEdgeRow) map[string]int {
 	return degrees
 }
 
+// graphHasHiddenNeighbor reports whether a visible node still has hidden neighbors.
 func graphHasHiddenNeighbor(id string, visible map[string]bool, edges []graphEdgeRow) bool {
 	for _, edge := range edges {
 		if edge.sourceID == id && !visible[edge.destinationID] {
@@ -716,6 +743,7 @@ func graphHasHiddenNeighbor(id string, visible map[string]bool, edges []graphEdg
 	return false
 }
 
+// expansionNodeType chooses the node type label for expanded graph context.
 func expansionNodeType(id, expandedID string, edges []graphEdgeRow, node models.GraphNode) string {
 	if node.ChangeType != nil {
 		return "changed"
@@ -739,6 +767,7 @@ func expansionNodeType(id, expandedID string, edges []graphEdgeRow, node models.
 	return "context"
 }
 
+// selectExpansionNeighbors selects expansion neighbors for the graph API.
 func selectExpansionNeighbors(expandedID string, visible map[string]bool, nodeMap map[string]models.GraphNode, edges []graphEdgeRow) ([]string, int, bool) {
 	expanded, ok := nodeMap[expandedID]
 	if !ok {
@@ -797,6 +826,7 @@ func selectExpansionNeighbors(expandedID string, visible map[string]bool, nodeMa
 	return neighbors, hiddenCount, hasMore
 }
 
+// graphEdgesForVisibleSet returns edges whose endpoints are both visible.
 func graphEdgesForVisibleSet(edges []graphEdgeRow, visible map[string]bool) []models.GraphEdge {
 	result := make([]models.GraphEdge, 0)
 	seen := map[string]bool{}
@@ -821,6 +851,7 @@ func graphEdgesForVisibleSet(edges []graphEdgeRow, visible map[string]bool) []mo
 	return result
 }
 
+// repoProgramFromNode converts an entrypoint node into a repo program card.
 func repoProgramFromNode(node models.GraphNode) models.GraphProgram {
 	return models.GraphProgram{
 		ID:           node.ID,
@@ -836,10 +867,12 @@ func repoProgramFromNode(node models.GraphNode) models.GraphProgram {
 	}
 }
 
+// isRepoProgramNode reports whether repo program node matches the expected condition.
 func isRepoProgramNode(node models.GraphNode) bool {
 	return node.IsEntrypoint || node.FullName == "main" || strings.HasSuffix(node.FullName, ".main")
 }
 
+// sortRepoPrograms orders repo programs deterministically.
 func sortRepoPrograms(programs []models.GraphProgram) {
 	sort.SliceStable(programs, func(i, j int) bool {
 		a, b := programs[i], programs[j]
@@ -856,6 +889,7 @@ func sortRepoPrograms(programs []models.GraphProgram) {
 	})
 }
 
+// loadRepo loads repo for the graph API.
 func (h *GraphHandler) loadRepo(ctx context.Context, repoID, userID string) (models.Repository, error) {
 	var repo models.Repository
 	err := h.DB.QueryRow(ctx, `
@@ -871,6 +905,7 @@ func (h *GraphHandler) loadRepo(ctx context.Context, repoID, userID string) (mod
 	return repo, err
 }
 
+// loadRepoPrograms loads repo programs for the graph API.
 func (h *GraphHandler) loadRepoPrograms(ctx context.Context, repoID, commitSHA string) ([]models.GraphProgram, error) {
 	rows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
@@ -925,6 +960,7 @@ func (h *GraphHandler) loadRepoPrograms(ctx context.Context, repoID, commitSHA s
 	return []models.GraphProgram{repoProgramFromNode(n)}, nil
 }
 
+// loadRepoExpansionData loads repo expansion data for the graph API.
 func (h *GraphHandler) loadRepoExpansionData(ctx context.Context, repoID, commitSHA string) (map[string]models.GraphNode, []graphEdgeRow, error) {
 	nodeRows, err := h.DB.Query(ctx, `
 		select id, full_name, file_path, line_start, line_end,
@@ -990,6 +1026,7 @@ func (h *GraphHandler) loadRepoExpansionData(ctx context.Context, repoID, commit
 	return nodeMap, edges, nil
 }
 
+// loadPRExpansionData loads PR expansion data for the graph API.
 func (h *GraphHandler) loadPRExpansionData(ctx context.Context, repoID, prID, mainCommitSHA, headCommit string) (map[string]models.GraphNode, []graphEdgeRow, error) {
 	nodeMap, _, err := h.loadRepoExpansionData(ctx, repoID, mainCommitSHA)
 	if err != nil {
@@ -2155,6 +2192,7 @@ func (h *GraphHandler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// loadPRFileDiffs loads PR file diffs for the graph API.
 func (h *GraphHandler) loadPRFileDiffs(ctx context.Context, fullName string, installationID int64, prNumber int) ([]models.PRFileDiff, error) {
 	parts := strings.SplitN(fullName, "/", 2)
 	if len(parts) != 2 {
@@ -2187,6 +2225,7 @@ func (h *GraphHandler) loadPRFileDiffs(ctx context.Context, fullName string, ins
 	return out, nil
 }
 
+// loadPRTestChanges loads PR test changes for the graph API.
 func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []string, changedSet map[string]rawPRNodeChange) []models.GraphNode {
 	if len(changedIDs) == 0 {
 		return []models.GraphNode{}
@@ -2241,6 +2280,7 @@ func (h *GraphHandler) loadPRTestChanges(ctx context.Context, changedIDs []strin
 	return testChanges
 }
 
+// loadPRTestContext loads PR test context for the graph API.
 func (h *GraphHandler) loadPRTestContext(ctx context.Context, allEdges []graphEdgeRow, testChanges []models.GraphNode, canonicalizeID func(string) string) map[string]models.GraphNode {
 	testIDs := map[string]bool{}
 	for _, n := range testChanges {
@@ -2308,6 +2348,7 @@ func (h *GraphHandler) loadPRTestContext(ctx context.Context, allEdges []graphEd
 	return contextNodes
 }
 
+// countDiffLines counts diff lines for the graph API.
 func countDiffLines(patch string) (added, removed int) {
 	for _, line := range strings.Split(patch, "\n") {
 		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
@@ -2326,6 +2367,7 @@ func (h *GraphHandler) GetRepoNodeCode(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-ID")
 	ctx := r.Context()
 
+	// nodeMeta stores the fields used by the graph API.
 	type nodeMeta struct {
 		id        string
 		filePath  string
@@ -2406,6 +2448,7 @@ func (h *GraphHandler) GetNodeCode(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-ID")
 	ctx := r.Context()
 
+	// nodeMeta stores the fields used by the graph API.
 	type nodeMeta struct {
 		id        string
 		fullName  string
@@ -2538,6 +2581,7 @@ func (h *GraphHandler) GetNodeCode(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// baseLookupIdentity returns the base-side file and symbol identity for a PR node.
 func baseLookupIdentity(selectedFullName, selectedFilePath string, changeType, oldFullName, oldFilePath *string) (string, string) {
 	if changeType != nil && *changeType == "renamed" {
 		if oldFullName != nil && *oldFullName != "" {
@@ -2550,6 +2594,7 @@ func baseLookupIdentity(selectedFullName, selectedFilePath string, changeType, o
 	return selectedFullName, selectedFilePath
 }
 
+// sliceSourceLines returns the requested line range from a source file.
 func sliceSourceLines(source string, startLine, endLine int) string {
 	if startLine <= 0 || endLine < startLine {
 		return ""

@@ -2,6 +2,7 @@ package handlers
 
 import "testing"
 
+// TestDerivedRiskLabel verifies derived risk label.
 func TestDerivedRiskLabel(t *testing.T) {
 	low := 3
 	medium := 5
@@ -34,6 +35,7 @@ func TestDerivedRiskLabel(t *testing.T) {
 	}
 }
 
+// strPtr returns a pointer to the provided test string.
 func strPtr(s string) *string {
 	return &s
 }

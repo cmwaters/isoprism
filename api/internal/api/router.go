@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// NewRouter constructs a router.
 func NewRouter(cfg *config.Config, db *pgxpool.Pool, appClient *github.AppClient) http.Handler {
 	r := chi.NewRouter()
 
@@ -328,6 +329,7 @@ func indexRepoHandler(db *pgxpool.Pool, appClient *github.AppClient, enricher *a
 	}
 }
 
+// supabaseAuthMiddleware passes requests through while preserving the middleware hook point.
 func supabaseAuthMiddleware(_ string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,7 @@ import { QueueResponse, RepoGraphResponse, RepoProgramsResponse } from "@/lib/ty
 
 export const dynamic = "force-dynamic";
 
+// LocalRepoPage renders the local repo page for the local viewer route.
 export default async function LocalRepoPage() {
   const [programs, queue] = await Promise.all([
     localFetch<RepoProgramsResponse>("/api/programs"),
@@ -15,6 +16,7 @@ export default async function LocalRepoPage() {
   return <LocalRepoGraph graph={graph} prs={queue.review_items} repo={repo} />;
 }
 
+// localFetch loads JSON from the local viewer API.
 async function localFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
   if (!res.ok) {

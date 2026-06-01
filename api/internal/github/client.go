@@ -12,11 +12,13 @@ import (
 
 const baseURL = "https://api.github.com"
 
+// Client wraps outbound calls for GitHub integration.
 type Client struct {
 	token      string
 	httpClient *http.Client
 }
 
+// NewClient constructs a client.
 func NewClient(token string) *Client {
 	return &Client{
 		token:      token,
@@ -24,6 +26,7 @@ func NewClient(token string) *Client {
 	}
 }
 
+// do sends an authenticated GitHub API request and decodes the response.
 func (c *Client) do(ctx context.Context, method, path string, out interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, nil)
 	if err != nil {
@@ -60,6 +63,7 @@ type GHInstallation struct {
 	} `json:"account"`
 }
 
+// GHUser describes user data used by GitHub integration.
 type GHUser struct {
 	ID        int64  `json:"id"`
 	Login     string `json:"login"`
@@ -67,6 +71,7 @@ type GHUser struct {
 	Email     string `json:"email"`
 }
 
+// InstallationRepo describes repository data used by GitHub integration.
 type InstallationRepo struct {
 	ID            int64  `json:"id"`
 	FullName      string `json:"full_name"`
@@ -74,11 +79,13 @@ type InstallationRepo struct {
 	Private       bool   `json:"private"`
 }
 
+// ListInstallationReposResponse describes an outbound response for GitHub integration.
 type ListInstallationReposResponse struct {
 	TotalCount   int                `json:"total_count"`
 	Repositories []InstallationRepo `json:"repositories"`
 }
 
+// GHPullRequest describes an inbound request for GitHub integration.
 type GHPullRequest struct {
 	ID      int64  `json:"id"`
 	Number  int    `json:"number"`
@@ -140,6 +147,7 @@ type GHPullRequestFile struct {
 	Patch            *string `json:"patch"` // omitted by GitHub for binary or very large files
 }
 
+// GHIssue stores the fields used by GitHub integration.
 type GHIssue struct {
 	Number  int    `json:"number"`
 	Title   string `json:"title"`
@@ -161,6 +169,7 @@ func (c *Client) ListInstallationRepos(ctx context.Context) ([]InstallationRepo,
 	return result.Repositories, nil
 }
 
+// GetRepository loads repository for GitHub integration.
 func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*InstallationRepo, error) {
 	var result InstallationRepo
 	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s", owner, repo), &result); err != nil {
@@ -169,6 +178,7 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*Instal
 	return &result, nil
 }
 
+// ListOpenPullRequests lists open pull requests for GitHub integration.
 func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]GHPullRequest, error) {
 	var prs []GHPullRequest
 	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/pulls?state=open&per_page=100", owner, repo), &prs); err != nil {
@@ -177,6 +187,7 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string) (
 	return prs, nil
 }
 
+// GetPullRequest loads pull request for GitHub integration.
 func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (*GHPullRequest, error) {
 	var pr GHPullRequest
 	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/pulls/%d", owner, repo, number), &pr); err != nil {
@@ -185,6 +196,7 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 	return &pr, nil
 }
 
+// ListPullRequestFiles lists pull request files for GitHub integration.
 func (c *Client) ListPullRequestFiles(ctx context.Context, owner, repo string, number int) ([]GHPullRequestFile, error) {
 	var all []GHPullRequestFile
 	for page := 1; ; page++ {
@@ -201,6 +213,7 @@ func (c *Client) ListPullRequestFiles(ctx context.Context, owner, repo string, n
 	return all, nil
 }
 
+// GetAuthenticatedUser loads authenticated user for GitHub integration.
 func (c *Client) GetAuthenticatedUser(ctx context.Context) (*GHUser, error) {
 	var user GHUser
 	if err := c.do(ctx, "GET", "/user", &user); err != nil {
@@ -209,6 +222,7 @@ func (c *Client) GetAuthenticatedUser(ctx context.Context) (*GHUser, error) {
 	return &user, nil
 }
 
+// GetIssue loads issue for GitHub integration.
 func (c *Client) GetIssue(ctx context.Context, owner, repo string, number int) (*GHIssue, error) {
 	var issue GHIssue
 	if err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/%s/issues/%d", owner, repo, number), &issue); err != nil {

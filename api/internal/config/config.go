@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// Config stores runtime settings for runtime configuration.
 type Config struct {
 	Port string
 
@@ -30,6 +31,7 @@ type Config struct {
 	CommitSHA    string
 }
 
+// Load loads runtime configuration from environment variables.
 func Load() (*Config, error) {
 	cfg := &Config{
 		Port:                   getEnv("PORT", "8080"),
@@ -55,6 +57,7 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// frontendURLs builds the allowed frontend URL list from configuration.
 func frontendURLs(defaultURL string) []string {
 	raw := getEnv("FRONTEND_URLS", defaultURL+",http://localhost:3000")
 	seen := make(map[string]bool)
@@ -70,6 +73,7 @@ func frontendURLs(defaultURL string) []string {
 	return urls
 }
 
+// getEnv loads env for runtime configuration.
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -77,6 +81,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// firstEnv returns the first matching env.
 func firstEnv(keys ...string) string {
 	for _, key := range keys {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
@@ -86,6 +91,7 @@ func firstEnv(keys ...string) string {
 	return ""
 }
 
+// mustGetEnv returns a required environment variable or panics.
 func mustGetEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {

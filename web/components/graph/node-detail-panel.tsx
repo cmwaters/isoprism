@@ -10,12 +10,14 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { renamedFromTitle, symbolContextLabel, symbolTitle } from "./symbol-format";
 
+// SelectedPRChange describes pull request data used by the graph review UI.
 export type SelectedPRChange =
   | { type: "node"; nodeID: string }
   | { type: "file"; fileKey: string }
   | { type: "pr-description"; body: string; htmlURL: string }
   | { type: "issue"; issue: GitHubIssueReference };
 
+// Props describes the props consumed by this component.
 interface Props {
   node: GraphNode | null;
   allNodes: GraphNode[];
@@ -67,6 +69,7 @@ const settingsButtonStyle: CSSProperties = {
   textDecoration: "none",
 };
 
+// NodeDetailPanel renders the node detail panel for the graph review UI.
 export default function NodeDetailPanel({
   node,
   allNodes,
@@ -224,6 +227,7 @@ export default function NodeDetailPanel({
   );
 }
 
+// RepoSummaryPanel renders the repo summary panel for the graph review UI.
 function RepoSummaryPanel({
   repo,
   prs,
@@ -376,20 +380,24 @@ function RepoSummaryPanel({
   );
 }
 
+// isLocalReviewItem reports whether local review item matches the expected condition.
 function isLocalReviewItem(pr: QueuePR): boolean {
   return pr.id.startsWith("local-");
 }
 
+// reviewItemBadge returns the badge text for a cloud PR or local review item.
 function reviewItemBadge(pr: QueuePR): string {
   return pr.number > 0 ? `#${pr.number}` : "Local";
 }
 
+// reviewItemBranchLabel returns the head-to-base branch label for a review item.
 function reviewItemBranchLabel(pr: QueuePR): string {
   const head = pr.head_branch || "worktree";
   const base = displayReviewBaseBranch(pr);
   return `${head} -> ${base}`;
 }
 
+// displayReviewBaseBranch returns the display label for review base branch.
 function displayReviewBaseBranch(pr: QueuePR): string {
   if (!pr.base_branch) return "main";
   if ((pr.id.startsWith("gh-pr-") || pr.id === "local-worktree-pr") && !pr.base_branch.includes("/")) {
@@ -401,11 +409,13 @@ function displayReviewBaseBranch(pr: QueuePR): string {
   return pr.base_branch;
 }
 
+// splitRepoFullName splits repo full name into usable parts.
 function splitRepoFullName(fullName: string): { owner: string; name: string } {
   const [owner, name] = fullName.split("/");
   return { owner: owner || fullName, name: name || fullName };
 }
 
+// programTitle returns the short display name for a repo entrypoint program.
 function programTitle(program: GraphProgram): string {
   const name = program.full_name.includes(":")
     ? program.full_name.slice(program.full_name.lastIndexOf(":") + 1)
@@ -414,12 +424,14 @@ function programTitle(program: GraphProgram): string {
   return parts[parts.length - 1] || program.full_name;
 }
 
+// programContextLabel returns the package or file context label for a repo program.
 function programContextLabel(program: GraphProgram): string {
   const packagePath = program.package_path || program.file_path.split("/").slice(0, -1).join("/");
   const packageParts = packagePath.split("/").filter(Boolean);
   return packageParts[packageParts.length - 1] || program.file_path;
 }
 
+// useOpenTimeLabels keeps open time labels current for React rendering.
 function useOpenTimeLabels(prs: Array<[string, string]>): Map<string, string> {
   const [nowMs, setNowMs] = useState<number | null>(null);
 
@@ -438,6 +450,7 @@ function useOpenTimeLabels(prs: Array<[string, string]>): Map<string, string> {
   return new Map(prs.map(([id, openedAt]) => [id, formatOpenTime(openedAt, nowMs)]));
 }
 
+// formatOpenTime formats open time for display.
 function formatOpenTime(openedAt: string, nowMs = Date.now()): string {
   const hoursOpen = Math.max(0, Math.floor((nowMs - new Date(openedAt).getTime()) / 3_600_000));
   if (hoursOpen < 24) return `${hoursOpen}h`;
@@ -502,6 +515,7 @@ const issuePillStyle: CSSProperties = {
   padding: "2px 10px",
 };
 
+// issueStatePillStyle returns the pill colors for an open or closed issue.
 function issueStatePillStyle(state: string): CSSProperties {
   const closed = state.toLowerCase() === "closed";
   return {
@@ -525,6 +539,7 @@ const inlinePanelLinkStyle: CSSProperties = {
   textAlign: "left",
 };
 
+// findIssueReference finds issue reference for the graph review UI.
 function findIssueReference(body: string, repoFullName: string): GitHubIssueReference | null {
   const trimmed = body.trim();
   if (!trimmed) return null;
@@ -560,10 +575,12 @@ function findIssueReference(body: string, repoFullName: string): GitHubIssueRefe
   return null;
 }
 
+// issueReferenceKey returns the cache key for a linked GitHub issue.
 export function issueReferenceKey(issue: GitHubIssueReference): string {
   return `${issue.owner}/${issue.repo}#${issue.number}`;
 }
 
+// PRSummaryPanel renders the PR summary panel for the graph review UI.
 function PRSummaryPanel({
   pr,
   repo,
@@ -743,6 +760,7 @@ function PRSummaryPanel({
   );
 }
 
+// displayPRBaseBranch returns the display label for PR base branch.
 function displayPRBaseBranch(pr: GraphPR): string {
   if (!pr.base_branch) return "";
   if (pr.id.startsWith("gh-pr-") && !pr.base_branch.includes("/")) {
@@ -751,6 +769,7 @@ function displayPRBaseBranch(pr: GraphPR): string {
   return pr.base_branch;
 }
 
+// ChangeSection renders the change section for the graph review UI.
 function ChangeSection({
   title,
   emptyText,
@@ -780,6 +799,7 @@ function ChangeSection({
   );
 }
 
+// NodeChangeRow renders the node change row for the graph review UI.
 function NodeChangeRow({ node, onClick }: { node: GraphNode; onClick: () => void }) {
   const contextLabel = symbolContextLabel(node);
 
@@ -803,6 +823,7 @@ function NodeChangeRow({ node, onClick }: { node: GraphNode; onClick: () => void
   );
 }
 
+// FileChangeRow renders the file change row for the graph review UI.
 function FileChangeRow({ file, onClick }: { file: PRFileDiff; onClick: () => void }) {
   const fileName = file.previous_filename
     ? `${fileTitle(file.previous_filename)} -> ${fileTitle(file.filename)}`
@@ -826,10 +847,12 @@ function FileChangeRow({ file, onClick }: { file: PRFileDiff; onClick: () => voi
   );
 }
 
+// basename returns the final path segment for display.
 function basename(path: string): string {
   return path.split("/").pop() || path;
 }
 
+// fileTitle turns a file path into a readable title.
 function fileTitle(path: string): string {
   const name = basename(path).replace(/\.[^.]+$/, "");
   return name
@@ -839,6 +862,7 @@ function fileTitle(path: string): string {
     .join(" ");
 }
 
+// nodeCodePath builds the API path for loading node source or diff code.
 function nodeCodePath(repoID: string, nodeID: string, token: string, prID?: string): string {
   if (token === "local") {
     const reviewParam = prID ? `?review_item_id=${encodeURIComponent(prID)}` : "";
@@ -849,6 +873,7 @@ function nodeCodePath(repoID: string, nodeID: string, token: string, prID?: stri
     : `/api/v1/repos/${repoID}/nodes/${nodeID}/code`;
 }
 
+// ComponentChangePanel renders the component change panel for the graph review UI.
 export function ComponentChangePanel({
   selectedChange,
   allNodes,
@@ -977,6 +1002,7 @@ export function ComponentChangePanel({
   );
 }
 
+// NodeChangeDetailPanel renders the node change detail panel for the graph review UI.
 function NodeChangeDetailPanel({
   node,
   allNodes,
@@ -1142,6 +1168,7 @@ function NodeChangeDetailPanel({
   );
 }
 
+// ComponentCodeBlock renders the component code block for the graph review UI.
 function ComponentCodeBlock({
   node,
   codeForNode,
@@ -1188,6 +1215,7 @@ function ComponentCodeBlock({
   return <div style={{ color: "#666666", fontSize: 12 }}>Diff unavailable</div>;
 }
 
+// FileDiffPanel renders the file diff panel for the graph review UI.
 function FileDiffPanel({ file, onClose }: { file: PRFileDiff; onClose: () => void }) {
   const fileLabel = file.previous_filename
     ? `${file.previous_filename} -> ${file.filename}`
@@ -1217,6 +1245,7 @@ function FileDiffPanel({ file, onClose }: { file: PRFileDiff; onClose: () => voi
   );
 }
 
+// MarkdownDocumentPanel renders the markdown document panel for the graph review UI.
 function MarkdownDocumentPanel({
   body,
   htmlURL,
@@ -1259,6 +1288,7 @@ function MarkdownDocumentPanel({
   );
 }
 
+// IssueDescriptionPanel renders the issue description panel for the graph review UI.
 function IssueDescriptionPanel({
   repoID,
   prID,
@@ -1372,6 +1402,7 @@ function IssueDescriptionPanel({
   );
 }
 
+// PanelCloseButton renders the panel close button for the graph review UI.
 function PanelCloseButton({ onClose }: { onClose: () => void }) {
   return (
     <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
@@ -1401,6 +1432,7 @@ function PanelCloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
+// NodeDetail renders the selected graph node overview and relation sections.
 function NodeDetail({
   node,
   allNodes,
@@ -1602,6 +1634,7 @@ function NodeDetail({
   );
 }
 
+// CodePanel renders the code panel for the graph review UI.
 function CodePanel({
   node,
   repoID,
@@ -1704,6 +1737,7 @@ function CodePanel({
   );
 }
 
+// PanelToolbar renders the side-panel mode switcher.
 function PanelToolbar({
   mode,
   onModeChange,
@@ -1731,6 +1765,7 @@ function PanelToolbar({
   );
 }
 
+// ModeToggle renders the mode toggle for the graph review UI.
 function ModeToggle({
   mode,
   onModeChange,
@@ -1794,6 +1829,7 @@ function ModeToggle({
   );
 }
 
+// SourceViewer renders the source viewer for the graph review UI.
 function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
   const lines = segment.source.split("\n");
 
@@ -1824,6 +1860,7 @@ function SourceViewer({ segment }: { segment: NodeCodeSegment }) {
   );
 }
 
+// TypeContentsSection renders the type contents section for the graph review UI.
 function TypeContentsSection({
   node,
   allNodes,
@@ -1970,6 +2007,7 @@ function TypeContentsSection({
   );
 }
 
+// ComponentDiffLine stores the fields used by the graph review UI.
 type ComponentDiffLine = {
   kind: "context" | "added" | "removed";
   oldLine?: number;
@@ -1977,6 +2015,7 @@ type ComponentDiffLine = {
   text: string;
 };
 
+// FullComponentDiffViewer renders the full component diff viewer for the graph review UI.
 function FullComponentDiffViewer({
   base,
   head,
@@ -2031,10 +2070,12 @@ function FullComponentDiffViewer({
   );
 }
 
+// displayLineNumber returns the display label for line number.
 function displayLineNumber(line: ComponentDiffLine): number | undefined {
   return line.kind === "removed" ? line.oldLine : line.newLine;
 }
 
+// shouldRenderFullComponentDiff reports whether render full component diff should be used.
 function shouldRenderFullComponentDiff(
   changeType: GraphNode["change_type"],
   codeForNode: NodeCodeResponse
@@ -2051,6 +2092,7 @@ function shouldRenderFullComponentDiff(
   return Boolean(codeForNode.base || codeForNode.head);
 }
 
+// buildFullComponentDiff builds full component diff for the graph review UI.
 function buildFullComponentDiff(
   baseSource: string,
   headSource: string,
@@ -2114,6 +2156,7 @@ function buildFullComponentDiff(
   return out;
 }
 
+// UnifiedDiffViewer renders the unified diff viewer for the graph review UI.
 function UnifiedDiffViewer({ patch }: { patch: string }) {
   const lines = patch.split("\n");
 
@@ -2167,6 +2210,7 @@ const backControlStyle: CSSProperties = {
   fontWeight: 400,
 };
 
+// BackControl renders the back control for the graph review UI.
 function BackControl({
   href,
   onClick,
@@ -2191,6 +2235,7 @@ function BackControl({
   );
 }
 
+// RelationSection renders the relation section for the graph review UI.
 function RelationSection({
   label,
   nodeIDs,
@@ -2263,6 +2308,7 @@ function RelationSection({
   );
 }
 
+// TestSection renders the test section for the graph review UI.
 function TestSection({ tests }: { tests: GraphNode["tests"] }) {
   if (tests.length === 0) return null;
 
@@ -2291,38 +2337,47 @@ function TestSection({ tests }: { tests: GraphNode["tests"] }) {
   );
 }
 
+// pkgLabel returns the package label shown above a function name.
 function pkgLabel(node: GraphNode): string {
   return symbolContextLabel(node);
 }
 
+// isTypeNode reports whether type node matches the expected condition.
 function isTypeNode(node: GraphNode): boolean {
   return ["class", "interface", "struct", "type"].includes(node.kind);
 }
 
+// functionDisplayName returns the display name for a function, method, or type node.
 function functionDisplayName(node: GraphNode): string {
   return symbolTitle(node);
 }
 
+// outgoingCallEdges returns call edges leaving the selected node.
 function outgoingCallEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
   return edges.filter((e) => e.edge_kind === "calls" && e.source_id === nodeID);
 }
 
+// incomingCallEdges returns call edges entering the selected node.
 function incomingCallEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
   return edges.filter((e) => e.edge_kind === "calls" && e.destination_id === nodeID);
 }
 
+// outgoingOwnershipEdges returns methods owned by the selected type node.
 function outgoingOwnershipEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
   return edges.filter((e) => e.edge_kind === "owns_method" && e.source_id === nodeID);
 }
 
+// outgoingTypeUsageEdges returns field-type edges leaving the selected type node.
 function outgoingTypeUsageEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
   return edges.filter((e) => e.edge_kind === "uses_type" && e.source_id === nodeID);
 }
 
+// incomingOwnershipEdges returns type ownership edges that point at the selected method.
 function incomingOwnershipEdges(nodeID: string, edges: GraphEdge[]): GraphEdge[] {
   return edges.filter((e) => e.edge_kind === "owns_method" && e.destination_id === nodeID);
 }
 
+// buildCallSiteLines builds call site lines for the graph review UI.
 function buildCallSiteLines(
   segment: NodeCodeSegment | undefined,
   destinationIDs: string[],
@@ -2346,6 +2401,7 @@ function buildCallSiteLines(
   return byID;
 }
 
+// lineMatchesCall reports whether a source line appears to call a named function.
 function lineMatchesCall(line: string, functionName: string): boolean {
   const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?:\\b|\\.)${escaped}\\s*\\(`).test(line);
@@ -2366,21 +2422,25 @@ const changeRowButtonStyle: CSSProperties = {
   width: "100%",
 };
 
+// fileKey returns the stable key used for a file diff row.
 function fileKey(file: PRFileDiff): string {
   return `${file.status}:${file.previous_filename ?? ""}:${file.filename}`;
 }
 
+// isMarkdownFile reports whether markdown file matches the expected condition.
 function isMarkdownFile(path: string): boolean {
   const lower = path.toLowerCase();
   return lower.endsWith(".md") || lower.endsWith(".mdx") || lower.endsWith(".markdown");
 }
 
+// normalizedFileStatus normalizes GitHub file statuses for display.
 function normalizedFileStatus(status: string): string {
   if (status === "removed") return "removed";
   if (status === "deleted") return "removed";
   return status;
 }
 
+// FileDiffPills renders the file diff pills for the graph review UI.
 function FileDiffPills({ file }: { file: PRFileDiff }) {
   const status = normalizedFileStatus(file.status);
 
@@ -2428,6 +2488,7 @@ const fileDiffPillBase: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+// DiffPills renders the diff pills for the graph review UI.
 function DiffPills({
   node,
   compact = false,

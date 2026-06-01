@@ -14,6 +14,7 @@ import (
 	"github.com/isoprism/api/internal/localgraph"
 )
 
+// main starts the process and reports fatal startup errors.
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "isoprism:", err)
@@ -21,6 +22,7 @@ func main() {
 	}
 }
 
+// run dispatches the requested CLI subcommand.
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return usage()
@@ -37,6 +39,7 @@ func run(ctx context.Context, args []string) error {
 	}
 }
 
+// runDiff builds the local diff payload and writes or opens the chosen output.
 func runDiff(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	output := fs.String("output", "", "write static HTML to path")
@@ -80,6 +83,7 @@ func runDiff(ctx context.Context, args []string) error {
 	return nil
 }
 
+// runServe starts the local graph daemon and viewer.
 func runServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	host := fs.String("host", "127.0.0.1", "host to bind")
@@ -94,6 +98,7 @@ func runServe(ctx context.Context, args []string) error {
 	return localgraph.Serve(ctx, localgraph.ServeOptions{RepoDir: ".", WebDir: *webDir, Host: *host, Port: *port, WebPort: *webPort, CacheDir: *cacheDir, NoWeb: *noWeb})
 }
 
+// runAnnotate records local review annotations for the current diff range.
 func runAnnotate(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("annotate requires diff, node, or test")
@@ -150,6 +155,7 @@ func runAnnotate(ctx context.Context, args []string) error {
 	}
 }
 
+// currentAnnotationRange resolves the base and head SHAs for the annotation target.
 func currentAnnotationRange(ctx context.Context) (string, string, error) {
 	args := []string{}
 	if hasStagedChanges(ctx) {
@@ -162,11 +168,13 @@ func currentAnnotationRange(ctx context.Context) (string, string, error) {
 	return payload.Diff.BaseSHA, payload.Diff.HeadSHA, nil
 }
 
+// hasStagedChanges reports whether the current checkout has staged changes.
 func hasStagedChanges(ctx context.Context) bool {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--cached", "--quiet")
 	return cmd.Run() != nil
 }
 
+// repoRoot resolves the root directory of the current git checkout.
 func repoRoot(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()
@@ -176,6 +184,7 @@ func repoRoot(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// openPath opens a generated local artifact with the operating system.
 func openPath(path string) error {
 	switch runtime.GOOS {
 	case "darwin":
@@ -187,6 +196,7 @@ func openPath(path string) error {
 	}
 }
 
+// shortSHA shortens a commit SHA for display.
 func shortSHA(sha string) string {
 	if len(sha) > 12 {
 		return sha[:12]
@@ -194,6 +204,7 @@ func shortSHA(sha string) string {
 	return sha
 }
 
+// splitInterspersedFlags separates positional arguments from flags that may appear between them.
 func splitInterspersedFlags(args []string, valueFlags map[string]bool) ([]string, []string) {
 	var flagArgs, posArgs []string
 	for i := 0; i < len(args); i++ {
@@ -215,6 +226,7 @@ func splitInterspersedFlags(args []string, valueFlags map[string]bool) ([]string
 	return flagArgs, posArgs
 }
 
+// stringPtr returns a pointer to the provided string.
 func stringPtr(value string) *string {
 	if strings.TrimSpace(value) == "" {
 		return nil
@@ -224,15 +236,18 @@ func stringPtr(value string) *string {
 
 type multiFlag []string
 
+// String returns the joined values for a repeatable CLI flag.
 func (m *multiFlag) String() string {
 	return strings.Join(*m, ",")
 }
 
+// Set appends a value to a repeatable CLI flag.
 func (m *multiFlag) Set(value string) error {
 	*m = append(*m, value)
 	return nil
 }
 
+// usage prints CLI usage text.
 func usage() error {
 	return fmt.Errorf("usage: isoprism diff|serve|annotate")
 }

@@ -58,6 +58,7 @@ type WebhookPRPayload struct {
 	} `json:"installation"`
 }
 
+// WebhookInstallationPayload carries the payload exchanged by GitHub integration.
 type WebhookInstallationPayload struct {
 	Action       string `json:"action"`
 	Installation struct {
@@ -75,6 +76,7 @@ type WebhookInstallationPayload struct {
 	} `json:"repositories"`
 }
 
+// WebhookInstallationReposPayload carries the payload exchanged by GitHub integration.
 type WebhookInstallationReposPayload struct {
 	Action       string `json:"action"`
 	Installation struct {
@@ -92,6 +94,7 @@ type WebhookInstallationReposPayload struct {
 	} `json:"repositories_removed"`
 }
 
+// ParsePRPayload parses PR payload for GitHub integration.
 func ParsePRPayload(body []byte) (*WebhookPRPayload, error) {
 	var p WebhookPRPayload
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -100,6 +103,7 @@ func ParsePRPayload(body []byte) (*WebhookPRPayload, error) {
 	return &p, nil
 }
 
+// ParseInstallationPayload parses installation payload for GitHub integration.
 func ParseInstallationPayload(body []byte) (*WebhookInstallationPayload, error) {
 	var p WebhookInstallationPayload
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -108,6 +112,7 @@ func ParseInstallationPayload(body []byte) (*WebhookInstallationPayload, error) 
 	return &p, nil
 }
 
+// ParseInstallationReposPayload parses installation repos payload for GitHub integration.
 func ParseInstallationReposPayload(body []byte) (*WebhookInstallationReposPayload, error) {
 	var p WebhookInstallationReposPayload
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -142,6 +147,7 @@ type WebhookPRReviewPayload struct {
 	} `json:"installation"`
 }
 
+// ParsePRReviewPayload parses PR review payload for GitHub integration.
 func ParsePRReviewPayload(body []byte) (*WebhookPRReviewPayload, error) {
 	var p WebhookPRReviewPayload
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -175,6 +181,7 @@ type WebhookPRReviewCommentPayload struct {
 	} `json:"installation"`
 }
 
+// ParsePRReviewCommentPayload parses PR review comment payload for GitHub integration.
 func ParsePRReviewCommentPayload(body []byte) (*WebhookPRReviewCommentPayload, error) {
 	var p WebhookPRReviewCommentPayload
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -206,6 +213,7 @@ type WebhookPRReviewThreadPayload struct {
 	} `json:"installation"`
 }
 
+// ParsePRReviewThreadPayload parses PR review thread payload for GitHub integration.
 func ParsePRReviewThreadPayload(body []byte) (*WebhookPRReviewThreadPayload, error) {
 	var p WebhookPRReviewThreadPayload
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -236,6 +244,7 @@ type WebhookCheckSuitePayload struct {
 	} `json:"installation"`
 }
 
+// ParseCheckSuitePayload parses check suite payload for GitHub integration.
 func ParseCheckSuitePayload(body []byte) (*WebhookCheckSuitePayload, error) {
 	var p WebhookCheckSuitePayload
 	if err := json.Unmarshal(body, &p); err != nil {

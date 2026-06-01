@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { API_URL } from "@/lib/api";
 import { NextRequest, NextResponse } from "next/server";
 
+// GET handles the Supabase auth callback and pilot invite acceptance.
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
