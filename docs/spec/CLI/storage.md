@@ -87,12 +87,15 @@ For a graph request, the daemon:
 
 1. resolves the target git ref or tree
 2. lists supported source files and blob SHAs
-3. loads cached nodes for unchanged blobs
-4. parses cache misses with tree-sitter
-5. builds a resolver index from source content
-6. extracts call edges
-7. adds semantic type edges such as `owns_method` and `uses_type`
-8. returns bounded graph payloads to the UI
+3. skips semantic parsing for files larger than 512 KiB
+4. loads cached nodes for unchanged blobs
+5. parses cache misses with tree-sitter
+6. builds a resolver index from source content
+7. extracts call edges
+8. adds semantic type edges such as `owns_method` and `uses_type`
+9. returns bounded graph payloads to the UI
+
+The 512 KiB file cap is a temporary safety guard. Oversized files may still appear as changed files in review payloads, but the daemon must not parse them into semantic nodes or resolver content.
 
 ## Review Context Storage
 

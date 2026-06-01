@@ -13,6 +13,8 @@ import (
 const (
 	indexTreeRef    = ":index:"
 	worktreeTreeRef = ":worktree:"
+
+	maxSemanticFileBytes int64 = 512 * 1024
 )
 
 func GenerateDiff(ctx context.Context, opts Options) (ReviewGraphPayload, error) {
@@ -116,6 +118,13 @@ func loadTreeGraph(ctx context.Context, g gitClient, cacheDir, ref, sha string) 
 
 	for path, blobSHA := range tree {
 		if !parser.IsSupportedFile(path) {
+			continue
+		}
+		size, err := g.fileSize(ctx, ref, path)
+		if err != nil {
+			return treeGraph{}, err
+		}
+		if size > maxSemanticFileBytes {
 			continue
 		}
 		objects, content, err := loadBlobNodes(ctx, g, cacheDir, ref, path, blobSHA)

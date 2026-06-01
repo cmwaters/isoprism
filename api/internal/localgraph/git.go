@@ -201,6 +201,40 @@ func (g gitClient) showFile(ctx context.Context, ref, path string) ([]byte, erro
 	return []byte(out), nil
 }
 
+func (g gitClient) fileSize(ctx context.Context, ref, path string) (int64, error) {
+	if ref == worktreeTreeRef {
+		info, err := os.Stat(filepath.Join(g.root, filepath.FromSlash(path)))
+		if err != nil {
+			return 0, err
+		}
+		return info.Size(), nil
+	}
+	if ref == indexTreeRef {
+		tree, err := g.listIndex(ctx)
+		if err != nil {
+			return 0, err
+		}
+		blob := tree[path]
+		if blob == "" {
+			return 0, fmt.Errorf("path %s is not present in the git index", path)
+		}
+		return g.objectSize(ctx, blob)
+	}
+	return g.objectSize(ctx, ref+":"+path)
+}
+
+func (g gitClient) objectSize(ctx context.Context, object string) (int64, error) {
+	out, err := g.run(ctx, "cat-file", "-s", object)
+	if err != nil {
+		return 0, err
+	}
+	var size int64
+	if _, err := fmt.Sscan(strings.TrimSpace(out), &size); err != nil {
+		return 0, fmt.Errorf("parse git object size for %s: %w", object, err)
+	}
+	return size, nil
+}
+
 func (g gitClient) diffPatch(ctx context.Context, from, to string, paths ...string) (string, error) {
 	if to == indexTreeRef {
 		args := []string{"diff", "--cached", "--patch", from, "--"}

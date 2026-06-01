@@ -47,16 +47,19 @@ Call resolution is conservative. Ambiguous, external, unknown, or unsafe guesses
 Both products follow the same conceptual flow:
 
 1. enumerate supported files for a git tree or diff side
-2. parse source with tree-sitter
-3. identify semantic components
-4. build resolver indexes
-5. extract call edges
-6. add type ownership and type-use edges
-7. classify changed components for review contexts
-8. rank and bound visible nodes
-9. serve graph payloads for the UI
+2. skip files that exceed the current semantic indexing size cap
+3. parse source with tree-sitter
+4. identify semantic components
+5. build resolver indexes
+6. extract call edges
+7. add type ownership and type-use edges
+8. classify changed components for review contexts
+9. rank and bound visible nodes
+10. serve graph payloads for the UI
 
 Cloud persists graph data in Postgres. CLI caches parse objects in `.isoprism/` and builds graph snapshots locally.
+
+The current CLI semantic indexing cap is 512 KiB per file. This is a safety limit to keep generated bundles and unusually large source files from producing oversized graph payloads.
 
 ## Repo Graphs
 

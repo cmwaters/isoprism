@@ -1,6 +1,7 @@
 package localgraph
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -58,6 +59,34 @@ func TestResolveDiffRefsSupportsLocalReviewAliases(t *testing.T) {
 	}
 }
 
+func TestLoadTreeGraphSkipsFilesOverSemanticSizeCap(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	runGitTestCommand(t, root, "init", "-b", "main")
+	runGitTestCommand(t, root, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, root, "config", "user.name", "Test User")
+	writeTestBytes(t, root, "large.go", append([]byte("package main\n\n"), bytes.Repeat([]byte("x"), int(maxSemanticFileBytes))...))
+	runGitTestCommand(t, root, "add", "large.go")
+	runGitTestCommand(t, root, "commit", "-m", "large file")
+
+	g := gitClient{root: root}
+	sha, err := g.resolveCommit(ctx, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := loadTreeGraph(ctx, g, t.TempDir(), "HEAD", sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(graph.tree) != 1 {
+		t.Fatalf("tree has %d files, want 1", len(graph.tree))
+	}
+	if len(graph.nodes) != 0 {
+		t.Fatalf("graph has %d nodes, want 0", len(graph.nodes))
+	}
+}
+
 func initLocalGraphTestRepo(t *testing.T) string {
 	t.Helper()
 
@@ -84,11 +113,17 @@ func runGitTestCommand(t *testing.T, dir string, args ...string) {
 func writeTestFile(t *testing.T, root, path, content string) {
 	t.Helper()
 
+	writeTestBytes(t, root, path, []byte(content))
+}
+
+func writeTestBytes(t *testing.T, root, path string, content []byte) {
+	t.Helper()
+
 	fullPath := filepath.Join(root, filepath.FromSlash(path))
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(fullPath, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
